@@ -17,6 +17,7 @@ pub enum Attribute {
     Strength,
     Agility,
     Intelligence,
+    Universal,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -125,6 +126,18 @@ pub enum Effect {
     /// Rage: self-buff granting magic immunity + basic dispel on cast.
     Rage {
         duration: Vec<f32>,
+    },
+    /// Spirit Lance: projectile that damages, slows, and spawns an illusion at target.
+    SpiritLance {
+        damage: Vec<f32>,
+        slow_pct: Vec<f32>,
+        slow_duration: Vec<f32>,
+        projectile_speed: f32,
+        illusion_damage_dealt: Vec<f32>,
+        illusion_damage_taken: f32,
+        illusion_duration: Vec<f32>,
+        bounce_radius: Vec<f32>,
+        bounce_count: Vec<u32>,
     },
     /// Spear of Mars: projectile that impales first hero, drags to wall, damages pass-through.
     SpearOfMars {

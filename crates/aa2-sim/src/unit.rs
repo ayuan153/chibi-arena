@@ -121,6 +121,16 @@ pub struct Unit {
     pub base_attack_time: f32,
     /// Base attack point (frontswing) before attack speed scaling.
     pub base_attack_point: f32,
+    /// Whether this unit is an illusion.
+    pub is_illusion: bool,
+    /// Damage dealt multiplier for illusions (1.0 for real units).
+    pub illusion_damage_dealt_pct: f32,
+    /// Damage taken multiplier for illusions (1.0 for real units).
+    pub illusion_damage_taken_pct: f32,
+    /// Tick at which this illusion expires (None for real units).
+    pub illusion_expiry_tick: Option<u32>,
+    /// Cooldown reduction (0.0 = none, 0.25 = 25% CDR).
+    pub cooldown_reduction: f32,
 }
 
 /// Derived combat stats from attributes.
@@ -141,6 +151,7 @@ pub fn derive_stats(str_val: f32, agi_val: f32, int_val: f32, primary: &Attribut
         Attribute::Strength => str_val,
         Attribute::Agility => agi_val,
         Attribute::Intelligence => int_val,
+        Attribute::Universal => (str_val + agi_val + int_val) * 0.7,
     };
     DerivedStats {
         max_hp: BASE_HP + str_val * 22.0,
@@ -231,6 +242,11 @@ impl Unit {
             primary_attribute: def.primary_attribute.clone(),
             base_attack_time: def.base_attack_time,
             base_attack_point: def.attack_point,
+            is_illusion: false,
+            illusion_damage_dealt_pct: 1.0,
+            illusion_damage_taken_pct: 1.0,
+            illusion_expiry_tick: None,
+            cooldown_reduction: 0.0,
         }
     }
 
@@ -260,6 +276,62 @@ impl Unit {
                 charges,
             });
         }
+        // Gaben bonuses: check if any SpiritLance ability is at level >= 9
+        for (ability_def, level) in &config.abilities {
+            if *level >= 9 {
+                let has_spirit_lance = ability_def.effects.iter().any(|e| matches!(e, aa2_data::Effect::SpiritLance { .. }));
+                if has_spirit_lance {
+                    unit.cooldown_reduction = 0.25;
+                    match unit.primary_attribute {
+                        Attribute::Universal => {
+                            unit.base_str += 15.0;
+                            unit.base_agi += 15.0;
+                            unit.base_int += 15.0;
+                        }
+                        Attribute::Strength => unit.base_str += 45.0,
+                        Attribute::Agility => unit.base_agi += 45.0,
+                        Attribute::Intelligence => unit.base_int += 45.0,
+                    }
+                    // Recompute derived stats
+                    let stats = derive_stats(unit.base_str, unit.base_agi, unit.base_int, &unit.primary_attribute, 0.0, unit.hero_base_damage_min, unit.hero_base_damage_max);
+                    unit.max_hp = stats.max_hp;
+                    unit.hp = stats.max_hp;
+                    unit.base_max_hp = stats.max_hp;
+                    unit.max_mana = stats.max_mana;
+                    unit.mana = stats.max_mana;
+                    unit.hp_regen = stats.hp_regen;
+                    unit.mana_regen = stats.mana_regen;
+                    unit.armor = stats.armor;
+                    unit.damage_min = stats.damage_min;
+                    unit.damage_max = stats.damage_max;
+                    let attack_interval = compute_attack_interval(unit.base_attack_time, stats.total_attack_speed);
+                    unit.attack_interval = attack_interval;
+                    unit.attack_point = compute_effective_attack_point(unit.base_attack_point, stats.total_attack_speed);
+                    break;
+                }
+            }
+        }
         unit
+    }
+
+    /// Spawn an illusion of a source unit.
+    pub fn spawn_illusion(source: &Unit, id: u32, position: Vec2, damage_dealt_pct: f32, damage_taken_pct: f32, duration_ticks: u32, current_tick: u32) -> Unit {
+        let mut illusion = source.clone();
+        illusion.id = id;
+        illusion.position = position;
+        illusion.is_illusion = true;
+        illusion.illusion_damage_dealt_pct = damage_dealt_pct;
+        illusion.illusion_damage_taken_pct = damage_taken_pct;
+        illusion.illusion_expiry_tick = Some(current_tick + duration_ticks);
+        illusion.hp = illusion.max_hp;
+        illusion.abilities.clear();
+        illusion.buffs.clear();
+        illusion.cast_state = None;
+        illusion.state = UnitState::Idle;
+        illusion.target = None;
+        illusion.attack_timer = 0.0;
+        illusion.attack_modifier_state.clear();
+        illusion.prd_states.clear();
+        illusion
     }
 }

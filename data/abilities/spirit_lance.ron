@@ -1,0 +1,31 @@
+// Spirit Lance - Phantom Lancer's targeted projectile
+// Damages, slows, and spawns an illusion at the target.
+//
+// AA Scaling: L1=Dota L1, L2=Dota L2, L3=Dota L4
+// Super (6): +225 cast range, -4 cooldown, +40% illusion damage dealt, bounce
+// Gaben (9): +25% CDR, +45 primary stat (or +15/15/15 for Universal)
+AbilityDef(
+    name: "Spirit Lance",
+    cooldown: [10.0, 9.0, 7.0, 7.0, 7.0, 3.0, 3.0, 3.0, 3.0],
+    mana_cost: [120.0, 120.0, 120.0, 120.0, 120.0, 120.0, 120.0, 120.0, 120.0],
+    cast_point: 0.3,
+    targeting: SingleEnemy,
+    effects: [
+        SpiritLance(
+            damage: [100.0, 160.0, 280.0, 280.0, 280.0, 280.0, 280.0, 280.0, 280.0],
+            slow_pct: [14.0, 21.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0],
+            slow_duration: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0],
+            projectile_speed: 1000.0,
+            illusion_damage_dealt: [0.20, 0.20, 0.20, 0.20, 0.20, 0.60, 0.60, 0.60, 0.60],
+            illusion_damage_taken: 4.0,
+            illusion_duration: [3.5, 5.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0],
+            bounce_radius: [0.0, 0.0, 0.0, 0.0, 0.0, 750.0, 750.0, 750.0, 750.0],
+            bounce_count: [0, 0, 0, 0, 0, 1, 1, 1, 1],
+        ),
+    ],
+    description: "Launches a spirit lance at an enemy, dealing magical damage and slowing. An illusion of the caster spawns at the target.",
+    aoe_shape: None,
+    cast_range: 750.0,
+    cast_behavior: Seek,
+    max_charges: None,
+)

@@ -150,6 +150,8 @@ pub struct Simulation {
     winner: Option<u8>,
     /// RNG for damage variance.
     rng: Rng,
+    /// Units to spawn at end of tick (illusions, etc.).
+    pub units_to_spawn: Vec<Unit>,
 }
 
 /// Apply simple separation force to prevent unit stacking.
@@ -201,6 +203,7 @@ impl Simulation {
             finished: false,
             winner: None,
             rng: Rng::new(seed),
+            units_to_spawn: Vec::new(),
         }
     }
 
@@ -257,6 +260,16 @@ impl Simulation {
         }
         self.tick += 1;
 
+        // Expire illusions
+        for unit in self.units.iter_mut() {
+            if let Some(t) = unit.illusion_expiry_tick
+                && self.tick >= t && unit.is_alive()
+            {
+                unit.hp = 0.0;
+                unit.state = UnitState::Dead;
+            }
+        }
+
         self.step_regen();
         self.step_buffs();
         self.step_casts();
@@ -266,6 +279,11 @@ impl Simulation {
         self.step_projectiles();
         self.check_deaths();
         self.check_round_end();
+
+        // Spawn pending units (illusions)
+        if !self.units_to_spawn.is_empty() {
+            self.units.append(&mut self.units_to_spawn);
+        }
     }
 
     fn step_regen(&mut self) {
@@ -330,6 +348,7 @@ impl Simulation {
                 aa2_data::Attribute::Strength => total_str,
                 aa2_data::Attribute::Agility => total_agi,
                 aa2_data::Attribute::Intelligence => total_int,
+                aa2_data::Attribute::Universal => (total_str + total_agi + total_int) * 0.7,
             };
             unit.damage_min = unit.hero_base_damage_min + primary_val;
             unit.damage_max = unit.hero_base_damage_max + primary_val;
@@ -357,6 +376,10 @@ impl Simulation {
                 CastTickResult::Completed { ability_index, mana_cost } => {
                     self.units[i].mana -= mana_cost;
                     self.units[i].abilities[ability_index].consume();
+                    // Apply CDR to the cooldown that was just set
+                    if self.units[i].cooldown_reduction > 0.0 {
+                        self.units[i].abilities[ability_index].cooldown_remaining *= 1.0 - self.units[i].cooldown_reduction;
+                    }
                     self.units[i].abilities[ability_index].casts += 1;
                     let ability_def = self.units[i].abilities[ability_index].def.clone();
                     let level = self.units[i].abilities[ability_index].level;
@@ -500,7 +523,11 @@ impl Simulation {
                     // Damage block (innate melee: 50% chance to block 16)
                     let blocked = if target_is_melee && self.rng.chance(0.5) { 16.0_f32.min(modified_dmg) } else { 0.0 };
                     let after_block = modified_dmg - blocked;
-                    let actual_dmg = apply_armor(after_block, armor);
+                    let mut actual_dmg = apply_armor(after_block, armor);
+
+                    // Illusion damage modifiers
+                    actual_dmg *= self.units[i].illusion_damage_dealt_pct;
+                    actual_dmg *= self.units[target_idx].illusion_damage_taken_pct;
 
                     if is_melee {
                         self.units[target_idx].hp -= actual_dmg;
@@ -651,7 +678,12 @@ impl Simulation {
                 let target_is_melee = self.units[target_idx].is_melee;
                 let armor = self.units[target_idx].armor;
                 let blocked = if target_is_melee && self.rng.chance(0.5) { 16.0_f32.min(proj.damage) } else { 0.0 };
-                let actual_dmg = apply_armor(proj.damage - blocked, armor);
+                let mut actual_dmg = apply_armor(proj.damage - blocked, armor);
+                // Illusion damage modifiers for projectile hits
+                if let Some(attacker_idx_for_illusion) = self.units.iter().position(|u| u.id == proj.attacker_id) {
+                    actual_dmg *= self.units[attacker_idx_for_illusion].illusion_damage_dealt_pct;
+                }
+                actual_dmg *= self.units[target_idx].illusion_damage_taken_pct;
                 self.units[target_idx].hp -= actual_dmg;
                 // Glaives bonus magical damage
                 let magic_dmg = if proj.bonus_magical_damage > 0.0
@@ -704,6 +736,7 @@ impl Simulation {
 
     fn step_pending_effects(&mut self) {
         use pending::PendingEffectKind;
+        use pending::PendingEffect;
         use combat::apply_magic_resistance;
         use buff::{apply_buff, dispel, Buff, DispelType, StackBehavior, StatModifier, StatusFlags, TickEffect};
 
@@ -722,6 +755,138 @@ impl Simulation {
             let ability_name = self.pending_effects[i].ability_name.clone();
 
             let remove = match &mut self.pending_effects[i].kind {
+                PendingEffectKind::SpiritLanceProjectile {
+                    target_id,
+                    caster_id: proj_caster_id,
+                    caster_team: proj_caster_team,
+                    position,
+                    speed,
+                    damage,
+                    slow_pct,
+                    slow_duration_secs,
+                    illusion_damage_dealt_pct,
+                    illusion_damage_taken_pct,
+                    illusion_duration_ticks,
+                    bounce_radius,
+                    bounces_remaining,
+                    already_hit,
+                } => {
+                    let tid = *target_id;
+                    let spd = *speed;
+                    let dmg = *damage;
+                    let slow_p = *slow_pct;
+                    let slow_dur = *slow_duration_secs;
+                    let ill_dealt = *illusion_damage_dealt_pct;
+                    let ill_taken = *illusion_damage_taken_pct;
+                    let ill_dur = *illusion_duration_ticks;
+                    let br = *bounce_radius;
+                    let bc = *bounces_remaining;
+                    let pcaster_id = *proj_caster_id;
+                    let pcaster_team = *proj_caster_team;
+
+                    // Find target
+                    let target_opt = self.units.iter().find(|u| u.id == tid && u.is_alive());
+                    let Some(target) = target_opt else {
+                        i += 1;
+                        continue;
+                    };
+                    let target_pos = target.position;
+                    let dist = position.distance(target_pos);
+                    let travel = spd * TICK_DURATION;
+
+                    if dist <= travel {
+                        // Hit target
+                        let target_idx = self.units.iter().position(|u| u.id == tid).unwrap();
+                        let is_magic_immune = active_status(&self.units[target_idx].buffs).magic_immune;
+
+                        if !is_magic_immune {
+                            // Deal magical damage
+                            let actual = apply_magic_resistance(dmg, self.units[target_idx].magic_resistance);
+                            self.units[target_idx].hp -= actual;
+                            events.push(CombatEvent::AbilityDamage {
+                                tick, caster_id: pcaster_id, target_id: tid,
+                                ability_name: ability_name.clone(),
+                                damage: actual, damage_type: DamageType::Magical,
+                            });
+
+                            // Apply slow debuff
+                            let slow_ticks = (slow_dur * 30.0) as u32;
+                            let slow_buff = Buff {
+                                name: "spirit_lance_slow".to_string(),
+                                remaining_ticks: slow_ticks,
+                                tick_effect: None,
+                                stacking: StackBehavior::RefreshDuration,
+                                dispel_type: DispelType::BasicDispel,
+                                status: StatusFlags::default(),
+                                stat_modifier: Some(StatModifier {
+                                    bonus_move_speed: -self.units[target_idx].move_speed * slow_p / 100.0,
+                                    ..StatModifier::default()
+                                }),
+                                source_id: pcaster_id,
+                                is_debuff: true,
+                                pierces_magic_immunity: false,
+                            };
+                            apply_buff(&mut self.units[target_idx].buffs, slow_buff);
+                        }
+
+                        // Spawn illusion of caster at target position
+                        let next_id = self.units.iter().map(|u| u.id).max().unwrap_or(0) + 1
+                            + self.units_to_spawn.len() as u32;
+                        if let Some(caster_unit) = self.units.iter().find(|u| u.id == pcaster_id) {
+                            let illusion = Unit::spawn_illusion(
+                                caster_unit, next_id, target_pos,
+                                ill_dealt, ill_taken, ill_dur, tick,
+                            );
+                            self.units_to_spawn.push(illusion);
+                        }
+
+                        // Bounce logic
+                        if bc > 0 && br > 0.0 {
+                            let mut ah = already_hit.clone();
+                            // Find nearest enemy within bounce_radius not already hit
+                            let mut best: Option<(u32, f32, Vec2)> = None;
+                            for u in self.units.iter() {
+                                if u.team == pcaster_team || !u.is_alive() { continue; }
+                                if ah.contains(&u.id) { continue; }
+                                let d = target_pos.distance(u.position);
+                                if d <= br && (best.is_none() || d < best.unwrap().1) {
+                                    best = Some((u.id, d, u.position));
+                                }
+                            }
+                            if let Some((next_tid, _, _)) = best {
+                                ah.push(next_tid);
+                                self.pending_effects.push(PendingEffect {
+                                    caster_id: pcaster_id,
+                                    caster_team: pcaster_team,
+                                    ability_name: ability_name.clone(),
+                                    kind: PendingEffectKind::SpiritLanceProjectile {
+                                        target_id: next_tid,
+                                        caster_id: pcaster_id,
+                                        caster_team: pcaster_team,
+                                        position: target_pos,
+                                        speed: spd,
+                                        damage: dmg,
+                                        slow_pct: slow_p,
+                                        slow_duration_secs: slow_dur,
+                                        illusion_damage_dealt_pct: ill_dealt,
+                                        illusion_damage_taken_pct: ill_taken,
+                                        illusion_duration_ticks: ill_dur,
+                                        bounce_radius: br,
+                                        bounces_remaining: bc - 1,
+                                        already_hit: ah,
+                                    },
+                                    delay_ticks_remaining: 0,
+                                });
+                            }
+                        }
+                        true
+                    } else {
+                        // Move toward target
+                        let dir = (target_pos - *position).normalize();
+                        *position = *position + dir.scale(travel);
+                        false
+                    }
+                }
                 PendingEffectKind::SpearOfMarsTravel {
                     start_pos,
                     direction,

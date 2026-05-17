@@ -6,6 +6,23 @@ use crate::vec2::Vec2;
 /// The kind of pending effect currently active.
 #[derive(Debug, Clone)]
 pub enum PendingEffectKind {
+    /// Spirit Lance: homing projectile that damages, slows, and spawns illusion.
+    SpiritLanceProjectile {
+        target_id: u32,
+        caster_id: u32,
+        caster_team: u8,
+        position: Vec2,
+        speed: f32,
+        damage: f32,
+        slow_pct: f32,
+        slow_duration_secs: f32,
+        illusion_damage_dealt_pct: f32,
+        illusion_damage_taken_pct: f32,
+        illusion_duration_ticks: u32,
+        bounce_radius: f32,
+        bounces_remaining: u32,
+        already_hit: Vec<u32>,
+    },
     /// Burrowstrike: wave travels at speed, hitting units as it reaches them (capsule shape).
     BurrowstrikeTravel {
         start_pos: Vec2,
