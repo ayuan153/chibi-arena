@@ -324,7 +324,10 @@ impl Unit {
         illusion.illusion_damage_taken_pct = damage_taken_pct;
         illusion.illusion_expiry_tick = Some(current_tick + duration_ticks);
         illusion.hp = illusion.max_hp;
-        illusion.abilities.clear();
+        // Keep only passive abilities that work on illusions (crits, lifesteal)
+        illusion.abilities.retain(|a| {
+            a.def.effects.iter().any(|e| e.illusion_interaction() == aa2_data::IllusionInteraction::Full)
+        });
         illusion.buffs.clear();
         illusion.cast_state = None;
         illusion.state = UnitState::Idle;

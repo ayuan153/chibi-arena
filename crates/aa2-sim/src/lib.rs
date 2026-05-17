@@ -335,8 +335,13 @@ impl Simulation {
             }
 
             // Armor from AGI + direct armor modifiers
-            unit.armor = unit::BASE_ARMOR + total_agi * 0.167
-                + reductions.bonus_armor + additions.bonus_armor;
+            // For illusions: ignore flat bonus_armor, only use armor from AGI
+            unit.armor = if unit.is_illusion {
+                unit::BASE_ARMOR + total_agi * 0.167
+            } else {
+                unit::BASE_ARMOR + total_agi * 0.167
+                    + reductions.bonus_armor + additions.bonus_armor
+            };
 
             // Attack speed and interval from AGI
             let total_as = (100.0 + total_agi + reductions.bonus_attack_speed + additions.bonus_attack_speed).clamp(20.0, 700.0);
@@ -344,6 +349,8 @@ impl Simulation {
             unit.attack_point = unit::compute_effective_attack_point(unit.base_attack_point, total_as);
 
             // Damage from primary attribute
+            // NOTE: Illusions only benefit from base damage (from attributes).
+            // Any future bonus_damage from items/buffs should be skipped for illusions.
             let primary_val = match unit.primary_attribute {
                 aa2_data::Attribute::Strength => total_str,
                 aa2_data::Attribute::Agility => total_agi,

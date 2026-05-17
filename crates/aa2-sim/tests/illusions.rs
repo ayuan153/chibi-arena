@@ -107,7 +107,7 @@ fn test_illusion_spawns_on_spirit_lance() {
     let illusion = &sim.units[2];
     assert!(illusion.is_illusion);
     assert_eq!(illusion.team, 0); // same team as caster
-    assert!(illusion.abilities.is_empty()); // illusions can't cast
+    assert!(illusion.abilities.is_empty()); // Spirit Lance is Disabled for illusions
 }
 
 #[test]
@@ -304,17 +304,105 @@ fn test_illusion_can_crit_with_chaos_strike() {
         def: cs, cooldown_remaining: 0.0, level: 3, casts: 0, charges: None,
     });
 
-    let illusion = Unit::spawn_illusion(&source, 10, Vec2::new(0.0, 0.0), 0.20, 4.0, 300, 0);
+    let illusion = Unit::spawn_illusion(&source, 10, Vec2::new(0.0, 0.0), 1.0, 1.0, 9000, 0);
 
-    // Illusion should have the Chaos Strike ability (copied from source)
-    // But wait — our spawn_illusion clears abilities. That's correct for ACTIVE abilities,
-    // but passive attack modifiers that work on illusions should be kept.
-    // Let's check: does the illusion have abilities?
-    assert!(illusion.abilities.is_empty(), "Illusion abilities should be cleared by spawn_illusion");
+    // Illusion should retain Chaos Strike (Full interaction)
+    assert!(!illusion.abilities.is_empty(), "Illusion should retain Chaos Strike (Full-tagged)");
+    assert_eq!(illusion.abilities[0].def.name, "Chaos Strike");
 
-    // The issue: illusions need to KEEP passive abilities that work on them.
-    // This is a design decision: either keep them in abilities vec, or check source hero.
-    // For now, let's verify the current behavior and note what needs to change.
+    // Run combat with many seeds to verify at least one crit happens
+    let mut any_crit = false;
+    for seed in 0..50 {
+        let ill = illusion.clone();
+        let base_dmg = ill.damage_min; // base damage for comparison
+        let enemy = Unit::from_hero_def(&hero, 1, 1, Vec2::new(100.0, 0.0));
+        let mut sim = Simulation::with_seed(vec![ill, enemy], seed);
+
+        for _ in 0..200 {
+            if sim.is_finished() { break; }
+            sim.step();
+        }
+
+        // Check if any attack dealt more than base damage (= crit happened)
+        for event in &sim.combat_log {
+            if let CombatEvent::Attack { attacker_id: 10, damage, .. } = event {
+                // A crit should deal noticeably more than base after armor
+                if *damage > base_dmg * 0.9 {
+                    any_crit = true;
+                    break;
+                }
+            }
+        }
+        if any_crit { break; }
+    }
+    assert!(any_crit, "Illusion with Chaos Strike should crit at least once across 50 seeds");
+}
+
+/// Illusions ignore flat bonus_armor from buffs.
+#[test]
+fn test_illusion_ignores_flat_armor_bonus() {
+    use aa2_sim::buff::{Buff, StackBehavior, DispelType, StatusFlags, StatModifier};
+
+    let hero = make_hero();
+    let source = Unit::from_hero_def(&hero, 0, 0, Vec2::new(0.0, 0.0));
+    let mut illusion = Unit::spawn_illusion(&source, 10, Vec2::new(0.0, 0.0), 0.20, 4.0, 9000, 0);
+    let armor_before = illusion.armor;
+
+    // Apply a buff with +10 bonus_armor
+    illusion.buffs.push(Buff {
+        name: "armor_buff".to_string(),
+        remaining_ticks: 90,
+        tick_effect: None,
+        stacking: StackBehavior::RefreshDuration,
+        dispel_type: DispelType::BasicDispel,
+        status: StatusFlags::default(),
+        stat_modifier: Some(StatModifier { bonus_armor: 10.0, ..StatModifier::default() }),
+        source_id: 0,
+        is_debuff: false,
+        pierces_magic_immunity: false,
+    });
+
+    let enemy = Unit::from_hero_def(&hero, 1, 1, Vec2::new(9999.0, 0.0));
+    let mut sim = Simulation::new(vec![illusion, enemy]);
+    sim.step(); // triggers step_buffs
+
+    // Illusion armor should NOT have increased from the flat bonus
+    assert!((sim.units[0].armor - armor_before).abs() < 0.01,
+        "Illusion armor should ignore flat bonus_armor. Before: {armor_before}, after: {}", sim.units[0].armor);
+}
+
+/// Illusions DO benefit from AGI-derived armor (bonus_agi increases armor).
+#[test]
+fn test_illusion_keeps_agi_armor() {
+    use aa2_sim::buff::{Buff, StackBehavior, DispelType, StatusFlags, StatModifier};
+
+    let hero = make_hero();
+    let source = Unit::from_hero_def(&hero, 0, 0, Vec2::new(0.0, 0.0));
+    let mut illusion = Unit::spawn_illusion(&source, 10, Vec2::new(0.0, 0.0), 0.20, 4.0, 9000, 0);
+    let armor_before = illusion.armor;
+
+    // Apply a buff with +20 bonus_agi (should add 20 * 0.167 = 3.34 armor)
+    illusion.buffs.push(Buff {
+        name: "agi_buff".to_string(),
+        remaining_ticks: 90,
+        tick_effect: None,
+        stacking: StackBehavior::RefreshDuration,
+        dispel_type: DispelType::BasicDispel,
+        status: StatusFlags::default(),
+        stat_modifier: Some(StatModifier { bonus_agi: 20.0, ..StatModifier::default() }),
+        source_id: 0,
+        is_debuff: false,
+        pierces_magic_immunity: false,
+    });
+
+    let enemy = Unit::from_hero_def(&hero, 1, 1, Vec2::new(9999.0, 0.0));
+    let mut sim = Simulation::new(vec![illusion, enemy]);
+    sim.step(); // triggers step_buffs
+
+    let expected_increase = 20.0 * 0.167;
+    let actual_increase = sim.units[0].armor - armor_before;
+    assert!((actual_increase - expected_increase).abs() < 0.01,
+        "Illusion armor should increase from AGI. Expected +{expected_increase}, got +{actual_increase}");
 }
 
 /// Fury Swipes does NOT work on illusions — no stacking damage.
@@ -329,9 +417,9 @@ fn test_illusion_cannot_use_fury_swipes() {
         def: fs, cooldown_remaining: 0.0, level: 3, casts: 0, charges: None,
     });
 
-    // Spawn illusion — it should NOT have Fury Swipes (cleared)
+    // Spawn illusion — it should NOT have Fury Swipes (Disabled interaction)
     let illusion = Unit::spawn_illusion(&source, 10, Vec2::new(0.0, 0.0), 0.20, 4.0, 300, 0);
-    assert!(illusion.abilities.is_empty(), "Illusion should not have abilities");
+    assert!(illusion.abilities.is_empty(), "Illusion should not retain Disabled abilities like Fury Swipes");
 
     // Even if we manually give it FS, the illusion check should skip it
     let mut test_illusion = illusion.clone();
