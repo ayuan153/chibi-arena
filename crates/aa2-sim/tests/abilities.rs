@@ -2421,3 +2421,128 @@ fn test_spear_gaben_bounce() {
     let hero_max_hp = Unit::from_hero_def(&hero, 99, 1, Vec2::new(0.0, 0.0)).max_hp;
     assert!(t2.hp < hero_max_hp, "Second target should have taken damage from spear");
 }
+
+/// Gaben Spear of Mars: after bouncing off wall, spear impales and pins a SECOND unit.
+#[test]
+fn test_spear_gaben_bounce_impales_second_target() {
+    let hero = make_hero();
+    let ability = spear_of_mars_ability(9);
+    let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 9);
+    let mut caster = Unit::from_config(&config_a, 0, 0, Vec2::new(200.0, 1000.0));
+    caster.facing = 0.0; // facing right
+    caster.mana = 500.0;
+
+    // First target: in path, will be impaled and pinned at right wall (x=2000)
+    let target1 = Unit::from_hero_def(&hero, 1, 1, Vec2::new(500.0, 1000.0));
+    // Second target: near right wall, after bounce (spear goes left) it's in the return path
+    let target2 = Unit::from_hero_def(&hero, 2, 1, Vec2::new(1700.0, 1000.0));
+
+    let mut sim = Simulation::with_seed(vec![caster, target1, target2], 42);
+
+    // Track if targets were ever stunned
+    let mut t1_was_stunned = false;
+    let mut t2_was_stunned = false;
+    for _ in 0..300 {
+        sim.step();
+        if sim.units[1].buffs.iter().any(|b| b.status.stunned) { t1_was_stunned = true; }
+        if sim.units[2].buffs.iter().any(|b| b.status.stunned) { t2_was_stunned = true; }
+        if sim.is_finished() { break; }
+    }
+
+    // First target should be pinned at right wall and was stunned
+    assert!(sim.units[1].position.x >= 1990.0,
+        "First target should be pinned at right wall, got x={:.0}", sim.units[1].position.x);
+    assert!(t1_was_stunned, "First target should have been stunned from wall pin");
+
+    // Second target should also have been hit by the bounced spear
+    let t2_took_damage = sim.units[2].hp < Unit::from_hero_def(&hero, 99, 1, Vec2::new(0.0, 0.0)).max_hp;
+    assert!(t2_took_damage,
+        "Second target should be hit by bounced spear. HP={:.0}", sim.units[2].hp);
+
+    // Second target should have been stunned (impaled on bounce)
+    assert!(t2_was_stunned,
+        "Second target should have been stunned (impaled on bounce). pos=({:.0},{:.0})",
+        sim.units[2].position.x, sim.units[2].position.y);
+}
+/// Spear of Mars is blocked by magic immunity — no impale, no damage, no drag.
+#[test]
+fn test_spear_blocked_by_magic_immunity() {
+    let hero = make_hero();
+    let ability = spear_of_mars_ability(3);
+    let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 3);
+    let mut caster = Unit::from_config(&config_a, 0, 0, Vec2::new(100.0, 1000.0));
+    caster.facing = 0.0;
+    caster.mana = 500.0;
+
+    // Target with magic immunity (Rage)
+    let mut target = Unit::from_hero_def(&hero, 1, 1, Vec2::new(400.0, 1000.0));
+    target.buffs.push(aa2_sim::buff::Buff {
+        name: "rage".to_string(),
+        remaining_ticks: 300,
+        tick_effect: None,
+        stacking: aa2_sim::buff::StackBehavior::RefreshDuration,
+        dispel_type: aa2_sim::buff::DispelType::Undispellable,
+        status: aa2_sim::buff::StatusFlags { magic_immune: true, ..Default::default() },
+        stat_modifier: None,
+        source_id: 1,
+        is_debuff: false,
+        pierces_magic_immunity: false,
+    });
+    let target_hp_before = target.hp;
+    let target_pos_before = target.position;
+
+    let mut sim = Simulation::new(vec![caster, target]);
+
+    for _ in 0..60 {
+        sim.step();
+    }
+
+    // Target should NOT take spear (magical) damage — only physical auto-attacks allowed
+    let spear_damage_events = sim.combat_log.iter().filter(|e| {
+        matches!(e, CombatEvent::AbilityDamage { target_id: 1, .. })
+    }).count();
+    assert_eq!(spear_damage_events, 0,
+        "Magic immune target should not take spear ability damage");
+
+    // Target should NOT be dragged AWAY from caster (spear pushes in cast direction = right)
+    // Normal movement toward caster (left) is fine
+    assert!(sim.units[1].position.x <= target_pos_before.x + 5.0,
+        "Magic immune target should not be dragged rightward by spear: x={:.0} vs {:.0}",
+        sim.units[1].position.x, target_pos_before.x);
+
+    // Target should NOT be stunned
+    let stunned = aa2_sim::buff::active_status(&sim.units[1].buffs).stunned;
+    assert!(!stunned, "Magic immune target should not be stunned by spear");
+}
+
+/// Spear of Mars: impaled unit is disabled (stunned) during the drag travel.
+#[test]
+fn test_spear_drag_disables_unit() {
+    let hero = make_hero();
+    let ability = spear_of_mars_ability(3);
+    let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 3);
+    let mut caster = Unit::from_config(&config_a, 0, 0, Vec2::new(100.0, 1000.0));
+    caster.facing = 0.0;
+    caster.mana = 500.0;
+
+    // Target in path — will be impaled
+    let target = Unit::from_hero_def(&hero, 1, 1, Vec2::new(400.0, 1000.0));
+
+    let mut sim = Simulation::new(vec![caster, target]);
+
+    // Run until spear hits the target (should be ~tick 3-5 at 1400 u/s over 300 units)
+    let mut drag_stun_found = false;
+    for _ in 0..30 {
+        sim.step();
+        // Check if target is stunned while being dragged (before wall pin)
+        let is_stunned = aa2_sim::buff::active_status(&sim.units[1].buffs).stunned;
+        let is_moving = sim.units[1].position.x > 400.0 + 10.0; // has been dragged
+        if is_stunned && is_moving {
+            drag_stun_found = true;
+            break;
+        }
+    }
+
+    assert!(drag_stun_found,
+        "Impaled unit should be stunned (disabled) while being dragged by the spear");
+}

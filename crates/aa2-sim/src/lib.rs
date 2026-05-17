@@ -775,7 +775,9 @@ impl Simulation {
                             continue;
                         }
                         let uid = u.id;
-                        if impaled_unit.is_none() && !pass_through_hit.contains(&uid) {
+                        // Skip magic immune units (spear doesn't pierce immunity)
+                        let is_magic_immune = active_status(&u.buffs).magic_immune;
+                        if impaled_unit.is_none() && !pass_through_hit.contains(&uid) && !is_magic_immune {
                             // IMPALE first hero hit
                             *impaled_unit = Some(uid);
                             pass_through_hit.push(uid);
@@ -873,6 +875,10 @@ impl Simulation {
                             *direction = Vec2::new(nx, ny).normalize();
                             *start_pos = clamped_pos;
                             *current_distance = 0.0;
+                            // Keep pinned unit in pass_through_hit (don't re-impale them)
+                            // but allow new units to be impaled on the bounce
+                            let pinned_id = *impaled_unit;
+                            pass_through_hit.retain(|id| Some(*id) == pinned_id);
                             *impaled_unit = None;
                             let _ = wall_normal; // used above via component reflection
                             false
