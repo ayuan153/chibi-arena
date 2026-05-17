@@ -87,6 +87,10 @@ pub(crate) fn process_attack_modifiers(
         if level == 0 { continue; }
         let effects = attacker.abilities[ai].def.effects.clone();
         for effect in &effects {
+            // Illusions skip effects that don't work on them
+            if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
+                continue;
+            }
             match effect {
                 Effect::ChaosStrike { proc_chance, crit_min, crit_max, lifesteal } => {
                     let chance = value_at_level(proc_chance, level);
@@ -169,6 +173,9 @@ pub fn post_attack_effects(
         if level == 0 { continue; }
         let effects = attacker.abilities[ai].def.effects.clone();
         for effect in &effects {
+            if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
+                continue;
+            }
             if let Effect::EssenceShift { str_steal, agi_steal, int_steal, agi_gain, duration } = effect {
                 let dur_secs = value_at_level(duration, level);
                 let dur_ticks = (dur_secs * TICK_RATE) as u32;
@@ -225,6 +232,9 @@ pub fn post_attack_effects(
         if level == 0 { continue; }
         let effects = attacker.abilities[ai].def.effects.clone();
         for effect in &effects {
+            if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
+                continue;
+            }
             if let Effect::FurySwipes { armor_reduction_per_stack, stack_duration, .. } = effect {
                 let armor_red = value_at_level(armor_reduction_per_stack, level);
                 if armor_red > 0.0 {
@@ -261,6 +271,9 @@ pub fn post_attack_effects(
             if level == 0 { continue; }
             let effects = attacker.abilities[ai].def.effects.clone();
             for effect in &effects {
+                if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
+                    continue;
+                }
                 if let Effect::GlaivesOfWisdom { int_steal_per_attack, steal_duration, mana_cost, .. } = effect {
                     let steal = value_at_level(int_steal_per_attack, level);
                     if steal <= 0.0 { continue; }

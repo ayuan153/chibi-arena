@@ -1,5 +1,18 @@
 use serde::{Deserialize, Serialize};
 
+/// How an effect interacts with illusions.
+/// Determines whether illusions can use/benefit from this effect.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub enum IllusionInteraction {
+    /// Works fully on illusions (crits, lifesteal, mana break, curse of avernus)
+    Full,
+    /// Does NOT work on illusions (fury swipes, essence shift, glaives, bash, cleave)
+    #[default]
+    Disabled,
+    /// Illusion carries this as an aura to nearby allies (radiance, inner beast)
+    CarriesAura,
+}
+
 /// How the AI handles targeting for this ability.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub enum CastBehavior {
@@ -325,4 +338,20 @@ pub fn resolve_loadout(loadout: &Loadout, data_dir: &std::path::Path) -> Result<
         config.abilities.push((ability, *level));
     }
     Ok(config)
+}
+
+impl Effect {
+    /// Whether this effect works on illusions.
+    pub fn illusion_interaction(&self) -> IllusionInteraction {
+        match self {
+            // Crits work on illusions
+            Effect::ChaosStrike { .. } => IllusionInteraction::Full,
+            // Attack modifiers that do NOT work on illusions
+            Effect::FurySwipes { .. } => IllusionInteraction::Disabled,
+            Effect::EssenceShift { .. } => IllusionInteraction::Disabled,
+            Effect::GlaivesOfWisdom { .. } => IllusionInteraction::Disabled,
+            // All other effects: disabled by default for illusions
+            _ => IllusionInteraction::Disabled,
+        }
+    }
 }
