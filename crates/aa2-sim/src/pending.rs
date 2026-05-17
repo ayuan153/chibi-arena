@@ -44,6 +44,24 @@ pub enum PendingEffectKind {
         /// Ticks until the next pulse fires.
         ticks_until_next_pulse: u32,
     },
+    /// Spear of Mars: traveling projectile that impales first hero and drags to wall.
+    SpearOfMarsTravel {
+        start_pos: Vec2,
+        direction: Vec2,
+        travel_speed: f32,
+        max_range: f32,
+        current_distance: f32,
+        width: f32,
+        damage: f32,
+        stun_duration_secs: f32,
+        impaled_unit: Option<u32>,
+        pass_through_hit: Vec<u32>,
+        fire_trail_dps: f32,
+        fire_trail_slow: f32,
+        fire_trail_duration_secs: f32,
+        bounces_remaining: u32,
+        fire_trail_positions: Vec<Vec2>,
+    },
     /// Ravage: expanding wave that stuns units as it reaches them.
     ExpandingWave {
         /// Magical damage dealt to each unit hit.

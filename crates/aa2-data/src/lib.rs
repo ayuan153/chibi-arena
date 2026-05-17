@@ -126,6 +126,18 @@ pub enum Effect {
     Rage {
         duration: Vec<f32>,
     },
+    /// Spear of Mars: projectile that impales first hero, drags to wall, damages pass-through.
+    SpearOfMars {
+        damage: Vec<f32>,
+        stun_duration: Vec<f32>,
+        range: Vec<f32>,
+        travel_speed: f32,
+        width: f32,
+        fire_trail_dps: Vec<f32>,
+        fire_trail_slow: Vec<f32>,
+        fire_trail_duration: Vec<f32>,
+        wall_bounces: Vec<u32>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -29,6 +29,22 @@ pub const TICK_RATE: f32 = 30.0;
 /// Duration of one tick in seconds.
 pub const TICK_DURATION: f32 = 1.0 / 30.0;
 
+/// Arena dimensions.
+pub const ARENA_WIDTH: f32 = 2000.0;
+pub const ARENA_HEIGHT: f32 = 2000.0;
+pub const ARENA_MIN: Vec2 = Vec2 { x: 0.0, y: 0.0 };
+pub const ARENA_MAX: Vec2 = Vec2 { x: 2000.0, y: 2000.0 };
+
+/// Clamp a position to arena bounds. Returns (clamped_pos, hit_wall).
+pub fn clamp_to_arena(pos: Vec2) -> (Vec2, bool) {
+    let clamped = Vec2::new(
+        pos.x.clamp(0.0, ARENA_WIDTH),
+        pos.y.clamp(0.0, ARENA_HEIGHT),
+    );
+    let hit = clamped.x != pos.x || clamped.y != pos.y;
+    (clamped, hit)
+}
+
 /// Tick counter type.
 pub type Tick = u32;
 
@@ -159,6 +175,10 @@ pub fn apply_separation(units: &mut [Unit]) {
                 let push = dir.scale(overlap * 0.5);
                 units[i].position = units[i].position - push;
                 units[j].position = units[j].position + push;
+                let (ci, _) = crate::clamp_to_arena(units[i].position);
+                units[i].position = ci;
+                let (cj, _) = crate::clamp_to_arena(units[j].position);
+                units[j].position = cj;
             }
         }
     }
@@ -602,6 +622,8 @@ impl Simulation {
         let dir = (target_pos - unit.position).normalize();
         let step = unit.move_speed * TICK_DURATION;
         unit.position = unit.position + dir.scale(step);
+        let (clamped, _) = clamp_to_arena(unit.position);
+        unit.position = clamped;
         // Also update facing
         unit.facing = dir.angle();
     }
@@ -683,7 +705,7 @@ impl Simulation {
     fn step_pending_effects(&mut self) {
         use pending::PendingEffectKind;
         use combat::apply_magic_resistance;
-        use buff::{apply_buff, dispel, Buff, DispelType, StackBehavior, StatusFlags};
+        use buff::{apply_buff, dispel, Buff, DispelType, StackBehavior, StatModifier, StatusFlags, TickEffect};
 
         let tick = self.tick;
         let mut events = Vec::new();
@@ -700,6 +722,234 @@ impl Simulation {
             let ability_name = self.pending_effects[i].ability_name.clone();
 
             let remove = match &mut self.pending_effects[i].kind {
+                PendingEffectKind::SpearOfMarsTravel {
+                    start_pos,
+                    direction,
+                    travel_speed,
+                    max_range,
+                    current_distance,
+                    width,
+                    damage,
+                    stun_duration_secs,
+                    impaled_unit,
+                    pass_through_hit,
+                    fire_trail_dps,
+                    fire_trail_slow,
+                    fire_trail_duration_secs,
+                    bounces_remaining,
+                    fire_trail_positions,
+                } => {
+                    let spd = *travel_speed;
+                    let w = *width;
+                    let dmg = *damage;
+                    let stun_secs = *stun_duration_secs;
+                    let ft_dps = *fire_trail_dps;
+                    let ft_slow = *fire_trail_slow;
+                    let _ft_dur = *fire_trail_duration_secs;
+
+                    // Advance spear
+                    let step = spd * TICK_DURATION;
+                    *current_distance += step;
+                    let cur_dist = *current_distance;
+                    let dir = *direction;
+                    let sp = *start_pos;
+                    let mr = *max_range;
+
+                    let spear_pos = sp + dir.scale(cur_dist);
+
+                    // Fire trail: record position every ~50 units
+                    if ft_dps > 0.0 {
+                        let should_record = fire_trail_positions.is_empty()
+                            || fire_trail_positions.last().unwrap().distance(spear_pos) >= 50.0;
+                        if should_record {
+                            fire_trail_positions.push(spear_pos);
+                        }
+                    }
+
+                    // Check enemies
+                    for u in self.units.iter_mut() {
+                        if u.team == caster_team || !u.is_alive() || u.id == caster_id {
+                            continue;
+                        }
+                        if u.position.distance(spear_pos) > w {
+                            continue;
+                        }
+                        let uid = u.id;
+                        if impaled_unit.is_none() && !pass_through_hit.contains(&uid) {
+                            // IMPALE first hero hit
+                            *impaled_unit = Some(uid);
+                            pass_through_hit.push(uid);
+                            // Apply brief disable during drag
+                            let drag_buff = Buff {
+                                name: "spear_drag".to_string(),
+                                remaining_ticks: ((mr - cur_dist + step) / spd * 30.0) as u32 + 30,
+                                tick_effect: None,
+                                stacking: StackBehavior::RefreshDuration,
+                                dispel_type: DispelType::StrongDispel,
+                                status: StatusFlags { stunned: true, ..StatusFlags::default() },
+                                stat_modifier: None,
+                                source_id: caster_id,
+                                is_debuff: true,
+                                pierces_magic_immunity: false,
+                            };
+                            apply_buff(&mut u.buffs, drag_buff);
+                        } else if !pass_through_hit.contains(&uid) {
+                            // PASS-THROUGH damage
+                            pass_through_hit.push(uid);
+                            let actual = if active_status(&u.buffs).magic_immune {
+                                0.0
+                            } else {
+                                apply_magic_resistance(dmg, u.magic_resistance)
+                            };
+                            if actual > 0.0 {
+                                u.hp -= actual;
+                                events.push(CombatEvent::AbilityDamage {
+                                    tick, caster_id, target_id: uid,
+                                    ability_name: ability_name.clone(),
+                                    damage: actual, damage_type: DamageType::Magical,
+                                });
+                            }
+                        }
+                    }
+
+                    // Move impaled unit to spear position
+                    if let Some(imp_id) = *impaled_unit
+                        && let Some(u) = self.units.iter_mut().find(|u| u.id == imp_id && u.is_alive()) {
+                            u.position = spear_pos;
+                        }
+
+                    // Check wall hit
+                    let (clamped_pos, hit_wall) = clamp_to_arena(spear_pos);
+
+                    if hit_wall {
+                        // Pin impaled unit at wall
+                        if let Some(imp_id) = *impaled_unit
+                            && let Some(u) = self.units.iter_mut().find(|u| u.id == imp_id && u.is_alive()) {
+                                u.position = clamped_pos;
+                                // Remove drag buff, apply wall stun
+                                u.buffs.retain(|b| b.name != "spear_drag");
+                                let stun_ticks = (stun_secs * 30.0) as u32;
+                                let stun_buff = Buff {
+                                    name: "stun".to_string(),
+                                    remaining_ticks: stun_ticks,
+                                    tick_effect: None,
+                                    stacking: StackBehavior::RefreshDuration,
+                                    dispel_type: DispelType::StrongDispel,
+                                    status: StatusFlags { stunned: true, ..StatusFlags::default() },
+                                    stat_modifier: None,
+                                    source_id: caster_id,
+                                    is_debuff: true,
+                                    pierces_magic_immunity: false,
+                                };
+                                apply_buff(&mut u.buffs, stun_buff);
+                                // Deal damage on pin
+                                let actual = if active_status(&u.buffs).magic_immune {
+                                    0.0
+                                } else {
+                                    apply_magic_resistance(dmg, u.magic_resistance)
+                                };
+                                if actual > 0.0 {
+                                    u.hp -= actual;
+                                    events.push(CombatEvent::AbilityDamage {
+                                        tick, caster_id, target_id: imp_id,
+                                        ability_name: ability_name.clone(),
+                                        damage: actual, damage_type: DamageType::Magical,
+                                    });
+                                }
+                            }
+
+                        // Gaben bounce
+                        if *bounces_remaining > 0 {
+                            *bounces_remaining -= 1;
+                            // Reflect direction off wall
+                            let wall_normal = if clamped_pos.x <= 0.0 || clamped_pos.x >= ARENA_WIDTH {
+                                Vec2::new(-dir.x.signum(), 0.0)
+                            } else {
+                                Vec2::new(0.0, -dir.y.signum())
+                            };
+                            // Corner case: both axes clamped
+                            let nx = if spear_pos.x != clamped_pos.x { -dir.x } else { dir.x };
+                            let ny = if spear_pos.y != clamped_pos.y { -dir.y } else { dir.y };
+                            *direction = Vec2::new(nx, ny).normalize();
+                            *start_pos = clamped_pos;
+                            *current_distance = 0.0;
+                            *impaled_unit = None;
+                            let _ = wall_normal; // used above via component reflection
+                            false
+                        } else {
+                            // Apply fire trail debuff to all hit units
+                            if ft_dps > 0.0 {
+                                let ft_ticks = (2.0 * 30.0) as u32; // 2s linger
+                                for &uid in pass_through_hit.iter() {
+                                    if let Some(u) = self.units.iter_mut().find(|u| u.id == uid && u.is_alive()) {
+                                        let trail_buff = Buff {
+                                            name: "fire_trail".to_string(),
+                                            remaining_ticks: ft_ticks,
+                                            tick_effect: Some(TickEffect {
+                                                damage: ft_dps / 30.0, // per-tick damage
+                                                damage_type: DamageType::Magical,
+                                                interval_ticks: 1,
+                                                ticks_until_next: 1,
+                                            }),
+                                            stacking: StackBehavior::RefreshDuration,
+                                            dispel_type: DispelType::BasicDispel,
+                                            status: StatusFlags::default(),
+                                            stat_modifier: Some(StatModifier {
+                                                bonus_move_speed: -u.move_speed * ft_slow,
+                                                ..StatModifier::default()
+                                            }),
+                                            source_id: caster_id,
+                                            is_debuff: true,
+                                            pierces_magic_immunity: false,
+                                        };
+                                        apply_buff(&mut u.buffs, trail_buff);
+                                    }
+                                }
+                            }
+                            true
+                        }
+                    } else if cur_dist >= mr {
+                        // Spear expired without wall hit — release impaled unit (no stun)
+                        if let Some(imp_id) = *impaled_unit
+                            && let Some(u) = self.units.iter_mut().find(|u| u.id == imp_id && u.is_alive()) {
+                                u.buffs.retain(|b| b.name != "spear_drag");
+                                let (cp, _) = clamp_to_arena(u.position);
+                                u.position = cp;
+                            }
+                        // Apply fire trail debuff
+                        if ft_dps > 0.0 {
+                            let ft_ticks = (2.0 * 30.0) as u32;
+                            for &uid in pass_through_hit.iter() {
+                                if let Some(u) = self.units.iter_mut().find(|u| u.id == uid && u.is_alive()) {
+                                    let trail_buff = Buff {
+                                        name: "fire_trail".to_string(),
+                                        remaining_ticks: ft_ticks,
+                                        tick_effect: Some(TickEffect {
+                                            damage: ft_dps / 30.0,
+                                            damage_type: DamageType::Magical,
+                                            interval_ticks: 1,
+                                            ticks_until_next: 1,
+                                        }),
+                                        stacking: StackBehavior::RefreshDuration,
+                                        dispel_type: DispelType::BasicDispel,
+                                        status: StatusFlags::default(),
+                                        stat_modifier: Some(StatModifier {
+                                            bonus_move_speed: -u.move_speed * ft_slow,
+                                            ..StatModifier::default()
+                                        }),
+                                        source_id: caster_id,
+                                        is_debuff: true,
+                                        pierces_magic_immunity: false,
+                                    };
+                                    apply_buff(&mut u.buffs, trail_buff);
+                                }
+                            }
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                }
                 PendingEffectKind::BurrowstrikeTravel {
                     start_pos,
                     end_pos,
@@ -737,7 +987,8 @@ impl Simulation {
                         sp.y + (ep.y - sp.y) * t,
                     );
                     if let Some(caster) = self.units.iter_mut().find(|u| u.id == caster_id) {
-                        caster.position = caster_new_pos;
+                        let (cp, _) = clamp_to_arena(caster_new_pos);
+                        caster.position = cp;
                     }
 
                     // Current wave front position

@@ -2245,3 +2245,179 @@ fn test_glaives_blocked_by_magic_immunity() {
     assert!(damage_taken < 50.0,
         "Damage ({:.1}) should be only physical (no Glaives magical bonus)", damage_taken);
 }
+
+// ============================================================
+// Arena Bounds Tests
+// ============================================================
+
+#[test]
+fn test_arena_bounds_clamp() {
+    use aa2_sim::clamp_to_arena;
+
+    // Inside bounds — no clamping
+    let (pos, hit) = clamp_to_arena(Vec2::new(500.0, 500.0));
+    assert_eq!(pos, Vec2::new(500.0, 500.0));
+    assert!(!hit);
+
+    // Outside left
+    let (pos, hit) = clamp_to_arena(Vec2::new(-50.0, 500.0));
+    assert_eq!(pos, Vec2::new(0.0, 500.0));
+    assert!(hit);
+
+    // Outside right
+    let (pos, hit) = clamp_to_arena(Vec2::new(2100.0, 500.0));
+    assert_eq!(pos, Vec2::new(2000.0, 500.0));
+    assert!(hit);
+
+    // Outside top
+    let (pos, hit) = clamp_to_arena(Vec2::new(500.0, 2100.0));
+    assert_eq!(pos, Vec2::new(500.0, 2000.0));
+    assert!(hit);
+
+    // Outside bottom
+    let (pos, hit) = clamp_to_arena(Vec2::new(500.0, -10.0));
+    assert_eq!(pos, Vec2::new(500.0, 0.0));
+    assert!(hit);
+
+    // Unit can't move outside bounds via move_toward
+    let hero = make_hero();
+    let u0 = Unit::from_hero_def(&hero, 0, 0, Vec2::new(10.0, 1000.0));
+    let u1 = Unit::from_hero_def(&hero, 1, 1, Vec2::new(1990.0, 1000.0));
+    let mut sim = Simulation::new(vec![u0, u1]);
+    // Run many ticks — units should never leave bounds
+    for _ in 0..300 {
+        sim.step();
+        for u in &sim.units {
+            assert!(u.position.x >= 0.0 && u.position.x <= 2000.0);
+            assert!(u.position.y >= 0.0 && u.position.y <= 2000.0);
+        }
+    }
+}
+
+// ============================================================
+// Spear of Mars Tests
+// ============================================================
+
+fn spear_of_mars_ability(_level: u8) -> AbilityDef {
+    aa2_data::load_ability_def(&data_path("abilities/spear_of_mars.ron")).unwrap()
+}
+
+/// Helper: create a simulation with a caster (team 0) and target (team 1) at given positions.
+/// Caster has Spear of Mars at given level, facing toward target.
+fn spear_sim(caster_pos: Vec2, target_pos: Vec2, level: u8) -> Simulation {
+    let hero = make_hero();
+    let ability = spear_of_mars_ability(level);
+    let config_a = UnitConfig::new(hero.clone()).with_ability(ability, level);
+    let mut caster = Unit::from_config(&config_a, 0, 0, caster_pos);
+    let dir = (target_pos - caster_pos).normalize();
+    caster.facing = dir.angle();
+    let target = Unit::from_hero_def(&hero, 1, 1, target_pos);
+    Simulation::new(vec![caster, target])
+}
+
+#[test]
+fn test_spear_pins_to_wall() {
+    // Place caster at center, target near right wall
+    // Spear should impale target and push them into the wall, applying stun
+    let caster_pos = Vec2::new(1000.0, 1000.0);
+    let target_pos = Vec2::new(1900.0, 1000.0); // near right wall
+    let mut sim = spear_sim(caster_pos, target_pos, 3); // level 3: range 1200
+
+    // Run until spear completes (range 1200 at 1400 u/s = ~0.86s = ~26 ticks + cast point)
+    for _ in 0..60 {
+        sim.step();
+    }
+
+    // Target should be at or near the wall (x=2000)
+    let target = &sim.units[1];
+    assert!(target.position.x >= 1990.0, "Target should be pinned at wall, got x={}", target.position.x);
+
+    // Target should be stunned
+    let has_stun = target.buffs.iter().any(|b| b.name == "stun" && b.status.stunned);
+    assert!(has_stun, "Target should be stunned after wall pin");
+}
+
+#[test]
+fn test_spear_no_wall_no_stun() {
+    // Place caster and target in center — spear won't reach a wall within range
+    let caster_pos = Vec2::new(1000.0, 1000.0);
+    let target_pos = Vec2::new(1100.0, 1000.0); // 100 units away, wall is 900+ away
+    let mut sim = spear_sim(caster_pos, target_pos, 1); // level 1: range 900
+
+    // Run until spear expires
+    for _ in 0..60 {
+        sim.step();
+    }
+
+    // Target should NOT have wall stun (only the brief drag disable which expires)
+    let target = &sim.units[1];
+    let has_wall_stun = target.buffs.iter().any(|b| b.name == "stun" && b.status.stunned);
+    assert!(!has_wall_stun, "Target should NOT be stunned without wall pin");
+
+    // Target should have been displaced (dragged along spear path)
+    assert!(target.position.x > 1100.0 + 100.0, "Target should have been dragged, got x={}", target.position.x);
+}
+
+#[test]
+fn test_spear_pass_through_damage() {
+    // Place two enemies in the spear path — first gets impaled, second takes pass-through damage
+    let hero = make_hero();
+    let ability = spear_of_mars_ability(3);
+    let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 3);
+    let mut caster = Unit::from_config(&config_a, 0, 0, Vec2::new(100.0, 1000.0));
+    caster.facing = 0.0; // facing right
+
+    let target1 = Unit::from_hero_def(&hero, 1, 1, Vec2::new(300.0, 1000.0)); // first hit
+    let target2 = Unit::from_hero_def(&hero, 2, 1, Vec2::new(500.0, 1000.0)); // pass-through
+
+    let mut sim = Simulation::new(vec![caster, target1, target2]);
+    let hp_before_2 = sim.units[2].hp;
+
+    // Run until spear completes
+    for _ in 0..60 {
+        sim.step();
+    }
+
+    // First target (impaled) should take damage from pin
+    // Second target should take pass-through damage
+    let target2_hp = sim.units[2].hp;
+    assert!(target2_hp < hp_before_2, "Pass-through target should take damage, hp={} vs {}", target2_hp, hp_before_2);
+
+    // First target should have been dragged (position changed significantly)
+    assert!(sim.units[1].position.x > 500.0, "First target should be dragged past second target");
+}
+
+#[test]
+fn test_spear_gaben_bounce() {
+    // Level 9 (Gaben): 2 bounces, range 2800
+    // Place caster near left wall, first target in path, second target behind caster
+    // After bounce off right wall, spear goes left and can hit second target
+    let hero = make_hero();
+    let ability = spear_of_mars_ability(9);
+    let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 9);
+    let mut caster = Unit::from_config(&config_a, 0, 0, Vec2::new(500.0, 1000.0));
+    caster.facing = 0.0; // facing right
+
+    // First target in path — will be impaled and pinned at right wall
+    let target1 = Unit::from_hero_def(&hero, 1, 1, Vec2::new(700.0, 1000.0));
+    // Second target to the left of wall — after bounce, spear goes left
+    let target2 = Unit::from_hero_def(&hero, 2, 1, Vec2::new(1800.0, 1000.0));
+
+    let mut sim = Simulation::new(vec![caster, target1, target2]);
+
+    // Run enough ticks for spear to travel, bounce, and travel back
+    for _ in 0..120 {
+        sim.step();
+    }
+
+    // First target (closest, impaled first) should be pinned at right wall
+    let t1 = &sim.units[1];
+    assert!(t1.position.x >= 1990.0, "First target should be pinned at right wall, got x={}", t1.position.x);
+    let t1_stunned = t1.buffs.iter().any(|b| b.name == "stun" && b.status.stunned);
+    assert!(t1_stunned, "First target should be stunned from wall pin");
+
+    // Second target should have taken damage (pass-through on initial path or impale on bounce)
+    let t2 = &sim.units[2];
+    let hero_max_hp = Unit::from_hero_def(&hero, 99, 1, Vec2::new(0.0, 0.0)).max_hp;
+    assert!(t2.hp < hero_max_hp, "Second target should have taken damage from spear");
+}

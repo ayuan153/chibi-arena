@@ -1,0 +1,34 @@
+// Spear of Mars - Mars's line projectile
+// Impales first hero hit, drags them to wall, damages pass-through units.
+// Pin to wall applies stun. No stun if spear expires without hitting wall.
+//
+// AA Scaling: L1=Dota L1, L2=Dota L2, L3=Dota L4
+// Super (6): +100 damage, +1s stun, fire trail (35 dps, 20% slow, 10s)
+// Gaben (9): +1600 range, 2 wall bounces
+//
+// Cast behavior: Lazy (closest enemy in range)
+AbilityDef(
+    name: "Spear of Mars",
+    cooldown: [14.0, 13.0, 11.0, 11.0, 11.0, 11.0, 11.0, 11.0, 11.0],
+    mana_cost: [90.0, 100.0, 120.0, 120.0, 120.0, 120.0, 120.0, 120.0, 120.0],
+    cast_point: 0.25,
+    targeting: SingleEnemy,
+    effects: [
+        SpearOfMars(
+            damage: [100.0, 175.0, 325.0, 325.0, 325.0, 425.0, 425.0, 425.0, 425.0],
+            stun_duration: [1.3, 1.6, 2.2, 2.2, 2.2, 3.2, 3.2, 3.2, 3.2],
+            range: [900.0, 1000.0, 1200.0, 1200.0, 1200.0, 1200.0, 1200.0, 1200.0, 2800.0],
+            travel_speed: 1400.0,
+            width: 125.0,
+            fire_trail_dps: [0.0, 0.0, 0.0, 0.0, 0.0, 35.0, 35.0, 35.0, 35.0],
+            fire_trail_slow: [0.0, 0.0, 0.0, 0.0, 0.0, 0.20, 0.20, 0.20, 0.20],
+            fire_trail_duration: [0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 10.0, 10.0, 10.0],
+            wall_bounces: [0, 0, 0, 0, 0, 0, 0, 0, 2],
+        ),
+    ],
+    description: "Mars throws a spear that impales the first enemy hero, dragging them to the arena wall. Pass-through enemies take damage. Pinned units are stunned.",
+    aoe_shape: None,
+    cast_range: 2800.0,
+    cast_behavior: Lazy,
+    max_charges: None,
+)

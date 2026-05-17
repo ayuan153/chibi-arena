@@ -134,6 +134,9 @@ pub fn execute_ability(
                 Effect::Rage { .. } => {
                     // Handled outside the per-target loop
                 }
+                Effect::SpearOfMars { .. } => {
+                    // Handled outside the per-target loop
+                }
             }
         }
     }
@@ -306,6 +309,46 @@ pub fn execute_ability(
                     apply_buff(&mut caster.buffs, rage_buff);
                     events.push(CombatEvent::BuffApplied { tick, target_id: caster_id, name: "rage".to_string() });
                 }
+            }
+            Effect::SpearOfMars {
+                damage, stun_duration, range, travel_speed, width,
+                fire_trail_dps, fire_trail_slow, fire_trail_duration, wall_bounces,
+            } => {
+                let direction = if let Some(tpos) = target_pos {
+                    let d = (tpos - caster_pos).normalize();
+                    if d.length() < 1e-6 { Vec2::new(1.0, 0.0) } else { d }
+                } else {
+                    Vec2::new(1.0, 0.0)
+                };
+                let wb = if !wall_bounces.is_empty() {
+                    let idx = (level.saturating_sub(1) as usize).min(wall_bounces.len().saturating_sub(1));
+                    wall_bounces[idx]
+                } else {
+                    0
+                };
+                pending_effects.push(PendingEffect {
+                    caster_id,
+                    caster_team,
+                    ability_name: ability.name.clone(),
+                    kind: PendingEffectKind::SpearOfMarsTravel {
+                        start_pos: caster_pos,
+                        direction,
+                        travel_speed: *travel_speed,
+                        max_range: value_at_level(range, level),
+                        current_distance: 0.0,
+                        width: *width,
+                        damage: value_at_level(damage, level),
+                        stun_duration_secs: value_at_level(stun_duration, level),
+                        impaled_unit: None,
+                        pass_through_hit: Vec::new(),
+                        fire_trail_dps: value_at_level(fire_trail_dps, level),
+                        fire_trail_slow: value_at_level(fire_trail_slow, level),
+                        fire_trail_duration_secs: value_at_level(fire_trail_duration, level),
+                        bounces_remaining: wb,
+                        fire_trail_positions: Vec::new(),
+                    },
+                    delay_ticks_remaining: 0,
+                });
             }
             _ => {}
         }
