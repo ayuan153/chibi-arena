@@ -210,3 +210,99 @@ fn test_ability_name_specific_behavior() {
 | RON data | `data/abilities/*.ron` |
 | Integration tests | `crates/aa2-sim/tests/abilities.rs` |
 | Data load tests | `crates/aa2-data/tests/load_heroes.rs` |
+
+---
+
+## Illusion Interaction Rules
+
+When implementing a new ability, you MUST classify its `IllusionInteraction`:
+
+```rust
+impl Effect {
+    pub fn illusion_interaction(&self) -> IllusionInteraction {
+        match self {
+            Effect::ChaosStrike { .. } => IllusionInteraction::Full,
+            Effect::FurySwipes { .. } => IllusionInteraction::Disabled,
+            Effect::EssenceShift { .. } => IllusionInteraction::Disabled,
+            Effect::GlaivesOfWisdom { .. } => IllusionInteraction::Disabled,
+            _ => IllusionInteraction::Disabled, // default: doesn't work
+        }
+    }
+}
+```
+
+### Classification guide:
+
+| Category | IllusionInteraction | Examples |
+|----------|-------------------|----------|
+| Critical strikes | `Full` | Chaos Strike, Coup de Grace, Daedalus |
+| Lifesteal | `Full` | All lifesteal sources |
+| Mana burn (innate) | `Full` | Mana Break, Curse of Avernus |
+| Stat steal / on-hit debuffs | `Disabled` | Essence Shift, Glaives, Fury Swipes |
+| Bash / proc damage | `Disabled` | Skull Basher, MKB, Time Lock |
+| Cleave | `Disabled` | Battle Fury, Empower |
+| Auras | `CarriesAura` | Radiance, Inner Beast, Assault Cuirass |
+
+### Illusion stat rules (enforced in step_buffs):
+- ✅ Base damage (from attributes)
+- ✅ Attack speed (all sources)
+- ✅ Armor from AGI (stat-based)
+- ✅ All stat bonuses (STR/AGI/INT)
+- ✅ Move speed, HP, Mana, Evasion
+- ❌ Flat bonus armor (negated for illusions)
+- ❌ Bonus +damage (green damage, negated)
+- ❌ Flat magic resistance bonus (negated)
+
+### When adding a new attack modifier:
+1. Add the `IllusionInteraction` classification to `Effect::illusion_interaction()`
+2. The attack modifier loops already check `is_illusion` + `illusion_interaction()` — no extra code needed
+3. Write a test verifying the interaction (illusion can/cannot use it)
+
+---
+
+## Arena System
+
+The combat arena is 2000×2000 units with impassable walls.
+- Bounds: x ∈ [0, 2000], y ∈ [0, 2000]
+- `clamp_to_arena(pos) -> (Vec2, bool)` — clamps position, returns whether wall was hit
+- ALL movement must be clamped (walking, burrowstrike, spear push, knockback)
+- Spear of Mars pins units to arena walls
+
+---
+
+## Cooldown Reduction (CDR)
+
+- `unit.cooldown_reduction: f32` (0.0 = none, 0.25 = 25%)
+- Applied when cooldown is SET (after cast): `effective_cd = base_cd * (1.0 - cdr)`
+- NOT applied during tick-down
+- Gaben upgrades may grant CDR (e.g., Spirit Lance Gaben = 25%)
+
+---
+
+## Universal Attribute
+
+- `Attribute::Universal` — 4th attribute type
+- Damage = `(STR + AGI + INT) * 0.7` (instead of `primary * 1.0`)
+- Gaben stat bonuses: +15 to each stat (vs +45 to primary for other types)
+
+---
+
+## Illusion Spawning
+
+When an ability spawns illusions (Spirit Lance, etc.):
+1. Use `Unit::spawn_illusion(source, id, pos, damage_dealt_pct, damage_taken_pct, duration_ticks, tick)`
+2. Illusion copies source stats, keeps `Full`-tagged passives, clears everything else
+3. Push to `sim.units_to_spawn` (appended at end of tick)
+4. Set `illusion_expiry_tick` — illusion auto-dies when tick is reached
+5. Illusion damage modifiers applied in melee + projectile hit paths
+
+---
+
+## Charges System
+
+Some abilities use charges instead of cooldown:
+- `max_charges: Option<u32>` on AbilityDef (None = normal cooldown)
+- `charges: Option<ChargeState>` on AbilityState
+- `ability.is_ready()` checks charges > 0 OR cooldown <= 0
+- `ability.consume()` decrements charge or sets cooldown
+- Charges restore one at a time on a timer
