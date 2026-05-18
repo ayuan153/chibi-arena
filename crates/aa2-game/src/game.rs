@@ -40,19 +40,17 @@ impl Default for GameConfig {
 /// Phases of a game round.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GamePhase {
-    /// Players pick their god.
+    /// Round 1 only: pick god.
     GodPick,
-    /// Hero draft phase.
+    /// Hero draft (rounds 1/3/6/9/12).
     HeroDraft,
-    /// Shop phase — buy/sell/equip abilities.
-    Shop,
-    /// Combat simulation.
+    /// Combat phase (not round 1).
     Combat,
-    /// Damage applied to losers.
+    /// Damage applied after combat (also eliminates players at 0 HP).
     Damage,
-    /// Eliminate players at 0 HP.
-    Elimination,
-    /// End of round bookkeeping.
+    /// Shop/equip phase.
+    Shop,
+    /// Round over, advance to next.
     RoundEnd,
 }
 
@@ -103,6 +101,11 @@ impl GameState {
 
     /// Advance to the next phase in the state machine.
     /// Returns the new phase.
+    ///
+    /// Transitions:
+    /// - Round 1: GodPick → HeroDraft → Shop → RoundEnd
+    /// - Draft rounds (3/6/9/12): HeroDraft → Combat → Damage → Shop → RoundEnd
+    /// - Normal rounds: Combat → Damage → Shop → RoundEnd
     pub fn advance_phase(&mut self) -> GamePhase {
         self.phase = match &self.phase {
             GamePhase::GodPick => GamePhase::HeroDraft,
@@ -113,10 +116,13 @@ impl GameState {
                     GamePhase::Combat
                 }
             }
-            GamePhase::Shop => GamePhase::RoundEnd,
             GamePhase::Combat => GamePhase::Damage,
-            GamePhase::Damage => GamePhase::Elimination,
-            GamePhase::Elimination => GamePhase::Shop,
+            GamePhase::Damage => {
+                // Eliminate dead players in the same step
+                self.eliminate_dead();
+                GamePhase::Shop
+            }
+            GamePhase::Shop => GamePhase::RoundEnd,
             GamePhase::RoundEnd => {
                 self.round += 1;
                 self.start_round();
@@ -180,13 +186,12 @@ mod tests {
         let mut game = test_game();
         assert_eq!(game.phase, GamePhase::GodPick);
         assert_eq!(game.advance_phase(), GamePhase::HeroDraft);
-        // Round 1: HeroDraft → Shop (no combat)
         assert_eq!(game.advance_phase(), GamePhase::Shop);
         assert_eq!(game.advance_phase(), GamePhase::RoundEnd);
     }
 
     #[test]
-    fn test_round2_phases() {
+    fn test_draft_round_phases() {
         let mut game = test_game();
         game.round = 2;
         game.phase = GamePhase::RoundEnd;
@@ -194,15 +199,14 @@ mod tests {
         let phase = game.advance_phase();
         assert_eq!(game.round, 3);
         assert_eq!(phase, GamePhase::HeroDraft);
-        // HeroDraft → Combat (not round 1)
         assert_eq!(game.advance_phase(), GamePhase::Combat);
         assert_eq!(game.advance_phase(), GamePhase::Damage);
-        assert_eq!(game.advance_phase(), GamePhase::Elimination);
         assert_eq!(game.advance_phase(), GamePhase::Shop);
+        assert_eq!(game.advance_phase(), GamePhase::RoundEnd);
     }
 
     #[test]
-    fn test_non_draft_round() {
+    fn test_normal_round_phases() {
         let mut game = test_game();
         game.round = 3;
         game.phase = GamePhase::RoundEnd;
@@ -210,6 +214,9 @@ mod tests {
         let phase = game.advance_phase();
         assert_eq!(game.round, 4);
         assert_eq!(phase, GamePhase::Combat);
+        assert_eq!(game.advance_phase(), GamePhase::Damage);
+        assert_eq!(game.advance_phase(), GamePhase::Shop);
+        assert_eq!(game.advance_phase(), GamePhase::RoundEnd);
     }
 
     #[test]
@@ -223,14 +230,23 @@ mod tests {
     }
 
     #[test]
-    fn test_elimination() {
+    fn test_damage_and_elimination_in_one_step() {
         let mut game = test_game();
-        game.players[0].hp = 0.0;
-        game.players[1].hp = -5.0;
-        game.eliminate_dead();
-        assert!(!game.players[0].alive);
-        assert!(!game.players[1].alive);
-        assert!(game.players[2].alive);
+        game.round = 5;
+        game.phase = GamePhase::Combat;
+        // Apply damage to bring player 0 to 0 HP
+        game.players[0].hp = 1.0;
+        game.apply_damage(0, 5); // will exceed 1.0 HP
+        assert_eq!(game.players[0].hp, 0.0);
+        assert!(game.players[0].alive); // not yet eliminated
+
+        // Advance from Combat → Damage
+        assert_eq!(game.advance_phase(), GamePhase::Damage);
+        assert!(game.players[0].alive); // still alive in Damage phase entry
+
+        // Advance from Damage → Shop (eliminates dead in this transition)
+        assert_eq!(game.advance_phase(), GamePhase::Shop);
+        assert!(!game.players[0].alive); // now eliminated
     }
 
     #[test]
@@ -240,5 +256,14 @@ mod tests {
         assert_eq!(game.hero_level(), 2);
         game.round = 10;
         assert_eq!(game.hero_level(), 11);
+    }
+
+    #[test]
+    fn test_alive_count() {
+        let mut game = test_game();
+        assert_eq!(game.alive_count(), 8);
+        game.players[0].alive = false;
+        game.players[3].alive = false;
+        assert_eq!(game.alive_count(), 6);
     }
 }

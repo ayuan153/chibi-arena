@@ -9,6 +9,7 @@ pub mod player;
 pub mod pool;
 pub mod shop;
 
+pub use draft::DraftState;
 pub use game::{GameConfig, GamePhase, GameState};
 pub use player::PlayerState;
 pub use pool::AbilityPool;

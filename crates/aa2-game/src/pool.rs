@@ -47,6 +47,13 @@ impl AbilityPool {
         }
     }
 
+    /// Return multiple copies of an ability to the pool.
+    pub fn return_copies(&mut self, name: &str, copies: u32) {
+        if let Some(count) = self.counts.get_mut(name) {
+            *count += copies;
+        }
+    }
+
     /// Get abilities available for the shop at a given level.
     /// Filters out depleted abilities and ultimates if shop level < ultimate_unlock_level.
     pub fn available_for_shop(

@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::economy::{BUY_COST, SELL_REFUND, UNEQUIP_COST};
+use crate::economy::{BUY_COST, UNEQUIP_COST};
+use crate::game::GameConfig;
 use crate::pool::AbilityPool;
 use crate::shop::ShopState;
 
@@ -12,6 +13,8 @@ use crate::shop::ShopState;
 pub const MAX_HEROES: usize = 5;
 /// Maximum ability level (copies purchased).
 pub const MAX_ABILITY_LEVEL: u32 = 9;
+/// Maximum bench size.
+pub const MAX_BENCH: usize = 5;
 
 /// Complete state for a single player.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,11 +27,11 @@ pub struct PlayerState {
     pub hp: f32,
     /// Owned heroes (by name).
     pub heroes: Vec<String>,
-    /// Owned abilities: name → copies/level.
+    /// Owned abilities: name → level (copies purchased).
     pub abilities: HashMap<String, u32>,
     /// Equipped abilities per hero: hero_name → vec of ability names.
     pub equipped: HashMap<String, Vec<String>>,
-    /// Bench heroes (by name).
+    /// Bench: unequipped abilities (max 5 slots).
     pub bench: Vec<String>,
     /// Chosen god.
     pub god: Option<String>,
@@ -60,89 +63,103 @@ impl PlayerState {
         self.gold >= BUY_COST
     }
 
-    /// Buy an ability from the shop at the given index.
-    /// Removes from offerings, deducts from pool, adds to inventory.
-    pub fn buy_ability(&mut self, index: usize, pool: &mut AbilityPool) -> Result<(), &'static str> {
+    /// Buy an ability. If new, goes to bench. If duplicate, levels up (no bench slot).
+    pub fn buy_ability(&mut self, name: &str, pool: &mut AbilityPool) -> Result<(), &'static str> {
         if self.gold < BUY_COST {
             return Err("not enough gold");
         }
-        let name = self.shop.offerings.get(index).ok_or("invalid shop index")?.clone();
-        if !pool.take(&name) {
+        let already_owned = self.abilities.contains_key(name);
+        if already_owned {
+            let level = self.abilities.get(name).copied().unwrap_or(0);
+            if level >= MAX_ABILITY_LEVEL {
+                return Err("ability at max level");
+            }
+        } else if self.bench.len() >= MAX_BENCH {
+            return Err("bench is full");
+        }
+        if !pool.take(name) {
             return Err("ability depleted from pool");
         }
         self.gold -= BUY_COST;
-        let level = self.abilities.entry(name.clone()).or_insert(0);
-        if *level >= MAX_ABILITY_LEVEL {
-            // Return to pool since we can't hold more
-            pool.return_ability(&name);
-            return Err("ability at max level");
+        if already_owned {
+            *self.abilities.get_mut(name).expect("checked above") += 1;
+        } else {
+            self.abilities.insert(name.to_string(), 1);
+            self.bench.push(name.to_string());
         }
-        *level += 1;
-        self.shop.offerings.remove(index);
         Ok(())
     }
 
-    /// Sell an ability back to the pool.
+    /// Sell an ability. Refunds 2g * level, returns all copies to pool.
     pub fn sell_ability(&mut self, name: &str, pool: &mut AbilityPool) -> Result<(), &'static str> {
-        let level = self.abilities.get_mut(name).ok_or("ability not owned")?;
-        if *level == 0 {
-            return Err("ability not owned");
-        }
-        *level -= 1;
-        if *level == 0 {
-            self.abilities.remove(name);
-            // Unequip from all heroes
+        let level = self.abilities.remove(name).ok_or("ability not owned")?;
+        self.gold += 2 * level;
+        pool.return_copies(name, level);
+        // Remove from bench
+        if let Some(pos) = self.bench.iter().position(|a| a == name) {
+            self.bench.remove(pos);
+        } else {
+            // Remove from equipped hero
             for abilities in self.equipped.values_mut() {
-                abilities.retain(|a| a != name);
+                if let Some(pos) = abilities.iter().position(|a| a == name) {
+                    abilities.remove(pos);
+                    break;
+                }
             }
         }
-        pool.return_ability(name);
-        self.gold += SELL_REFUND;
         Ok(())
     }
 
-    /// Equip an ability to a hero.
-    pub fn equip(
+    /// Equip an ability to a hero. Free (no gold cost).
+    pub fn equip_ability(
         &mut self,
-        hero: &str,
-        ability: &str,
-        slots_per_hero: u32,
+        ability_name: &str,
+        hero_name: &str,
         ultimates: &HashSet<String>,
+        config: &GameConfig,
     ) -> Result<(), &'static str> {
-        if !self.heroes.contains(&hero.to_string()) {
-            return Err("hero not owned");
-        }
-        if !self.abilities.contains_key(ability) {
+        if !self.abilities.contains_key(ability_name) {
             return Err("ability not owned");
         }
-        let hero_abilities = self.equipped.entry(hero.to_string()).or_default();
-        if hero_abilities.len() >= slots_per_hero as usize {
+        if !self.heroes.contains(&hero_name.to_string()) {
+            return Err("hero not owned");
+        }
+        let bench_pos = self.bench.iter().position(|a| a == ability_name)
+            .ok_or("ability not on bench")?;
+        let hero_abilities = self.equipped.entry(hero_name.to_string()).or_default();
+        if hero_abilities.len() >= config.ability_slots_per_hero as usize {
             return Err("no free slots");
         }
-        // Max 1 ultimate per hero
-        if ultimates.contains(ability) && hero_abilities.iter().any(|a| ultimates.contains(a)) {
+        if ultimates.contains(ability_name) && hero_abilities.iter().any(|a| ultimates.contains(a.as_str())) {
             return Err("hero already has an ultimate");
         }
-        hero_abilities.push(ability.to_string());
+        self.bench.remove(bench_pos);
+        hero_abilities.push(ability_name.to_string());
         Ok(())
     }
 
-    /// Unequip an ability from a hero. Costs gold.
-    pub fn unequip(&mut self, hero: &str, ability: &str) -> Result<(), &'static str> {
+    /// Unequip an ability from a hero. Costs 1 gold.
+    pub fn unequip_ability(&mut self, ability_name: &str, hero_name: &str) -> Result<(), &'static str> {
         if self.gold < UNEQUIP_COST {
             return Err("not enough gold");
         }
-        let hero_abilities = self.equipped.get_mut(hero).ok_or("hero has no equipped abilities")?;
-        let pos = hero_abilities.iter().position(|a| a == ability).ok_or("ability not equipped on hero")?;
+        if self.bench.len() >= MAX_BENCH {
+            return Err("bench is full");
+        }
+        let hero_abilities = self.equipped.get_mut(hero_name)
+            .ok_or("hero has no equipped abilities")?;
+        let pos = hero_abilities.iter().position(|a| a == ability_name)
+            .ok_or("ability not equipped on hero")?;
         hero_abilities.remove(pos);
         self.gold -= UNEQUIP_COST;
+        self.bench.push(ability_name.to_string());
         Ok(())
     }
 
     /// Reroll the shop offerings.
     pub fn reroll_shop(
         &mut self,
-        pool: &AbilityPool,
+        pool: &mut AbilityPool,
         ultimates: &HashSet<String>,
         ultimate_unlock_level: u32,
         size_bonus: u32,
@@ -162,6 +179,14 @@ impl PlayerState {
 mod tests {
     use super::*;
 
+    fn test_pool() -> AbilityPool {
+        let mut counts = HashMap::new();
+        counts.insert("fireball".to_string(), 10);
+        counts.insert("heal".to_string(), 10);
+        counts.insert("ult_strike".to_string(), 10);
+        AbilityPool::from_counts(counts)
+    }
+
     #[test]
     fn test_new_player() {
         let p = PlayerState::new(0);
@@ -180,50 +205,154 @@ mod tests {
     }
 
     #[test]
-    fn test_buy_ability() {
+    fn test_buy_ability_new() {
         let mut p = PlayerState::new(0);
         p.gold = 10;
-        p.shop.offerings = vec!["fireball".to_string(), "heal".to_string()];
-        let mut counts = HashMap::new();
-        counts.insert("fireball".to_string(), 5);
-        counts.insert("heal".to_string(), 5);
-        let mut pool = AbilityPool::from_counts(counts);
+        let mut pool = test_pool();
 
-        assert!(p.buy_ability(0, &mut pool).is_ok());
+        assert!(p.buy_ability("fireball", &mut pool).is_ok());
         assert_eq!(p.gold, 7);
         assert_eq!(p.abilities["fireball"], 1);
-        assert_eq!(pool.counts["fireball"], 4);
-        assert_eq!(p.shop.offerings.len(), 1);
+        assert_eq!(p.bench, vec!["fireball".to_string()]);
+        assert_eq!(pool.counts["fireball"], 9);
+    }
+
+    #[test]
+    fn test_buy_ability_duplicate_levels_up() {
+        let mut p = PlayerState::new(0);
+        p.gold = 10;
+        let mut pool = test_pool();
+
+        p.buy_ability("fireball", &mut pool).unwrap();
+        p.buy_ability("fireball", &mut pool).unwrap();
+        assert_eq!(p.abilities["fireball"], 2);
+        // Bench should still only have one entry
+        assert_eq!(p.bench.len(), 1);
+        assert_eq!(p.gold, 4);
+    }
+
+    #[test]
+    fn test_buy_ability_bench_full() {
+        let mut p = PlayerState::new(0);
+        p.gold = 100;
+        let mut pool = test_pool();
+        // Fill bench with 5 different abilities
+        for i in 0..5 {
+            let name = format!("ability_{i}");
+            pool.counts.insert(name.clone(), 10);
+            p.buy_ability(&name, &mut pool).unwrap();
+        }
+        assert_eq!(p.bench.len(), 5);
+        // New ability should be rejected
+        let result = p.buy_ability("fireball", &mut pool);
+        assert_eq!(result, Err("bench is full"));
+    }
+
+    #[test]
+    fn test_buy_ability_max_level() {
+        let mut p = PlayerState::new(0);
+        p.gold = 100;
+        p.abilities.insert("fireball".to_string(), 9);
+        p.bench.push("fireball".to_string());
+        let mut pool = test_pool();
+
+        let result = p.buy_ability("fireball", &mut pool);
+        assert_eq!(result, Err("ability at max level"));
     }
 
     #[test]
     fn test_sell_ability() {
         let mut p = PlayerState::new(0);
         p.gold = 0;
-        p.abilities.insert("fireball".to_string(), 2);
-        let mut counts = HashMap::new();
-        counts.insert("fireball".to_string(), 3);
-        let mut pool = AbilityPool::from_counts(counts);
+        p.abilities.insert("fireball".to_string(), 3);
+        p.bench.push("fireball".to_string());
+        let mut pool = test_pool();
 
         assert!(p.sell_ability("fireball", &mut pool).is_ok());
-        assert_eq!(p.gold, SELL_REFUND);
-        assert_eq!(p.abilities["fireball"], 1);
-        assert_eq!(pool.counts["fireball"], 4);
+        assert_eq!(p.gold, 6); // 2 * 3
+        assert!(!p.abilities.contains_key("fireball"));
+        assert!(!p.bench.contains(&"fireball".to_string()));
+        assert_eq!(pool.counts["fireball"], 13); // 10 + 3 returned
     }
 
     #[test]
-    fn test_equip_unequip() {
+    fn test_equip_ability() {
+        let mut p = PlayerState::new(0);
+        p.heroes.push("axe".to_string());
+        p.abilities.insert("fireball".to_string(), 1);
+        p.bench.push("fireball".to_string());
+        let ultimates = HashSet::new();
+        let config = GameConfig::default();
+
+        assert!(p.equip_ability("fireball", "axe", &ultimates, &config).is_ok());
+        assert!(p.bench.is_empty());
+        assert_eq!(p.equipped["axe"], vec!["fireball".to_string()]);
+    }
+
+    #[test]
+    fn test_equip_ability_full_slots() {
+        let mut p = PlayerState::new(0);
+        p.heroes.push("axe".to_string());
+        let config = GameConfig { ability_slots_per_hero: 2, ..Default::default() };
+        let ultimates = HashSet::new();
+
+        // Equip 2 abilities
+        for name in &["a", "b"] {
+            p.abilities.insert(name.to_string(), 1);
+            p.bench.push(name.to_string());
+            p.equip_ability(name, "axe", &ultimates, &config).unwrap();
+        }
+        // Third should fail
+        p.abilities.insert("c".to_string(), 1);
+        p.bench.push("c".to_string());
+        let result = p.equip_ability("c", "axe", &ultimates, &config);
+        assert_eq!(result, Err("no free slots"));
+    }
+
+    #[test]
+    fn test_equip_ability_duplicate_ultimate() {
+        let mut p = PlayerState::new(0);
+        p.heroes.push("axe".to_string());
+        let mut ultimates = HashSet::new();
+        ultimates.insert("ult1".to_string());
+        ultimates.insert("ult2".to_string());
+        let config = GameConfig::default();
+
+        p.abilities.insert("ult1".to_string(), 1);
+        p.bench.push("ult1".to_string());
+        p.equip_ability("ult1", "axe", &ultimates, &config).unwrap();
+
+        p.abilities.insert("ult2".to_string(), 1);
+        p.bench.push("ult2".to_string());
+        let result = p.equip_ability("ult2", "axe", &ultimates, &config);
+        assert_eq!(result, Err("hero already has an ultimate"));
+    }
+
+    #[test]
+    fn test_unequip_ability() {
         let mut p = PlayerState::new(0);
         p.gold = 5;
         p.heroes.push("axe".to_string());
         p.abilities.insert("fireball".to_string(), 1);
-        let ultimates = HashSet::new();
+        p.equipped.insert("axe".to_string(), vec!["fireball".to_string()]);
 
-        assert!(p.equip("axe", "fireball", 4, &ultimates).is_ok());
-        assert_eq!(p.equipped["axe"], vec!["fireball".to_string()]);
-
-        assert!(p.unequip("axe", "fireball").is_ok());
+        assert!(p.unequip_ability("fireball", "axe").is_ok());
         assert!(p.equipped["axe"].is_empty());
+        assert_eq!(p.bench, vec!["fireball".to_string()]);
         assert_eq!(p.gold, 4);
+    }
+
+    #[test]
+    fn test_unequip_ability_bench_full() {
+        let mut p = PlayerState::new(0);
+        p.gold = 5;
+        p.heroes.push("axe".to_string());
+        p.abilities.insert("fireball".to_string(), 1);
+        p.equipped.insert("axe".to_string(), vec!["fireball".to_string()]);
+        // Fill bench
+        p.bench = vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string(), "e".to_string()];
+
+        let result = p.unequip_ability("fireball", "axe");
+        assert_eq!(result, Err("bench is full"));
     }
 }
