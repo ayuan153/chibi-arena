@@ -295,3 +295,69 @@ F2P freemium model. All gameplay-affecting content is earnable; monetization is 
 - **No client simulation during multiplayer:** Clients only interpolate received state. Cannot fabricate game state.
 - **Purchase validation:** Server-side receipt verification for all IAP.
 - **Replay integrity:** Replays are server-recorded, not client-generated.
+
+---
+
+## Phase 2: Crate Structure
+
+```
+aa2/
+├── crates/
+│   ├── aa2-data/       # Shared types, RON loading (Phase 0) ✓
+│   ├── aa2-sim/        # Combat simulation engine (Phase 0-1) ✓
+│   ├── aa2-game/       # Game state machine, economy, draft (Phase 2) ← NEW
+│   └── aa2-server/     # Networking, matchmaking, WebSocket (Phase 3)
+├── client/             # Unity project (Phase 4)
+└── data/               # RON data files
+```
+
+### aa2-game (NEW - Phase 2)
+Owns the full game loop. Depends on aa2-sim and aa2-data.
+- `PlayerState`: gold, HP, heroes, ability inventory, god, shop state
+- `GameState`: 8 players, round counter, phase, ability pool, matchups
+- `Economy`: gold calculation, shop upgrade costs with decay
+- `Draft`: ability pool management, shop rolls, buy/sell/equip
+- `RoundFlow`: state machine (GodPick → HeroDraft → Shop → Combat → Damage → repeat)
+- `Matchmaker`: round-robin pairing with ghost opponents for odd counts
+- `DamageCalc`: player damage formula
+- `GodSystem`: god passive application, rule modifications
+
+Key design: aa2-game is SHARED between client and server. This enables:
+- Offline/dev mode (full game locally)
+- Client-side prediction (optional)
+- Server-side validation (authoritative)
+
+### Dependency Graph
+```
+aa2-server → aa2-game → aa2-sim → aa2-data
+                ↑
+client (Unity) ─┘ (via FFI, for offline/replay)
+```
+
+## Client/Server Protocol
+
+### State Sync (Server → Client)
+- During combat: state snapshots at 10Hz (unit positions, HP, buffs, events)
+- During shop: PlayerState updates on change (gold, inventory, shop contents)
+- Public info: other players' HP, hero count (not ability details)
+
+### Actions (Client → Server)
+All player actions are request/response over WebSocket:
+```
+BuyAbility(slot) → Ok/Err(reason)
+SellAbility(id) → Ok/Err
+RerollShop → Ok(new_choices)/Err
+UpgradeShop → Ok/Err
+EquipAbility(ability_id, hero_idx, slot_idx) → Ok/Err
+UnequipAbility(hero_idx, slot_idx) → Ok/Err
+PickGod(god_id) → Ok/Err
+PickHeroBody(idx) → Ok/Err
+RerollHeroBody → Ok(new_choices)/Err
+PlaceHero(hero_idx, x, y) → Ok/Err
+Ready → Ok
+```
+
+Server validates all actions against game rules. Invalid actions rejected with reason.
+
+### Reconnect
+Server sends full GameState snapshot. Client rebuilds from scratch.

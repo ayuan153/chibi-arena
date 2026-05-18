@@ -41,7 +41,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 ---
 
-## Phase 1: Combat Fidelity (Weeks 5–12) ← CURRENT
+## Phase 1: Combat Fidelity (Weeks 5–12) ✓ COMPLETE
 
 *Already completed from Phase 0 overflow: attribute system, projectile system, turn rate, targeting AI.*
 
@@ -67,30 +67,62 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 - Projectile travel time, turn rates, and cast points within 1 tick of Dota2 values
 - Replays are deterministic (same seed → identical outcome)
 
+**Completed:** All success criteria met. Full combat fidelity achieved with:
+- Buff/debuff system (stacking rules, duration, tick damage, dispel types)
+- Cast system (cast point, backswing, mana cost, cooldown, channeling with interrupts)
+- Data-driven ability engine (AbilityDef → effect execution pipeline)
+- AoE shapes (circle, cone, line), all damage types functional (physical/magical/pure)
+- Unit-targeted and ground-targeted ability support
+- Multi-unit combat (5v5) with spatial partitioning and collision avoidance
+- Replay system with deterministic playback (same seed → identical outcome)
+- Hot-reload for ability/hero data files
+- Dev CLI with bot draft and 5v5 battles
+
 ---
 
-## Phase 2: Game Systems (Weeks 13–20)
+## Phase 2: Game Systems (Weeks 13-20) ← CURRENT
 
-| Week | Focus |
-|------|-------|
-| 13–14 | God selection + god abilities (8–10 gods for MVP) |
-| 15–16 | Draft/shop system (ability pool, reroll, level up, interest gold) |
-| 17 | Hero body system (tiers 1–4, base stats from data files) |
-| 18 | Ability equip system (slot onto heroes, level 1–9 scaling) |
-| 19 | Round structure (PvP matchups, PvE rounds, elimination) |
-| 20 | AI opponents (random → heuristic draft), dev mode: control all 8 slots |
+### Week 13-14: Core Game State (aa2-game crate)
+- Create aa2-game crate with PlayerState, GameState
+- Economy system: gold per round (6/8/10...20), costs (buy 3, sell 2, reroll 1, unequip 1)
+- Shop system: shop levels 1-5, size 4/6/6/8/10, upgrade cost with decay
+- Ability pool: 100 abilities × 20 copies, shared without replacement
+- Round state machine: GodPick → HeroDraft → Shop → Combat → Damage → loop
+- Milestone: can advance through rounds programmatically
 
-**Deliverables:**
-- Full game loop: god pick → draft → combat → elimination → placement
-- AI opponents with basic drafting heuristics
-- Dev mode: developer controls all 8 player slots
+### Week 15-16: Draft & Hero Bodies
+- Hero body draft: rounds 1/3/6/9/12, tiers D/C/B/A/S, 3 choices (STR/AGI/INT)
+- Hero body reroll (2 gold)
+- Ability equip system: 4 slots per hero, 1 ultimate max, 5-slot bench
+- Buy/sell/equip/unequip with gold costs
+- Hero leveling: level = 1 + round, stats scale with gain
+- Shop level 3 unlocks ultimates
+- Milestone: can draft a full team and equip abilities
 
-**Milestone:** Complete game loop playable locally.
+### Week 17-18: Combat Integration & Matchups
+- Round-robin matchup pairing (randomized order, resilient to eliminations)
+- Ghost opponent for odd player counts (clone loadout, deals damage, can't take)
+- Build UnitConfigs from PlayerState at combat start
+- Run aa2-sim combat, determine winner
+- Player damage formula: base_damage(round) + per_hero * surviving_enemies
+- Player elimination at 0 HP
+- Milestone: full game loop runs to completion (1 winner)
 
-**Success Criteria:**
+### Week 19-20: God System & Dev Mode
+- God selection (all available, duplicates allowed)
+- God passive system: modifiers to economy, slots, combat buffs
+- Implement 3-5 starter gods with different playstyles
+- CLI dev mode: playable single-player game against AI opponents
+- AI opponents: random draft decisions (buy random, equip random)
+- Timer system (80s rounds, combat-first then shop)
+- Milestone: playable full game in terminal
+
+### Phase 2 Success Criteria:
 - Can play a full game from god pick to final placement
-- Economy math works (gold income, interest, reroll cost)
-- AI opponents make non-random draft decisions
+- Economy math works (gold, interest, shop upgrade decay)
+- 8-player round-robin with ghost opponents
+- AI opponents make valid (if random) decisions
+- All game rules enforced (slot limits, ultimate limits, pool depletion)
 
 ---
 
