@@ -39,6 +39,15 @@ pub struct PlayerState {
     pub shop: ShopState,
     /// Whether this player is still alive.
     pub alive: bool,
+    /// Hero positions on the player's half of the arena (1000x2000 bottom half).
+    /// Maps hero name to position. X: 0-2000, Y: 0-1000.
+    pub hero_positions: HashMap<String, (f32, f32)>,
+}
+
+/// Mirror a position from player's perspective to opponent's top half.
+/// Flips both X and Y: (x, y) -> (2000 - x, 2000 - y).
+pub fn mirror_position(x: f32, y: f32) -> (f32, f32) {
+    (2000.0 - x, 2000.0 - y)
 }
 
 impl PlayerState {
@@ -55,6 +64,7 @@ impl PlayerState {
             god: None,
             shop: ShopState::new(),
             alive: true,
+            hero_positions: HashMap::new(),
         }
     }
 

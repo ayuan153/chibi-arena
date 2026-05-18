@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_generate_draft_choices_correct_tier() {
-        let heroes = vec![
+        let heroes = [
             make_hero("str_t0", Attribute::Strength, 0),
             make_hero("agi_t0", Attribute::Agility, 0),
             make_hero("int_t0", Attribute::Intelligence, 0),
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_generate_reroll_choices_any_tier() {
-        let heroes = vec![
+        let heroes = [
             make_hero("str_t0", Attribute::Strength, 0),
             make_hero("agi_t1", Attribute::Agility, 1),
             make_hero("int_t2", Attribute::Intelligence, 2),
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_choices_exclude_owned() {
-        let heroes = vec![
+        let heroes = [
             make_hero("str_a", Attribute::Strength, 0),
             make_hero("str_b", Attribute::Strength, 0),
             make_hero("agi_a", Attribute::Agility, 0),

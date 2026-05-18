@@ -1,12 +1,14 @@
 //! Game state, round state machine, and configuration.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::combat::{self, CombatResult};
 use crate::damage;
 use crate::draft;
 use crate::economy;
+use crate::matchup;
 use crate::player::PlayerState;
 use crate::pool::AbilityPool;
 
@@ -83,6 +85,10 @@ pub struct GameState {
     pub timer: f32,
     /// Whether a hero draft is pending this round (concurrent with shop).
     pub draft_pending: bool,
+    /// Current round-robin rotation order (shuffled at cycle start).
+    pub matchup_rotation: Vec<u8>,
+    /// Current position within the round-robin cycle.
+    pub cycle_round: usize,
 }
 
 impl GameState {
@@ -99,6 +105,8 @@ impl GameState {
             config,
             timer: 0.0,
             draft_pending: false,
+            matchup_rotation: Vec::new(),
+            cycle_round: 0,
         }
     }
 
@@ -153,6 +161,94 @@ impl GameState {
         self.phase = GamePhase::Combat;
         self.timer = COMBAT_TIMEOUT;
         self.draft_pending = false;
+    }
+
+    /// Run combat for all matchups this round.
+    ///
+    /// Generates matchups via round-robin, runs simulations, applies damage.
+    /// Returns combat results for each matchup.
+    pub fn run_combat_round(
+        &mut self,
+        hero_defs: &HashMap<String, aa2_data::HeroDef>,
+        ability_defs: &HashMap<String, aa2_data::AbilityDef>,
+        seed: u32,
+        rng: &mut impl rand::Rng,
+    ) -> Vec<CombatResult> {
+        let alive: Vec<u8> = self.players.iter()
+            .filter(|p| p.alive)
+            .map(|p| p.id)
+            .collect();
+
+        if alive.len() < 2 {
+            return Vec::new();
+        }
+
+        // Refresh rotation at cycle start
+        let cycle_len = matchup::cycle_length(&self.matchup_rotation);
+        if self.matchup_rotation.is_empty() || self.cycle_round >= cycle_len {
+            self.matchup_rotation = matchup::new_rotation(&alive, rng);
+            self.cycle_round = 0;
+        }
+
+        let matchups = matchup::generate_matchups(
+            &alive,
+            &self.matchup_rotation,
+            self.cycle_round,
+            rng,
+        );
+        self.cycle_round += 1;
+
+        let hero_level = self.hero_level();
+        let results = combat::run_all_matchups(
+            &matchups,
+            &self.players,
+            hero_defs,
+            ability_defs,
+            hero_level,
+            seed,
+        );
+
+        // Apply damage based on results
+        for result in &results {
+            match result.winner {
+                Some(winner_id) => {
+                    // Loser takes damage
+                    let loser = if winner_id == result.matchup.player_a {
+                        result.matchup.player_b
+                    } else {
+                        result.matchup.player_a
+                    };
+                    // Ghost is immune to damage
+                    if result.matchup.ghost && loser != result.matchup.player_a {
+                        // Ghost lost — no damage to anyone
+                    } else {
+                        let survivors = if winner_id == result.matchup.player_a {
+                            result.survivors_a
+                        } else {
+                            result.survivors_b
+                        };
+                        self.apply_damage(loser, survivors);
+                    }
+                }
+                None => {
+                    // Draw: both take damage, but ghost is immune
+                    if result.matchup.ghost {
+                        // Only real player takes damage
+                        self.apply_damage(result.matchup.player_a, result.survivors_b);
+                    } else {
+                        self.apply_draw_damage(
+                            result.matchup.player_a,
+                            result.matchup.player_b,
+                            result.survivors_a,
+                            result.survivors_b,
+                        );
+                    }
+                }
+            }
+        }
+
+        self.eliminate_dead();
+        results
     }
 
     /// Apply damage to a player.
