@@ -201,6 +201,8 @@ pub struct AbilityDef {
     pub targeting: TargetType,
     pub effects: Vec<Effect>,
     pub description: String,
+    #[serde(default)]
+    pub is_ultimate: bool,
     /// Shape of the AoE for `PointAoE` abilities. `None` for non-AoE abilities.
     #[serde(default)]
     pub aoe_shape: Option<AoeShape>,

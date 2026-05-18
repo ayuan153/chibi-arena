@@ -15,7 +15,7 @@ HeroDef(
     move_speed: 325.0,
     turn_rate: 0.6,
     collision_radius: 27.0,
-    tier: 3,
+    tier: 1,
     is_melee: true,
     base_damage_min: 32.0,    // 56 total min - 24 STR = 32 raw
     base_damage_max: 52.0,    // 76 total max - 24 STR = 52 raw (20-point spread!)

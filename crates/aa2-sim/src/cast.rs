@@ -135,7 +135,7 @@ mod tests {
             cast_point,
             targeting: TargetType::NoTarget,
             effects: vec![],
-            description: String::new(),
+            description: String::new(), is_ultimate: false,
             aoe_shape: None,
             cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
         }

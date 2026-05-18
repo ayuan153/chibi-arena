@@ -388,7 +388,7 @@ pub fn fury_swipes_gaben_spread(
     let stacks = get_fury_swipes_stacks(&attacker.attack_modifier_state, target_id, tick);
 
     // Every 2 attacks (check if stack count is even)
-    if stacks > 0 && stacks % 2 == 0 {
+    if stacks > 0 && stacks.is_multiple_of(2) {
         let dur_ticks = attacker.abilities.iter()
             .filter_map(|a| {
                 if a.level < 9 { return None; }
@@ -524,7 +524,7 @@ mod tests {
                     stack_duration: vec![15.0],
                     armor_reduction_per_stack: vec![0.0],
                 }],
-                description: String::new(),
+                description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
             },
@@ -576,7 +576,7 @@ mod tests {
                     stack_duration: vec![15.0],
                     armor_reduction_per_stack: vec![0.0],
                 }],
-                description: String::new(),
+                description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
             },
@@ -597,7 +597,7 @@ mod tests {
                     crit_max: vec![200.0],
                     lifesteal: vec![0.0],
                 }],
-                description: String::new(),
+                description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
             },
@@ -641,7 +641,7 @@ mod tests {
                     crit_max: vec![200.0],
                     lifesteal: vec![50.0], // 50%
                 }],
-                description: String::new(),
+                description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
             },
@@ -684,7 +684,7 @@ mod tests {
                     agi_gain: vec![3.0],
                     duration: vec![30.0],
                 }],
-                description: String::new(),
+                description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
             },
@@ -764,7 +764,7 @@ mod tests {
                     steal_radius: 900.0,
                     bounce_radius: vec![0.0],
                 }],
-                description: String::new(),
+                description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
             },
@@ -806,7 +806,7 @@ mod tests {
                     steal_radius: 900.0,
                     bounce_radius: vec![0.0],
                 }],
-                description: String::new(),
+                description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
             },
@@ -869,7 +869,7 @@ mod tests {
                     steal_radius: 900.0,
                     bounce_radius: vec![500.0], // Gaben bounce
                 }],
-                description: String::new(),
+                description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
             },

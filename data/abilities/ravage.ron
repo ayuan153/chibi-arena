@@ -24,6 +24,7 @@ AbilityDef(
         ),
     ],
     description: "Slams the ground, sending a wave that stuns and damages all enemies.",
+    is_ultimate: true,
     aoe_shape: None,
     cast_range: 0.0,  // Self-centered, no range needed
 )
