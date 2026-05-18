@@ -10,6 +10,15 @@ use crate::economy;
 use crate::player::PlayerState;
 use crate::pool::AbilityPool;
 
+/// Total round duration in seconds.
+pub const ROUND_DURATION: f32 = 80.0;
+/// Maximum combat duration (combat ends at 30s remaining).
+pub const COMBAT_TIMEOUT: f32 = 50.0;
+/// Grace period after combat ends (seconds).
+pub const GRACE_PERIOD: f32 = 3.0;
+/// Round 1 special duration (no combat, just shop+draft).
+pub const ROUND1_DURATION: f32 = 40.0;
+
 /// Game configuration — gods can modify these parameters.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameConfig {
@@ -37,21 +46,20 @@ impl Default for GameConfig {
     }
 }
 
-/// Phases of a game round.
+/// The main game phases. GodPick is pre-game.
+/// The core loop is Combat → GracePeriod → Shop, repeating.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GamePhase {
-    /// Round 1 only: pick god.
+    /// Pre-game: players pick their god. Not a round.
     GodPick,
-    /// Hero draft (rounds 1/3/6/9/12).
-    HeroDraft,
-    /// Combat phase (not round 1).
+    /// Combat simulation running. Timeout at 30s remaining.
     Combat,
-    /// Damage applied after combat (also eliminates players at 0 HP).
-    Damage,
-    /// Shop/equip phase.
+    /// 3s after combat: damage animation, old gold still usable, shop auto-rerolls.
+    GracePeriod,
+    /// Main shop phase. Draft overlay active on draft rounds.
     Shop,
-    /// Round over, advance to next.
-    RoundEnd,
+    /// Game over.
+    Finished,
 }
 
 /// Top-level game state.
@@ -71,6 +79,10 @@ pub struct GameState {
     pub ultimates: HashSet<String>,
     /// Game configuration.
     pub config: GameConfig,
+    /// Timer remaining in current phase (seconds).
+    pub timer: f32,
+    /// Whether a hero draft is pending this round (concurrent with shop).
+    pub draft_pending: bool,
 }
 
 impl GameState {
@@ -79,12 +91,14 @@ impl GameState {
         let players = (0..8).map(PlayerState::new).collect();
         Self {
             players,
-            round: 1,
+            round: 0,
             phase: GamePhase::GodPick,
             pool,
             matchups: Vec::new(),
             ultimates,
             config,
+            timer: 0.0,
+            draft_pending: false,
         }
     }
 
@@ -99,41 +113,46 @@ impl GameState {
         }
     }
 
-    /// Advance to the next phase in the state machine.
-    /// Returns the new phase.
-    ///
-    /// Transitions:
-    /// - Round 1: GodPick → HeroDraft → Shop → RoundEnd
-    /// - Draft rounds (3/6/9/12): HeroDraft → Combat → Damage → Shop → RoundEnd
-    /// - Normal rounds: Combat → Damage → Shop → RoundEnd
-    pub fn advance_phase(&mut self) -> GamePhase {
-        self.phase = match &self.phase {
-            GamePhase::GodPick => GamePhase::HeroDraft,
-            GamePhase::HeroDraft => {
-                if self.round == 1 {
-                    GamePhase::Shop
+    /// Start round 1 (special: no combat, just shop+draft).
+    pub fn start_round1(&mut self) {
+        self.round = 1;
+        self.phase = GamePhase::Shop;
+        self.timer = ROUND1_DURATION;
+        self.draft_pending = true;
+        self.start_round();
+    }
+
+    /// Called when combat resolves (winner determined or timeout).
+    /// Transitions to GracePeriod.
+    pub fn end_combat(&mut self, _timed_out: bool) {
+        self.phase = GamePhase::GracePeriod;
+        self.timer = GRACE_PERIOD;
+        for player in &mut self.players {
+            if player.alive {
+                if !player.shop.locked {
+                    player.shop.needs_reroll = true;
                 } else {
-                    GamePhase::Combat
+                    // Lock auto-clears after preserving once
+                    player.shop.locked = false;
                 }
             }
-            GamePhase::Combat => GamePhase::Damage,
-            GamePhase::Damage => {
-                // Eliminate dead players in the same step
-                self.eliminate_dead();
-                GamePhase::Shop
-            }
-            GamePhase::Shop => GamePhase::RoundEnd,
-            GamePhase::RoundEnd => {
-                self.round += 1;
-                self.start_round();
-                if draft::is_draft_round(self.round) {
-                    GamePhase::HeroDraft
-                } else {
-                    GamePhase::Combat
-                }
-            }
-        };
-        self.phase.clone()
+        }
+    }
+
+    /// Called when grace period ends. Resets gold, starts shop phase.
+    pub fn end_grace_period(&mut self) {
+        self.round += 1;
+        self.phase = GamePhase::Shop;
+        self.timer = ROUND_DURATION - COMBAT_TIMEOUT - GRACE_PERIOD;
+        self.start_round();
+        self.draft_pending = draft::is_draft_round(self.round);
+    }
+
+    /// Called when shop timer hits 0. Starts next combat.
+    pub fn end_shop(&mut self) {
+        self.phase = GamePhase::Combat;
+        self.timer = COMBAT_TIMEOUT;
+        self.draft_pending = false;
     }
 
     /// Apply damage to a player.
@@ -144,6 +163,19 @@ impl GameState {
             if player.hp <= 0.0 {
                 player.hp = 0.0;
             }
+        }
+    }
+
+    /// Apply draw damage to both players in a matchup.
+    /// Each player takes damage based on the other's surviving heroes.
+    pub fn apply_draw_damage(&mut self, player_a: u8, player_b: u8, survivors_a: u32, survivors_b: u32) {
+        let dmg_to_a = damage::calculate_damage(self.round, survivors_b);
+        let dmg_to_b = damage::calculate_damage(self.round, survivors_a);
+        if let Some(p) = self.players.get_mut(player_a as usize) {
+            p.hp = (p.hp - dmg_to_a).max(0.0);
+        }
+        if let Some(p) = self.players.get_mut(player_b as usize) {
+            p.hp = (p.hp - dmg_to_b).max(0.0);
         }
     }
 
@@ -182,41 +214,138 @@ mod tests {
     }
 
     #[test]
-    fn test_round1_phases() {
+    fn test_start_round1() {
         let mut game = test_game();
-        assert_eq!(game.phase, GamePhase::GodPick);
-        assert_eq!(game.advance_phase(), GamePhase::HeroDraft);
-        assert_eq!(game.advance_phase(), GamePhase::Shop);
-        assert_eq!(game.advance_phase(), GamePhase::RoundEnd);
+        game.start_round1();
+        assert_eq!(game.round, 1);
+        assert_eq!(game.phase, GamePhase::Shop);
+        assert_eq!(game.timer, ROUND1_DURATION);
+        assert!(game.draft_pending);
+        // Gold should be set for round 1
+        assert_eq!(game.players[0].gold, 6);
     }
 
     #[test]
-    fn test_draft_round_phases() {
+    fn test_end_combat_transitions_to_grace_period() {
+        let mut game = test_game();
+        game.phase = GamePhase::Combat;
+        game.timer = COMBAT_TIMEOUT;
+        game.end_combat(false);
+        assert_eq!(game.phase, GamePhase::GracePeriod);
+        assert_eq!(game.timer, GRACE_PERIOD);
+    }
+
+    #[test]
+    fn test_end_combat_marks_shops_for_reroll() {
+        let mut game = test_game();
+        game.phase = GamePhase::Combat;
+        game.end_combat(false);
+        for player in &game.players {
+            assert!(player.shop.needs_reroll);
+        }
+    }
+
+    #[test]
+    fn test_end_combat_locked_shop_preserves_and_clears_lock() {
+        let mut game = test_game();
+        game.phase = GamePhase::Combat;
+        game.players[0].shop.locked = true;
+        game.end_combat(false);
+        // Locked shop should NOT be marked for reroll
+        assert!(!game.players[0].shop.needs_reroll);
+        // Lock should be cleared
+        assert!(!game.players[0].shop.locked);
+        // Other players should be marked for reroll
+        assert!(game.players[1].shop.needs_reroll);
+    }
+
+    #[test]
+    fn test_end_grace_period_increments_round() {
         let mut game = test_game();
         game.round = 2;
-        game.phase = GamePhase::RoundEnd;
-        // RoundEnd advances round to 3 (draft round)
-        let phase = game.advance_phase();
+        game.phase = GamePhase::GracePeriod;
+        game.end_grace_period();
         assert_eq!(game.round, 3);
-        assert_eq!(phase, GamePhase::HeroDraft);
-        assert_eq!(game.advance_phase(), GamePhase::Combat);
-        assert_eq!(game.advance_phase(), GamePhase::Damage);
-        assert_eq!(game.advance_phase(), GamePhase::Shop);
-        assert_eq!(game.advance_phase(), GamePhase::RoundEnd);
+        assert_eq!(game.phase, GamePhase::Shop);
+        assert_eq!(game.timer, ROUND_DURATION - COMBAT_TIMEOUT - GRACE_PERIOD);
     }
 
     #[test]
-    fn test_normal_round_phases() {
+    fn test_end_grace_period_resets_gold() {
         let mut game = test_game();
+        game.round = 2;
+        game.players[0].gold = 0;
+        game.end_grace_period();
+        // Round 3 gold = 6 + 2*(3-1) = 10
+        assert_eq!(game.players[0].gold, 10);
+    }
+
+    #[test]
+    fn test_end_grace_period_sets_draft_pending() {
+        let mut game = test_game();
+        // Round 2 → 3 is a draft round
+        game.round = 2;
+        game.end_grace_period();
+        assert!(game.draft_pending);
+
+        // Round 3 → 4 is NOT a draft round
         game.round = 3;
-        game.phase = GamePhase::RoundEnd;
-        // Round 4 is not a draft round
-        let phase = game.advance_phase();
-        assert_eq!(game.round, 4);
-        assert_eq!(phase, GamePhase::Combat);
-        assert_eq!(game.advance_phase(), GamePhase::Damage);
-        assert_eq!(game.advance_phase(), GamePhase::Shop);
-        assert_eq!(game.advance_phase(), GamePhase::RoundEnd);
+        game.draft_pending = false;
+        game.end_grace_period();
+        assert!(!game.draft_pending);
+    }
+
+    #[test]
+    fn test_end_shop_transitions_to_combat() {
+        let mut game = test_game();
+        game.phase = GamePhase::Shop;
+        game.draft_pending = true;
+        game.end_shop();
+        assert_eq!(game.phase, GamePhase::Combat);
+        assert_eq!(game.timer, COMBAT_TIMEOUT);
+        assert!(!game.draft_pending);
+    }
+
+    #[test]
+    fn test_apply_draw_damage() {
+        let mut game = test_game();
+        game.round = 5;
+        game.apply_draw_damage(0, 1, 2, 3);
+        // Player 0 takes damage from 3 survivors: 5*0.5 + (1+5*0.1)*3 = 2.5 + 4.5 = 7.0
+        let expected_dmg_to_0 = damage::calculate_damage(5, 3);
+        assert!((game.players[0].hp - (200.0 - expected_dmg_to_0)).abs() < 0.001);
+        // Player 1 takes damage from 2 survivors: 5*0.5 + (1+5*0.1)*2 = 2.5 + 3.0 = 5.5
+        let expected_dmg_to_1 = damage::calculate_damage(5, 2);
+        assert!((game.players[1].hp - (200.0 - expected_dmg_to_1)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_apply_draw_damage_clamps_to_zero() {
+        let mut game = test_game();
+        game.round = 10;
+        game.players[0].hp = 1.0;
+        game.apply_draw_damage(0, 1, 0, 5);
+        assert_eq!(game.players[0].hp, 0.0);
+    }
+
+    #[test]
+    fn test_timer_values_full_cycle() {
+        let mut game = test_game();
+        // Start round 1
+        game.start_round1();
+        assert_eq!(game.timer, 40.0);
+
+        // End shop → combat
+        game.end_shop();
+        assert_eq!(game.timer, 50.0);
+
+        // End combat → grace
+        game.end_combat(false);
+        assert_eq!(game.timer, 3.0);
+
+        // End grace → shop
+        game.end_grace_period();
+        assert_eq!(game.timer, 27.0); // 80 - 50 - 3
     }
 
     #[test]
@@ -227,26 +356,6 @@ mod tests {
         for p in &game.players {
             assert_eq!(p.gold, 6);
         }
-    }
-
-    #[test]
-    fn test_damage_and_elimination_in_one_step() {
-        let mut game = test_game();
-        game.round = 5;
-        game.phase = GamePhase::Combat;
-        // Apply damage to bring player 0 to 0 HP
-        game.players[0].hp = 1.0;
-        game.apply_damage(0, 5); // will exceed 1.0 HP
-        assert_eq!(game.players[0].hp, 0.0);
-        assert!(game.players[0].alive); // not yet eliminated
-
-        // Advance from Combat → Damage
-        assert_eq!(game.advance_phase(), GamePhase::Damage);
-        assert!(game.players[0].alive); // still alive in Damage phase entry
-
-        // Advance from Damage → Shop (eliminates dead in this transition)
-        assert_eq!(game.advance_phase(), GamePhase::Shop);
-        assert!(!game.players[0].alive); // now eliminated
     }
 
     #[test]
@@ -265,5 +374,34 @@ mod tests {
         game.players[0].alive = false;
         game.players[3].alive = false;
         assert_eq!(game.alive_count(), 6);
+    }
+
+    #[test]
+    fn test_eliminate_dead() {
+        let mut game = test_game();
+        game.players[0].hp = 0.0;
+        game.players[2].hp = -5.0;
+        game.eliminate_dead();
+        assert!(!game.players[0].alive);
+        assert!(!game.players[2].alive);
+        assert!(game.players[1].alive);
+    }
+
+    #[test]
+    fn test_needs_reroll_flag() {
+        let mut game = test_game();
+        // Initially false
+        assert!(!game.players[0].shop.needs_reroll);
+        game.end_combat(false);
+        assert!(game.players[0].shop.needs_reroll);
+    }
+
+    #[test]
+    fn test_dead_players_not_rerolled() {
+        let mut game = test_game();
+        game.players[0].alive = false;
+        game.end_combat(false);
+        assert!(!game.players[0].shop.needs_reroll);
+        assert!(game.players[1].shop.needs_reroll);
     }
 }

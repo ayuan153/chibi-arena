@@ -18,6 +18,10 @@ pub struct ShopState {
     pub offerings: Vec<String>,
     /// Rounds spent at each level without upgrading. Index 0 = level 1.
     pub decay_tracker: [u32; 5],
+    /// Whether the shop is locked (won't auto-reroll at combat end).
+    pub locked: bool,
+    /// Whether this shop needs a reroll (set by game state, consumed by roll_shop).
+    pub needs_reroll: bool,
 }
 
 impl ShopState {
@@ -27,7 +31,14 @@ impl ShopState {
             level: 1,
             offerings: Vec::new(),
             decay_tracker: [0; 5],
+            locked: false,
+            needs_reroll: false,
         }
+    }
+
+    /// Toggle shop lock. Free action.
+    pub fn toggle_lock(&mut self) {
+        self.locked = !self.locked;
     }
 
     /// Get the shop size for the current level, plus any bonus.
@@ -252,6 +263,23 @@ mod tests {
         assert_eq!(bought, Some("b".to_string()));
         assert_eq!(shop.offerings, vec!["a".to_string(), "c".to_string()]);
         assert_eq!(shop.buy_from_shop(10), None);
+    }
+
+    #[test]
+    fn test_locked_initialized_false() {
+        let shop = ShopState::new();
+        assert!(!shop.locked);
+        assert!(!shop.needs_reroll);
+    }
+
+    #[test]
+    fn test_toggle_lock() {
+        let mut shop = ShopState::new();
+        assert!(!shop.locked);
+        shop.toggle_lock();
+        assert!(shop.locked);
+        shop.toggle_lock();
+        assert!(!shop.locked);
     }
 
     #[test]

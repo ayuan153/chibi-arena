@@ -10,7 +10,7 @@ pub mod pool;
 pub mod shop;
 
 pub use draft::DraftState;
-pub use game::{GameConfig, GamePhase, GameState};
+pub use game::{GameConfig, GamePhase, GameState, COMBAT_TIMEOUT, GRACE_PERIOD, ROUND1_DURATION, ROUND_DURATION};
 pub use player::PlayerState;
 pub use pool::AbilityPool;
 pub use shop::ShopState;
