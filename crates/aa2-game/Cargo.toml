@@ -1,0 +1,13 @@
+[package]
+name = "aa2-game"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "AA2 game loop: economy, shop, draft, rounds, and state management"
+
+[dependencies]
+aa2-sim = { path = "../aa2-sim" }
+aa2-data = { path = "../aa2-data" }
+serde.workspace = true
+rand.workspace = true
