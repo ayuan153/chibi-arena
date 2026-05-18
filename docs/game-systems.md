@@ -9,33 +9,47 @@
 
 Each game consists of ~30 rounds. 8 players compete in FFA elimination.
 
-### Round Structure (80 seconds total)
+### Core Loop (80 seconds per round)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ COMBAT PHASE (variable duration, up to ~50s)                 │
+│ COMBAT (up to 50s max)                                       │
 │ - Auto-combat between paired opponents                       │
-│ - Ends when one side is eliminated or 30s remain (deadlock)  │
-│ - Losing player takes damage                                 │
+│ - Ends when one side eliminated or 50s timeout (draw)        │
+│ - Draw = both players take mutual damage                     │
 └──────────────────────────────┬──────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
-│ SHOP PHASE (remaining time after combat)                     │
+│ GRACE PERIOD (3s)                                            │
+│ - Previous round's gold still usable                         │
+│ - Shop auto-rerolls (unless locked)                          │
+│ - Damage animation plays                                     │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ SHOP PHASE (remaining time)                                  │
+│ - Gold resets to new round's formula                         │
 │ - Buy/sell abilities, reroll shop, upgrade shop              │
 │ - Equip abilities onto heroes, rearrange board               │
 │ - Ends when timer expires or all players "ready up"          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Round 1 exception:** No combat. Full 80 seconds for initial shopping + god pick.
+**GodPick:** Pre-game phase (not a round). All players select their god before Round 1.
+
+**Round 1 special:** 40s shop+draft phase, no combat.
+
+**Draft rounds (1/3/6/9/12):** Hero body draft is concurrent with shop (overlay, not blocking).
+
+**Combat timeout:** 50s max. If unresolved, it's a draw — both players take mutual damage.
 
 ### Round Sequence
 
-1. **Pre-round:** Hero level up (hero_level = 1 + round_number). Hero body draft on rounds 1/3/6/9/12.
+1. **Pre-round:** Hero level up (hero_level = 1 + round_number). Hero body draft on rounds 1/3/6/9/12 (concurrent with shop).
 2. **Combat:** Paired opponents fight. See "Combat Matchups" below.
-3. **Damage:** Losing player takes damage based on round + surviving enemy heroes.
+3. **Grace Period:** 3s window. Damage applied, shop auto-rerolls.
 4. **Elimination:** Players at 0 HP are eliminated.
-5. **Shop:** Remaining time for drafting abilities.
+5. **Shop:** Gold resets, remaining time for drafting abilities.
 
 ---
 
@@ -63,7 +77,7 @@ Formula: `gold = min(6 + 2 * (round - 1), 20)`
 | Action | Cost |
 |--------|------|
 | Buy ability | 3 gold |
-| Sell ability | 2 gold (refund) |
+| Sell ability | 2 gold × ability level (refund) |
 | Reroll shop | 1 gold |
 | Unequip/move ability | 1 gold |
 | Reroll hero body | 2 gold |
@@ -91,6 +105,26 @@ Example:
 | 3 | 6 | **Unlocks ultimate abilities** |
 | 4 | 8 | Regular + ultimates |
 | 5 | 10 | Regular + ultimates |
+
+---
+
+## Grace Period
+
+A 3-second window between combat ending and the shop phase beginning.
+
+- Previous round's gold is still usable (spend leftover gold)
+- Shop auto-rerolls (unless locked — see Shop Lock)
+- After grace period ends: gold resets to new round's formula
+- This is when the damage animation plays
+
+---
+
+## Shop Lock
+
+- Free toggle (no gold cost)
+- Prevents the shop from auto-rerolling at combat end (during grace period)
+- Auto-clears after one preservation (single-use per lock)
+- Useful for holding a shop you want to buy from next round
 
 ---
 
@@ -124,6 +158,7 @@ Example:
 
 - Each hero body has **4 ability slots** (modifiable by gods)
 - Each hero can have at most **1 ultimate** equipped
+- Abilities are marked as ultimates via `is_ultimate: bool` field in AbilityDef
 - **5-slot bench** for unequipped abilities
 - Moving an ability between heroes or to bench costs **1 gold**
 
@@ -177,10 +212,10 @@ Example:
 - Each player's units start in their half (bottom y∈[0,1000] vs top y∈[1000,2000])
 - Combat is fully automated (no player input during fights)
 
-### Deadlock
+### Deadlock (Draw)
 
-- If combat hasn't resolved with 30 seconds remaining in the round: draw
-- Both players take reduced damage (or no damage — TBD)
+- If combat hasn't resolved within 50s: draw
+- Draw = both players take mutual damage. Each takes damage based on the other's surviving heroes using the standard formula.
 
 ---
 

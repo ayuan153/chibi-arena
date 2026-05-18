@@ -68,10 +68,13 @@ Every new behavior MUST have a test that exercises it. Tests should:
 **Unit tests** (in-module `#[cfg(test)]`) for single-function behavior.
 
 ### 6. Update Documentation
-After completing a sprint item, update:
-- `docs/project-plan.md` — mark items as complete if appropriate
-- `docs/architecture.md` — if new systems/modules were added
+After completing a sprint's worth of work, update docs and get user feedback:
+- `docs/project-plan.md` — mark completed items, fix any descriptions that diverged from implementation
+- `docs/game-systems.md` — update game rules to match what was actually built (formulas, flows, new mechanics)
+- `docs/architecture.md` — update module lists, state machine descriptions, crate structure if changed
 - Inline doc comments on all new public items
+
+**Present doc changes to the user for review.** Docs are the source of truth for product intent — if implementation diverged from docs, confirm with the user which is correct before updating. This is a steering checkpoint.
 
 ### 7. Report
 After all items are done, present:

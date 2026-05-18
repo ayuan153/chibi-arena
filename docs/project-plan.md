@@ -82,16 +82,19 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 ## Phase 2: Game Systems (Weeks 13-20) ← CURRENT
 
-### Week 13-14: Core Game State (aa2-game crate)
+> **Progress:** Weeks 13-16 complete. Core game state, economy, shop, pool, draft, and hero bodies all implemented.
+
+### Week 13-14: Core Game State (aa2-game crate) ✓ COMPLETE
 - Create aa2-game crate with PlayerState, GameState
-- Economy system: gold per round (6/8/10...20), costs (buy 3, sell 2, reroll 1, unequip 1)
+- Economy system: gold per round (6/8/10...20), costs (buy 3, sell 2g × level, reroll 1, unequip 1)
 - Shop system: shop levels 1-5, size 4/6/6/8/10, upgrade cost with decay
 - Ability pool: 100 abilities × 20 copies, shared without replacement
-- Round state machine: GodPick → HeroDraft → Shop → Combat → Damage → loop
+- Round state machine: GodPick (pre-game) → Combat → GracePeriod → Shop cycle (GamePhase enum: GodPick, Combat, GracePeriod, Shop, Finished)
 - Milestone: can advance through rounds programmatically
 
-### Week 15-16: Draft & Hero Bodies
+### Week 15-16: Draft & Hero Bodies ✓ COMPLETE
 - Hero body draft: rounds 1/3/6/9/12, tiers D/C/B/A/S, 3 choices (STR/AGI/INT)
+- Draft is concurrent with shop (overlay, not blocking phase)
 - Hero body reroll (2 gold)
 - Ability equip system: 4 slots per hero, 1 ultimate max, 5-slot bench
 - Buy/sell/equip/unequip with gold costs

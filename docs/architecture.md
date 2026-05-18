@@ -110,7 +110,7 @@ Shared data definitions and loading.
 Multiplayer game server.
 
 **Responsibilities:**
-- Game state machine (lobby → draft → combat rounds → results)
+- Game state machine (GodPick → Combat → GracePeriod → Shop cycle → Finished)
 - WebSocket server (tokio + tungstenite)
 - Matchmaking queue with MMR-based pairing
 - Lobby management (8 players per game)
@@ -317,10 +317,22 @@ Owns the full game loop. Depends on aa2-sim and aa2-data.
 - `GameState`: 8 players, round counter, phase, ability pool, matchups
 - `Economy`: gold calculation, shop upgrade costs with decay
 - `Draft`: ability pool management, shop rolls, buy/sell/equip
-- `RoundFlow`: state machine (GodPick → HeroDraft → Shop → Combat → Damage → repeat)
+- `RoundFlow`: timer-based state machine — GodPick (pre-game) → Combat → GracePeriod → Shop cycle
+  - GamePhase enum: GodPick, Combat, GracePeriod, Shop, Finished
+  - Draft is concurrent with shop (draft_pending flag)
+  - Timer constants: ROUND_DURATION=80s, COMBAT_TIMEOUT=50s, GRACE_PERIOD=3s, ROUND1_DURATION=40s
 - `Matchmaker`: round-robin pairing with ghost opponents for odd counts
 - `DamageCalc`: player damage formula
 - `GodSystem`: god passive application, rule modifications
+
+**Modules:**
+- `economy.rs` — gold formulas, costs
+- `shop.rs` — shop state, levels, offerings, lock, upgrade
+- `pool.rs` — shared ability pool with depletion
+- `player.rs` — player state, buy/sell/equip/unequip
+- `draft.rs` — hero draft logic
+- `damage.rs` — player damage calculation
+- `game.rs` — game state, timer-based state machine, GameConfig
 
 Key design: aa2-game is SHARED between client and server. This enables:
 - Offline/dev mode (full game locally)
