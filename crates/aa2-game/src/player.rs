@@ -166,6 +166,20 @@ impl PlayerState {
         Ok(())
     }
 
+    /// Reroll the hero draft choices. Costs HERO_REROLL_COST gold.
+    pub fn reroll_draft(
+        &mut self,
+        available_heroes: &[&aa2_data::HeroDef],
+        rng: &mut impl rand::Rng,
+    ) -> Result<crate::draft::DraftState, &'static str> {
+        if self.gold < crate::economy::HERO_REROLL_COST {
+            return Err("not enough gold");
+        }
+        self.gold -= crate::economy::HERO_REROLL_COST;
+        let choices = crate::draft::generate_reroll_choices(available_heroes, rng);
+        Ok(crate::draft::DraftState { choices, round_tier: 0 })
+    }
+
     /// Reroll the shop offerings.
     pub fn reroll_shop(
         &mut self,
