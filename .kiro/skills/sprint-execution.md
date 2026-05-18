@@ -16,16 +16,19 @@ Read `docs/project-plan.md` to identify the current sprint's deliverables. Break
 
 Present the scope breakdown to the user as a TODO list. Each item should be concrete enough that "done" is unambiguous.
 
-### 2. Open Questions
-Before implementing, identify ambiguities in the spec. Ask the user ONLY about:
+### 2. Open Questions (Director-Level Only)
+Before implementing, identify ambiguities in the spec. Ask the user about:
+- **Product vision** — "should X feel like Y or Z?"
 - **Design decisions** not covered by docs/game-systems.md
-- **Edge cases** where multiple valid behaviors exist
-- **AA-specific choices** that differ from Dota2
+- **Game feel / balance intent** — things that affect player experience
+- **Scope boundaries** — "does this sprint include X or is that later?"
 
 Do NOT ask about:
 - Things already specified in docs/game-systems.md
 - Implementation details (you decide those)
-- Obvious Dota2 mechanics (research those via yolo-librarian)
+- Dota2 mechanics (research those via yolo-librarian)
+- Permission to commit or push (just do it)
+- Technical approach (pick the right one and execute)
 
 Keep questions to a single batch. Wait for answers before proceeding.
 
@@ -84,6 +87,8 @@ After all items are done, present:
 - No `unwrap()` in library code
 - All public items documented
 - Match existing code style in the workspace
+- **Commit and push after each logical chunk** — don't accumulate uncommitted work
+- Push liberally as long as changes are non-regressive (all tests pass)
 
 ### Testing Standards
 - Every formula has a unit test with known-good values
@@ -96,11 +101,13 @@ After all items are done, present:
 - If a current sprint item depends on something from a future sprint, stub it with a TODO comment and move on
 - If you discover the spec is incomplete for a current item, ask the user rather than guessing
 
-### Commit Hygiene
-- Only commit when user explicitly asks
-- Group related changes logically
+### Commit & Push Hygiene
+- Commit after each logical chunk of work (don't batch unrelated changes)
+- Push immediately after committing — no hoarding local commits
 - Use conventional commit format: `feat(game): implement shop upgrade decay`
 - Include `Prompt:` trailer
+- Group related changes logically (implementation + its tests = 1 commit)
+- Never push broken code (all tests must pass before push)
 
 ## Example Sprint Execution
 
