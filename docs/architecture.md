@@ -333,6 +333,8 @@ Owns the full game loop. Depends on aa2-sim and aa2-data.
 - `draft.rs` — hero draft logic
 - `damage.rs` — player damage calculation
 - `game.rs` — game state, timer-based state machine, GameConfig
+- `matchup.rs` — round-robin pairing with ghost seat
+- `combat.rs` — bridges PlayerState to aa2-sim (build_team, run_combat, mirroring)
 
 Key design: aa2-game is SHARED between client and server. This enables:
 - Offline/dev mode (full game locally)

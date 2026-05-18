@@ -82,7 +82,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 ## Phase 2: Game Systems (Weeks 13-20) ← CURRENT
 
-> **Progress:** Weeks 13-16 complete. Core game state, economy, shop, pool, draft, and hero bodies all implemented.
+> **Progress:** Weeks 13-18 complete. Core game state, economy, shop, pool, draft, hero bodies, matchups, and combat integration all implemented.
 
 ### Week 13-14: Core Game State (aa2-game crate) ✓ COMPLETE
 - Create aa2-game crate with PlayerState, GameState
@@ -102,7 +102,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 - Shop level 3 unlocks ultimates
 - Milestone: can draft a full team and equip abilities
 
-### Week 17-18: Combat Integration & Matchups
+### Week 17-18: Combat Integration & Matchups ✓ COMPLETE
 - Round-robin matchup pairing (randomized order, resilient to eliminations)
 - Ghost opponent for odd player counts (clone loadout, deals damage, can't take)
 - Build UnitConfigs from PlayerState at combat start
@@ -110,6 +110,8 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 - Player damage formula: base_damage(round) + per_hero * surviving_enemies
 - Player elimination at 0 HP
 - Milestone: full game loop runs to completion (1 winner)
+
+**Completed:** Round-robin matchups with ghost seat, combat integration via aa2-sim, full game loop runs to 1 winner.
 
 ### Week 19-20: God System & Dev Mode
 - God selection (all available, duplicates allowed)
