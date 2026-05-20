@@ -346,3 +346,192 @@ fn test_run_combat_returns_result_on_timeout() {
         "At least one team should have survivors"
     );
 }
+
+/// Verify: Archmage sorcery triggers guaranteed when shop is upgraded.
+/// Setup: player with Archmage god, some abilities at various levels.
+/// After upgrade + trigger_sorcery, exactly one ability gains +1 level.
+/// Pool is unchanged (free level, no deduction).
+#[test]
+fn test_archmage_sorcery_on_shop_upgrade() {
+    use aa2_game::god::{archmage, is_archmage, trigger_sorcery};
+
+    let mut player = PlayerState::new(0);
+    player.gold = 50;
+    player.god = Some(archmage());
+    player.abilities.insert("fireball".to_string(), 3);
+    player.abilities.insert("heal".to_string(), 5);
+    player.abilities.insert("shield".to_string(), 1);
+
+    assert!(is_archmage(&player));
+
+    let total_before: u32 = player.abilities.values().sum();
+
+    // Upgrade shop
+    let cost = player.shop.upgrade(&mut player.gold);
+    assert!(cost.is_some());
+    assert_eq!(player.shop.level, 2);
+
+    // Archmage guaranteed sorcery on upgrade
+    let mut rng = StdRng::seed_from_u64(99);
+    let upgraded = trigger_sorcery(&mut player, &mut rng);
+    assert!(upgraded.is_some());
+
+    let total_after: u32 = player.abilities.values().sum();
+    assert_eq!(total_after, total_before + 1, "exactly one ability gained +1 level");
+}
+
+/// Verify: player can equip ultimates on different heroes (only same-hero duplicate rejected).
+#[test]
+fn test_multiple_ultimates_different_heroes() {
+    let mut player = PlayerState::new(0);
+    player.heroes.push("hero1".to_string());
+    player.heroes.push("hero2".to_string());
+
+    let mut ultimates = HashSet::new();
+    ultimates.insert("ult1".to_string());
+    ultimates.insert("ult2".to_string());
+    ultimates.insert("ult3".to_string());
+    let config = GameConfig::default();
+
+    // Put ults on bench
+    player.abilities.insert("ult1".to_string(), 1);
+    player.bench.push("ult1".to_string());
+    player.abilities.insert("ult2".to_string(), 1);
+    player.bench.push("ult2".to_string());
+    player.abilities.insert("ult3".to_string(), 1);
+    player.bench.push("ult3".to_string());
+
+    // Equip ult1 to hero1 -> OK
+    assert!(player.equip_ability("ult1", "hero1", &ultimates, &config).is_ok());
+
+    // Equip ult2 to hero2 -> OK (different hero)
+    assert!(player.equip_ability("ult2", "hero2", &ultimates, &config).is_ok());
+
+    // Equip ult3 to hero1 -> REJECTED (hero1 already has an ultimate)
+    let result = player.equip_ability("ult3", "hero1", &ultimates, &config);
+    assert_eq!(result, Err("hero already has an ultimate"));
+}
+
+/// Verify: positioning matters. Compact front team beats spread-out team.
+/// Both teams have the same heroes (Sven + Juggernaut, both melee).
+/// Team A: both heroes near midline (Y=900) — they engage immediately.
+/// Team B: Sven near midline (Y=900), Juggernaut far back (Y=100).
+/// After mirroring, team B's Jugg ends up at (100, 1900) — very far from the fight.
+/// Team A should win because they get a 2v1 advantage early.
+#[test]
+fn test_positioning_affects_combat_outcome() {
+    let (hero_defs, ability_defs) = load_defs();
+
+    // Build team A: both melee heroes near midline (Y=900), compact
+    let mut player_a = PlayerState::new(0);
+    player_a.heroes.push("Sven".to_string());
+    player_a.heroes.push("Juggernaut".to_string());
+    player_a.hero_positions.insert("Sven".to_string(), (900.0, 900.0));
+    player_a.hero_positions.insert("Juggernaut".to_string(), (1100.0, 900.0));
+    player_a.equipped.entry("Sven".to_string()).or_default();
+    player_a.equipped.entry("Juggernaut".to_string()).or_default();
+
+    // Build team B: Sven near midline, Jugg far back
+    // After mirroring: Sven at (1000, 1100) — close to fight
+    //                  Jugg at (100, 1900) — very far from fight
+    let mut player_b = PlayerState::new(1);
+    player_b.heroes.push("Sven".to_string());
+    player_b.heroes.push("Juggernaut".to_string());
+    player_b.hero_positions.insert("Sven".to_string(), (1000.0, 900.0));
+    player_b.hero_positions.insert("Juggernaut".to_string(), (1900.0, 100.0));
+    player_b.equipped.entry("Sven".to_string()).or_default();
+    player_b.equipped.entry("Juggernaut".to_string()).or_default();
+
+    let hero_level = 5;
+    let round = 5;
+
+    let team_a = build_team(&player_a, &hero_defs, &ability_defs, hero_level, round);
+    let team_b = build_team(&player_b, &hero_defs, &ability_defs, hero_level, round);
+
+    // Run with multiple seeds to confirm positioning advantage is consistent
+    let mut a_wins = 0u32;
+    let seeds: [u32; 5] = [42, 123, 777, 1001, 9999];
+    for seed in seeds {
+        let (winner, _, _) = run_combat(&team_a, &team_b, seed);
+        if winner == Some(0) {
+            a_wins += 1;
+        }
+    }
+
+    // Team A (compact front) should win majority of the time
+    assert!(
+        a_wins >= 3,
+        "Team A (compact front) should win at least 3/5 seeds, got {a_wins}/5"
+    );
+}
+
+/// Verify: draft with no heroes of a given attribute returns None for that slot.
+#[test]
+fn test_draft_with_no_heroes_of_attribute() {
+    use aa2_data::{Attribute, HeroDef};
+    use aa2_game::draft::generate_draft_choices;
+
+    // Only STR heroes available at tier 0
+    let str_hero = HeroDef {
+        name: "str_only".to_string(),
+        primary_attribute: Attribute::Strength,
+        base_str: 20.0,
+        base_agi: 15.0,
+        base_int: 10.0,
+        str_gain: 2.0,
+        agi_gain: 1.0,
+        int_gain: 1.0,
+        base_attack_time: 1.7,
+        attack_range: 150.0,
+        attack_point: 0.4,
+        move_speed: 300.0,
+        turn_rate: 0.6,
+        collision_radius: 24.0,
+        tier: 0,
+        is_melee: true,
+        base_damage_min: 30.0,
+        base_damage_max: 35.0,
+        projectile_speed: None,
+    };
+
+    let heroes = [str_hero];
+    let refs: Vec<&HeroDef> = heroes.iter().collect();
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let choices = generate_draft_choices(&refs, 0, &mut rng);
+    assert_eq!(choices[0].as_deref(), Some("str_only"));
+    assert_eq!(choices[1], None); // No AGI hero
+    assert_eq!(choices[2], None); // No INT hero
+}
+
+/// Verify: shop roll with depleted pool offers only what's available without panicking.
+#[test]
+fn test_shop_roll_with_depleted_pool() {
+    use aa2_game::shop::ShopState;
+
+    // Pool has only 2 abilities left
+    let mut counts = HashMap::new();
+    counts.insert("ability_a".to_string(), 1);
+    counts.insert("ability_b".to_string(), 1);
+    let mut pool = AbilityPool::from_counts(counts);
+
+    let mut shop = ShopState::new();
+    shop.level = 2; // size = 6
+    let ultimates = HashSet::new();
+    let mut rng = StdRng::seed_from_u64(42);
+
+    // Should not panic, just offer what's available
+    shop.roll(&mut pool, &ultimates, 3, 0, &mut rng);
+    assert_eq!(shop.offerings.len(), 2);
+    assert!(shop.offerings.contains(&"ability_a".to_string()));
+    assert!(shop.offerings.contains(&"ability_b".to_string()));
+}
+
+/// Verify: available_for_shop with completely empty pool returns empty Vec.
+#[test]
+fn test_empty_pool_available_for_shop() {
+    let pool = AbilityPool::from_counts(HashMap::new());
+    let ultimates = HashSet::new();
+    let available = pool.available_for_shop(3, &ultimates, 3);
+    assert!(available.is_empty());
+}
