@@ -256,7 +256,7 @@ fn test_grace_period_gold_spending_then_reset() {
     assert_eq!(game.players[0].gold, 2); // 5 - 3
 
     // End grace period → gold resets to round 2 formula
-    game.end_grace_period();
+    game.end_grace_period(&mut rand::thread_rng());
     // Round 2 gold = 6 + 2*(2-1) = 8
     assert_eq!(game.players[0].gold, 8);
 }
@@ -279,10 +279,10 @@ fn test_ability_level_in_combat() {
         .or_default()
         .push(ability_name.clone());
 
-    let team = build_team(&player, &hero_defs, &ability_defs, 2);
+    let team = build_team(&player, &hero_defs, &ability_defs, 2, 1);
     assert_eq!(team.len(), 1);
 
-    let (config, _pos) = &team[0];
+    let (config, _pos, _buffs) = &team[0];
     // The ability should be at level 3
     assert!(!config.abilities.is_empty());
     let (_, level) = &config.abilities[0];
@@ -329,8 +329,8 @@ fn test_run_combat_returns_result_on_timeout() {
     player.hero_positions.insert(hero_name.clone(), (1000.0, 500.0));
     player.equipped.entry(hero_name.clone()).or_default();
 
-    let team_a = build_team(&player, &hero_defs, &ability_defs, 2);
-    let team_b = build_team(&player, &hero_defs, &ability_defs, 2);
+    let team_a = build_team(&player, &hero_defs, &ability_defs, 2, 1);
+    let team_b = build_team(&player, &hero_defs, &ability_defs, 2, 1);
 
     let (winner, survivors_a, survivors_b) = run_combat(&team_a, &team_b, 42);
 

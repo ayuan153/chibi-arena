@@ -8,6 +8,7 @@ use crate::combat::{self, CombatResult};
 use crate::damage;
 use crate::draft;
 use crate::economy;
+use crate::god;
 use crate::matchup;
 use crate::player::PlayerState;
 use crate::pool::AbilityPool;
@@ -148,12 +149,18 @@ impl GameState {
     }
 
     /// Called when grace period ends. Resets gold, starts shop phase.
-    pub fn end_grace_period(&mut self) {
+    pub fn end_grace_period(&mut self, rng: &mut impl rand::Rng) {
         self.round += 1;
         self.phase = GamePhase::Shop;
         self.timer = ROUND_DURATION - COMBAT_TIMEOUT - GRACE_PERIOD;
         self.start_round();
         self.draft_pending = draft::is_draft_round(self.round);
+        // Trigger Archmage sorcery for eligible players
+        for player in &mut self.players {
+            if player.alive {
+                god::maybe_trigger_sorcery(player, rng);
+            }
+        }
     }
 
     /// Called when shop timer hits 0. Starts next combat.
@@ -205,6 +212,7 @@ impl GameState {
             hero_defs,
             ability_defs,
             hero_level,
+            self.round,
             seed,
         );
 
@@ -360,7 +368,7 @@ mod tests {
         let mut game = test_game();
         game.round = 2;
         game.phase = GamePhase::GracePeriod;
-        game.end_grace_period();
+        game.end_grace_period(&mut rand::thread_rng());
         assert_eq!(game.round, 3);
         assert_eq!(game.phase, GamePhase::Shop);
         assert_eq!(game.timer, ROUND_DURATION - COMBAT_TIMEOUT - GRACE_PERIOD);
@@ -371,7 +379,7 @@ mod tests {
         let mut game = test_game();
         game.round = 2;
         game.players[0].gold = 0;
-        game.end_grace_period();
+        game.end_grace_period(&mut rand::thread_rng());
         // Round 3 gold = 6 + 2*(3-1) = 10
         assert_eq!(game.players[0].gold, 10);
     }
@@ -381,13 +389,13 @@ mod tests {
         let mut game = test_game();
         // Round 2 → 3 is a draft round
         game.round = 2;
-        game.end_grace_period();
+        game.end_grace_period(&mut rand::thread_rng());
         assert!(game.draft_pending);
 
         // Round 3 → 4 is NOT a draft round
         game.round = 3;
         game.draft_pending = false;
-        game.end_grace_period();
+        game.end_grace_period(&mut rand::thread_rng());
         assert!(!game.draft_pending);
     }
 
@@ -440,7 +448,7 @@ mod tests {
         assert_eq!(game.timer, 3.0);
 
         // End grace → shop
-        game.end_grace_period();
+        game.end_grace_period(&mut rand::thread_rng());
         assert_eq!(game.timer, 27.0); // 80 - 50 - 3
     }
 

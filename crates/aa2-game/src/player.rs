@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::economy::{BUY_COST, UNEQUIP_COST};
 use crate::game::GameConfig;
+use crate::god::God;
 use crate::pool::AbilityPool;
 use crate::shop::ShopState;
 
@@ -34,7 +35,9 @@ pub struct PlayerState {
     /// Bench: unequipped abilities (max 5 slots).
     pub bench: Vec<String>,
     /// Chosen god.
-    pub god: Option<String>,
+    pub god: Option<God>,
+    /// Hero name selected for god buff (e.g. Paladin's Radiant Shield target).
+    pub god_buff_target: Option<String>,
     /// Shop state.
     pub shop: ShopState,
     /// Whether this player is still alive.
@@ -62,6 +65,7 @@ impl PlayerState {
             equipped: HashMap::new(),
             bench: Vec::new(),
             god: None,
+            god_buff_target: None,
             shop: ShopState::new(),
             alive: true,
             hero_positions: HashMap::new(),

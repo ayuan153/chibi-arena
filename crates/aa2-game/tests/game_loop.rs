@@ -93,7 +93,7 @@ fn test_full_game_loop_terminates() {
 
         // Transition through phases
         game.end_combat(false);
-        game.end_grace_period();
+        game.end_grace_period(&mut rng);
         game.end_shop();
     }
 
@@ -138,7 +138,7 @@ fn test_rounds_advance_and_players_eliminated() {
         }
 
         game.end_combat(false);
-        game.end_grace_period();
+        game.end_grace_period(&mut rng);
         game.end_shop();
     }
 

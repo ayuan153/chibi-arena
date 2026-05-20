@@ -6,6 +6,7 @@ pub mod damage;
 pub mod draft;
 pub mod economy;
 pub mod game;
+pub mod god;
 pub mod matchup;
 pub mod player;
 pub mod pool;
