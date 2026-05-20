@@ -563,6 +563,14 @@ impl Simulation {
                             .map(|u| u.id)
                             .collect();
                         fury_swipes_gaben_spread(&mut self.units[i], target_id, &other_enemies, self.tick);
+                        // Damage reflection
+                        let reflect_pct: f32 = self.units[target_idx].buffs.iter()
+                            .map(|b| b.damage_reflection_pct)
+                            .sum();
+                        if reflect_pct > 0.0 {
+                            let reflected = total_dmg * reflect_pct;
+                            self.units[i].hp -= reflected;
+                        }
                         events.push(CombatEvent::Attack {
                             tick: self.tick, attacker_id, target_id, damage: total_dmg,
                         });
@@ -718,6 +726,14 @@ impl Simulation {
                     if glaives_active {
                         bounces.push((attacker_idx, target_idx, bonus_magical_damage));
                     }
+                    // Damage reflection
+                    let reflect_pct: f32 = self.units[target_idx].buffs.iter()
+                        .map(|b| b.damage_reflection_pct)
+                        .sum();
+                    if reflect_pct > 0.0 {
+                        let reflected = total_dmg * reflect_pct;
+                        self.units[attacker_idx].hp -= reflected;
+                    }
                 }
                 hit_events.push(CombatEvent::ProjectileHit {
                     tick: self.tick, target_id: proj.target_id, damage: total_dmg,
@@ -832,6 +848,7 @@ impl Simulation {
                                 source_id: pcaster_id,
                                 is_debuff: true,
                                 pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                             };
                             apply_buff(&mut self.units[target_idx].buffs, slow_buff);
                         }
@@ -965,6 +982,7 @@ impl Simulation {
                                 source_id: caster_id,
                                 is_debuff: true,
                                 pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                             };
                             apply_buff(&mut u.buffs, drag_buff);
                         } else if !pass_through_hit.contains(&uid) {
@@ -1014,6 +1032,7 @@ impl Simulation {
                                     source_id: caster_id,
                                     is_debuff: true,
                                     pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                                 };
                                 apply_buff(&mut u.buffs, stun_buff);
                                 // Deal damage on pin
@@ -1079,6 +1098,7 @@ impl Simulation {
                                             source_id: caster_id,
                                             is_debuff: true,
                                             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                                         };
                                         apply_buff(&mut u.buffs, trail_buff);
                                     }
@@ -1118,6 +1138,7 @@ impl Simulation {
                                         source_id: caster_id,
                                         is_debuff: true,
                                         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                                     };
                                     apply_buff(&mut u.buffs, trail_buff);
                                 }
@@ -1204,6 +1225,7 @@ impl Simulation {
                                 source_id: caster_id,
                                 is_debuff: true,
                                 pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                             };
                             apply_buff(&mut u.buffs, stun_buff);
                             // Schedule damage after 0.52s (16 ticks)
@@ -1222,6 +1244,7 @@ impl Simulation {
                                     source_id: caster_id,
                                     is_debuff: true,
                                     pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                                 };
                                 apply_buff(&mut u.buffs, cf_buff);
                             }
@@ -1407,6 +1430,7 @@ impl Simulation {
                                 source_id: caster_id,
                                 is_debuff: true,
                                 pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                             };
                             apply_buff(&mut u.buffs, stun_buff);
                             events.push(CombatEvent::WaveHit {
@@ -1830,6 +1854,7 @@ mod tests {
             source_id: 1,
             is_debuff: true,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2002,6 +2027,7 @@ mod tests {
             source_id: 1,
             is_debuff: true,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2099,6 +2125,7 @@ mod tests {
             source_id: 0,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2130,6 +2157,7 @@ mod tests {
             source_id: 0,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2164,6 +2192,7 @@ mod tests {
             source_id: 0,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2196,6 +2225,7 @@ mod tests {
             source_id: 0,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2234,6 +2264,7 @@ mod tests {
             source_id: 0,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2246,5 +2277,35 @@ mod tests {
         let actual_regen = sim.units[0].hp - hp_before;
         assert!((actual_regen - expected_regen).abs() < 1.0,
             "Expected ~{expected_regen} regen, got {actual_regen}");
+    }
+
+    #[test]
+    fn test_damage_reflection_buff() {
+        use crate::buff::damage_reflection;
+
+        let def = make_sven();
+        let u0 = Unit::from_hero_def(&def, 0, 0, Vec2::new(0.0, 0.0));
+        let mut u1 = Unit::from_hero_def(&def, 1, 1, Vec2::new(100.0, 0.0));
+
+        // Apply 35% damage reflection to target (u1)
+        u1.buffs.push(damage_reflection("test_reflect", 0.35));
+        let attacker_max_hp = u0.max_hp;
+
+        let mut sim = Simulation::new(vec![u0, u1]);
+
+        // Run until first attack event
+        for _ in 0..300 {
+            sim.step();
+            if sim.combat_log.iter().any(|e| matches!(e, CombatEvent::Attack { .. })) {
+                break;
+            }
+        }
+
+        assert!(sim.combat_log.iter().any(|e| matches!(e, CombatEvent::Attack { .. })),
+            "Expected an attack event");
+        // Attacker should have taken reflected damage
+        assert!(sim.units[0].hp < attacker_max_hp,
+            "Attacker should have taken reflected damage: hp={} max={}",
+            sim.units[0].hp, attacker_max_hp);
     }
 }

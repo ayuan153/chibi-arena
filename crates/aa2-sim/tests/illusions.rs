@@ -360,6 +360,7 @@ fn test_illusion_ignores_flat_armor_bonus() {
         source_id: 0,
         is_debuff: false,
         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
     });
 
     let enemy = Unit::from_hero_def(&hero, 1, 1, Vec2::new(9999.0, 0.0));
@@ -393,6 +394,7 @@ fn test_illusion_keeps_agi_armor() {
         source_id: 0,
         is_debuff: false,
         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
     });
 
     let enemy = Unit::from_hero_def(&hero, 1, 1, Vec2::new(9999.0, 0.0));

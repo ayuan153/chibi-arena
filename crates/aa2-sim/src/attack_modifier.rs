@@ -201,6 +201,7 @@ pub fn post_attack_effects(
                     source_id: attacker.id,
                     is_debuff: true,
                     pierces_magic_immunity: true,
+                    damage_reflection_pct: 0.0,
                 };
                 target.buffs.push(debuff);
 
@@ -219,6 +220,7 @@ pub fn post_attack_effects(
                     source_id: attacker.id,
                     is_debuff: false,
                     pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                 };
                 attacker.buffs.push(buff);
             }
@@ -254,6 +256,7 @@ pub fn post_attack_effects(
                         source_id: attacker.id,
                         is_debuff: true,
                         pierces_magic_immunity: true,
+                    damage_reflection_pct: 0.0,
                     };
                     target.buffs.push(debuff);
                 }
@@ -300,6 +303,7 @@ pub fn post_attack_effects(
                         source_id: attacker.id,
                         is_debuff: true,
                         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                     };
                     target.buffs.push(debuff);
 
@@ -318,6 +322,7 @@ pub fn post_attack_effects(
                         source_id: attacker.id,
                         is_debuff: false,
                         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                     };
                     attacker.buffs.push(buff);
                 }

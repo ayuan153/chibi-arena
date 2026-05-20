@@ -121,6 +121,25 @@ pub struct Buff {
     pub is_debuff: bool,
     /// If true, this debuff applies even to magic immune units.
     pub pierces_magic_immunity: bool,
+    /// Percentage of autoattack damage reflected back to attacker (0.0 to 1.0).
+    pub damage_reflection_pct: f32,
+}
+
+/// Create a damage reflection buff (undispellable, permanent).
+pub fn damage_reflection(name: &str, reflection_pct: f32) -> Buff {
+    Buff {
+        name: name.to_string(),
+        remaining_ticks: u32::MAX,
+        tick_effect: None,
+        stacking: StackBehavior::RefreshDuration,
+        dispel_type: DispelType::Undispellable,
+        status: StatusFlags::default(),
+        stat_modifier: None,
+        source_id: 0,
+        is_debuff: false,
+        pierces_magic_immunity: true,
+        damage_reflection_pct: reflection_pct,
+    }
 }
 
 /// Result of processing one tick of all buffs on a unit.
@@ -309,6 +328,7 @@ mod tests {
             source_id: source,
             is_debuff: true,
             pierces_magic_immunity: false,
+            damage_reflection_pct: 0.0,
         }
     }
 

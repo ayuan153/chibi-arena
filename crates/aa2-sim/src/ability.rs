@@ -110,6 +110,7 @@ pub fn execute_ability(
                         source_id: caster_id,
                         is_debuff,
                         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                     };
                     apply_buff(&mut units[idx].buffs, buff);
                     events.push(CombatEvent::BuffApplied {
@@ -193,6 +194,7 @@ pub fn execute_ability(
                     source_id: caster_id,
                     is_debuff: false,
                     pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                 };
                 // Apply to target
                 if let Some(tid) = target_id
@@ -263,6 +265,7 @@ pub fn execute_ability(
                         source_id: caster_id,
                         is_debuff: false,
                         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                     };
                     apply_buff(&mut caster.buffs, invuln_buff);
                 }
@@ -308,6 +311,7 @@ pub fn execute_ability(
                         source_id: caster_id,
                         is_debuff: false,
                         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
                     };
                     apply_buff(&mut caster.buffs, rage_buff);
                     events.push(CombatEvent::BuffApplied { tick, target_id: caster_id, name: "rage".to_string() });
@@ -577,6 +581,7 @@ mod tests {
             source_id: 1,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let hp_before = units[1].hp;
@@ -608,6 +613,7 @@ mod tests {
             source_id: 1,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let hp_before = units[1].hp;
@@ -662,6 +668,7 @@ mod tests {
             source_id: 1,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         let units = vec![u0.clone(), u1];
@@ -690,6 +697,7 @@ mod tests {
             source_id: 1,
             is_debuff: true,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
         assert_eq!(units[0].buffs.len(), 1);
 
@@ -736,6 +744,7 @@ mod tests {
             source_id: 1,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
 
         attacker.abilities.push(AbilityState {

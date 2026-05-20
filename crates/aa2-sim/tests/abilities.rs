@@ -262,6 +262,7 @@ fn test_dark_pact_dispel() {
         source_id: 1,
         is_debuff: true,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
     });
 
     assert!(sim.units[0].buffs.iter().any(|b| b.name == "test_stun"));
@@ -530,6 +531,7 @@ fn test_hg_dispels_on_cast() {
         source_id: 99,
         is_debuff: true,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
     });
 
     let mut units = vec![u0, u1];
@@ -1350,6 +1352,7 @@ fn test_essence_shift_stats_floor_at_one() {
             source_id: 0,
             is_debuff: true,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
     }
 
@@ -1378,6 +1381,7 @@ fn test_essence_shift_stats_floor_at_one() {
             source_id: 0,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
     }
 
@@ -1416,6 +1420,7 @@ fn test_hg_protects_base_from_es() {
         source_id: 0,
         is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
     });
 
     // 30 ES debuffs: -1 STR each
@@ -1436,6 +1441,7 @@ fn test_hg_protects_base_from_es() {
             source_id: 1,
             is_debuff: true,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
     }
 
@@ -1507,6 +1513,7 @@ fn test_agi_hero_damage_increases_with_es_buff() {
             source_id: 0,
             is_debuff: false,
             pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
         });
     }
 
@@ -2220,6 +2227,7 @@ fn test_glaives_blocked_by_magic_immunity() {
         source_id: 1,
         is_debuff: false,
         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
     });
 
     let target_hp_before = target.hp;
@@ -2487,6 +2495,7 @@ fn test_spear_blocked_by_magic_immunity() {
         source_id: 1,
         is_debuff: false,
         pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
     });
     let target_hp_before = target.hp;
     let target_pos_before = target.position;
