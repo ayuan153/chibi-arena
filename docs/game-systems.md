@@ -247,7 +247,21 @@ damage = base_damage + per_hero * surviving_heroes
 
 ## Gods
 
-Gods are selected at game start (round 1). All gods available to all players. Duplicates allowed.
+Gods are selected at game start (pre-game phase, not a round). All gods available to all players. Duplicates allowed.
+
+### Implemented Gods
+
+#### Archmage — Sorcery (Passive)
+- At shop start: **40% chance** to +1 level a random equipped ability
+- On shop upgrade: **guaranteed** +1 level to a random equipped ability
+- Free level — no pool deduction (does not consume a copy from the shared pool)
+- Scales with shop upgrades (more upgrades = more guaranteed procs)
+
+#### Paladin — Radiant Shield (Select-Buff)
+- Buff one selected unit with **70 × round_number bonus HP** + **35% damage reflection**
+- One unit at a time (selecting a new unit removes buff from previous)
+- Buff applied during shop phase, takes effect at combat start
+- **Undispellable** (cannot be purged)
 
 ### God Ability Patterns
 
@@ -256,10 +270,18 @@ Gods modify game rules. Common patterns:
 | Pattern | Example |
 |---------|---------|
 | Global combat passive (scales with shop level) | "All heroes gain +2 armor per shop level" |
-| Single-unit buff (scales with abilities purchased) | "Your strongest hero gains +5 damage per ability owned" |
+| Single-unit buff (scales with round) | Paladin Radiant Shield |
 | Economy modifier | "Rerolls cost 0", "Start with +2 gold per round" |
 | Slot modifier | "+2 ability slots on all heroes" |
 | Draft modifier | "See 2 extra choices per roll", "Ultimates available at shop level 2" |
+| Passive proc | Archmage Sorcery |
+
+### Select-Buff Gods
+
+- Player selects a target unit during shop phase
+- Buff is applied at combat start
+- Only one unit can hold the buff at a time
+- Buff persists across rounds until a new unit is selected
 
 ### God Implementation
 

@@ -187,7 +187,7 @@ mult = 1 - (0.06 * armor) / (1 + 0.06 * |armor|)
 - **Attack loop:** Acquire target → turn → wind-up (attack point) → launch projectile/apply damage → backswing
 - **Projectiles:** Homing with configurable speed. Travel time = distance / speed. On-hit effects applied on arrival.
 - **Abilities:** Cast point → effect → cooldown. Targeting modes: unit, point, no-target, passive.
-- **Buffs/Debuffs:** Stack rules (refresh, independent, max stacks). Tick-based duration. Modifier priority system.
+- **Buffs/Debuffs:** Stack rules (refresh, independent, max stacks). Tick-based duration. Modifier priority system. DamageReflection buff (reflects % of incoming damage back to attacker).
 - **Pathfinding:** Grid-based A* with unit collision. Recalculates on obstruction.
 - **Turn rate:** Units must face target before attacking/casting. Configurable degrees/second.
 
@@ -335,11 +335,15 @@ Owns the full game loop. Depends on aa2-sim and aa2-data.
 - `game.rs` — game state, timer-based state machine, GameConfig
 - `matchup.rs` — round-robin pairing with ghost seat
 - `combat.rs` — bridges PlayerState to aa2-sim (build_team, run_combat, mirroring)
+- `god.rs` — god definitions, passive triggers (Archmage Sorcery, Paladin Radiant Shield)
 
 Key design: aa2-game is SHARED between client and server. This enables:
 - Offline/dev mode (full game locally)
 - Client-side prediction (optional)
 - Server-side validation (authoritative)
+
+**Binaries:**
+- `bin/aa2-dev.rs` — CLI dev mode, interactive single-player game vs AI
 
 ### Dependency Graph
 ```
