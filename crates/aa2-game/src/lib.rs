@@ -14,7 +14,7 @@ pub mod shop;
 
 pub use combat::CombatResult;
 pub use draft::DraftState;
-pub use game::{GameConfig, GamePhase, GameState, COMBAT_TIMEOUT, GRACE_PERIOD, ROUND1_DURATION, ROUND_DURATION};
+pub use game::{GameConfig, GameEvent, GamePhase, GameState, COMBAT_TIMEOUT, GOD_PICK_DURATION, GRACE_PERIOD, ROUND1_DURATION, ROUND_DURATION};
 pub use matchup::Matchup;
 pub use player::PlayerState;
 pub use pool::AbilityPool;

@@ -38,7 +38,7 @@ fn run() -> Result<(), String> {
     let roster: Vec<String> = abilities.iter().map(|a| a.name.clone()).collect();
     let pool = AbilityPool::new(&roster, roster.len(), 20, &mut rng);
 
-    let config = GameConfig::default();
+    let config = GameConfig { auto_advance: false, ..GameConfig::default() };
     let mut game = GameState::new(pool, ultimates.clone(), config);
 
     // God pick phase

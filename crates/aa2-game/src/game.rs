@@ -21,6 +21,8 @@ pub const COMBAT_TIMEOUT: f32 = 50.0;
 pub const GRACE_PERIOD: f32 = 3.0;
 /// Round 1 special duration (no combat, just shop+draft).
 pub const ROUND1_DURATION: f32 = 40.0;
+/// God pick phase duration in seconds.
+pub const GOD_PICK_DURATION: f32 = 30.0;
 
 /// Game configuration — gods can modify these parameters.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +37,9 @@ pub struct GameConfig {
     pub reroll_cost_override: Option<u32>,
     /// Shop level at which ultimates become available.
     pub ultimate_unlock_level: u32,
+    /// When true, timer reaching 0 auto-triggers phase transitions.
+    /// When false (dev mode), transitions require manual trigger.
+    pub auto_advance: bool,
 }
 
 impl Default for GameConfig {
@@ -45,6 +50,7 @@ impl Default for GameConfig {
             gold_bonus: 0,
             reroll_cost_override: None,
             ultimate_unlock_level: 3,
+            auto_advance: true,
         }
     }
 }
@@ -63,6 +69,23 @@ pub enum GamePhase {
     Shop,
     /// Game over.
     Finished,
+}
+
+/// Events produced by the tick system.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GameEvent {
+    /// Phase transitioned automatically.
+    PhaseTransition(GamePhase),
+    /// Combat timed out (draw forced).
+    CombatTimeout,
+    /// Random god assigned to player.
+    RandomGodAssigned(u8),
+    /// Random hero assigned to player (draft timeout).
+    RandomHeroAssigned(u8, String),
+    /// Archmage sorcery triggered.
+    SorceryTriggered(u8, String),
+    /// Game over.
+    GameOver,
 }
 
 /// Top-level game state.
@@ -104,7 +127,7 @@ impl GameState {
             matchups: Vec::new(),
             ultimates,
             config,
-            timer: 0.0,
+            timer: GOD_PICK_DURATION,
             draft_pending: false,
             matchup_rotation: Vec::new(),
             cycle_round: 0,
@@ -300,6 +323,55 @@ impl GameState {
     /// Get the hero level for the current round.
     pub fn hero_level(&self) -> u8 {
         (1 + self.round).min(255) as u8
+    }
+
+    /// Advance game time by `dt` seconds. Returns events that occurred.
+    /// Mid-phase events (combat timeout) always fire.
+    /// Phase transitions only fire if `config.auto_advance` is true.
+    pub fn tick(&mut self, dt: f32, rng: &mut impl rand::Rng) -> Vec<GameEvent> {
+        let mut events = Vec::new();
+        self.timer -= dt;
+
+        // Mid-phase events (always fire)
+        if self.phase == GamePhase::Combat && self.timer <= 0.0 {
+            events.push(GameEvent::CombatTimeout);
+        }
+
+        // Phase transition events (only if auto_advance)
+        if self.config.auto_advance && self.timer <= 0.0 {
+            match self.phase {
+                GamePhase::GodPick => self.auto_end_god_pick(rng, &mut events),
+                GamePhase::Shop => self.auto_end_shop(&mut events),
+                GamePhase::GracePeriod => {
+                    self.end_grace_period(rng);
+                    events.push(GameEvent::PhaseTransition(GamePhase::Shop));
+                }
+                GamePhase::Combat | GamePhase::Finished => {}
+            }
+        }
+
+        events
+    }
+
+    /// Auto-end god pick: assign random gods to players who haven't picked.
+    fn auto_end_god_pick(&mut self, rng: &mut impl rand::Rng, events: &mut Vec<GameEvent>) {
+        let gods = god::all_gods();
+        for player in &mut self.players {
+            if player.alive && player.god.is_none() {
+                let god = gods[rng.gen_range(0..gods.len())].clone();
+                events.push(GameEvent::RandomGodAssigned(player.id));
+                player.god = Some(god);
+            }
+        }
+        self.start_round1();
+        events.push(GameEvent::PhaseTransition(GamePhase::Shop));
+    }
+
+    /// Auto-end shop: clear draft if pending, start combat.
+    fn auto_end_shop(&mut self, events: &mut Vec<GameEvent>) {
+        self.draft_pending = false;
+        self.end_shop();
+        events.push(GameEvent::PhaseTransition(GamePhase::Combat));
     }
 }
 
@@ -507,5 +579,82 @@ mod tests {
         game.end_combat(false);
         assert!(!game.players[0].shop.needs_reroll);
         assert!(game.players[1].shop.needs_reroll);
+    }
+
+    #[test]
+    fn test_tick_shop_auto_advance() {
+        let mut game = test_game();
+        game.phase = GamePhase::Shop;
+        game.timer = 27.0;
+        game.round = 1;
+        let mut rng = rand::thread_rng();
+
+        let events = game.tick(26.9, &mut rng);
+        assert!(events.is_empty());
+        assert_eq!(game.phase, GamePhase::Shop);
+
+        let events = game.tick(0.2, &mut rng);
+        assert!(events.contains(&GameEvent::PhaseTransition(GamePhase::Combat)));
+        assert_eq!(game.phase, GamePhase::Combat);
+    }
+
+    #[test]
+    fn test_tick_shop_no_auto_advance() {
+        let mut game = test_game();
+        game.config.auto_advance = false;
+        game.phase = GamePhase::Shop;
+        game.timer = 27.0;
+        game.round = 1;
+        let mut rng = rand::thread_rng();
+
+        let events = game.tick(28.0, &mut rng);
+        assert!(events.is_empty());
+        assert_eq!(game.phase, GamePhase::Shop);
+    }
+
+    #[test]
+    fn test_tick_combat_timeout_always_fires() {
+        let mut game = test_game();
+        game.config.auto_advance = false;
+        game.phase = GamePhase::Combat;
+        game.timer = COMBAT_TIMEOUT;
+        let mut rng = rand::thread_rng();
+
+        let events = game.tick(50.1, &mut rng);
+        assert!(events.contains(&GameEvent::CombatTimeout));
+        // Phase unchanged — no auto_advance
+        assert_eq!(game.phase, GamePhase::Combat);
+    }
+
+    #[test]
+    fn test_tick_grace_period_auto_advance() {
+        let mut game = test_game();
+        game.phase = GamePhase::GracePeriod;
+        game.timer = 3.0;
+        game.round = 2;
+        let mut rng = rand::thread_rng();
+
+        let events = game.tick(3.1, &mut rng);
+        assert!(events.contains(&GameEvent::PhaseTransition(GamePhase::Shop)));
+        assert_eq!(game.phase, GamePhase::Shop);
+        assert_eq!(game.round, 3);
+    }
+
+    #[test]
+    fn test_tick_god_pick_timeout() {
+        let mut game = test_game();
+        game.phase = GamePhase::GodPick;
+        game.timer = GOD_PICK_DURATION;
+        let mut rng = rand::thread_rng();
+
+        // All players have no god
+        let events = game.tick(30.1, &mut rng);
+        // Should assign random gods and transition
+        assert!(events.contains(&GameEvent::PhaseTransition(GamePhase::Shop)));
+        assert_eq!(game.phase, GamePhase::Shop);
+        assert_eq!(game.round, 1);
+        for player in &game.players {
+            assert!(player.god.is_some());
+        }
     }
 }
