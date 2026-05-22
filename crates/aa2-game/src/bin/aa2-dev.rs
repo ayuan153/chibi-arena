@@ -131,12 +131,12 @@ fn run() -> Result<(), String> {
         }
 
         display_shop(&game.players[0], &game);
-        display_heroes(&game.players[0], &game);
+        display_heroes(&game.players[0], &game, &hero_defs);
 
         // Player command loop
         let stdin = io::stdin();
         loop {
-            print!("> ");
+            print!("> [ready | shop | heroes | bench | status | help] ");
             io::stdout().flush().ok();
             let mut line = String::new();
             if stdin.lock().read_line(&mut line).is_err() || line.is_empty() {
@@ -152,7 +152,7 @@ fn run() -> Result<(), String> {
                 "status" => println!("  Round: {} | Gold: {} | HP: {:.0} | Phase: Shop",
                     game.round, game.players[0].gold, game.players[0].hp),
                 "shop" => display_shop(&game.players[0], &game),
-                "heroes" => display_heroes(&game.players[0], &game),
+                "heroes" => display_heroes(&game.players[0], &game, &hero_defs),
                 "bench" => display_bench(&game.players[0]),
                 "board" => display_board(&game.players[0]),
                 "god" => display_god(&game.players[0]),
@@ -241,19 +241,28 @@ fn run() -> Result<(), String> {
                     }
                 }
                 "reroll-hero" => {
-                    if game.players[0].gold < HERO_REROLL_COST {
-                        println!("  Not enough gold (need {}g)", HERO_REROLL_COST);
+                    if parts.len() < 2 {
+                        println!("  Usage: reroll-hero <hero_name>");
                     } else {
-                        let available = available_heroes_for_player(&heroes, &game.players[0]);
-                        match game.players[0].reroll_draft(&available, &mut rng) {
-                            Ok(new_draft) => {
-                                println!("  Rerolled draft! (-{}g)", HERO_REROLL_COST);
-                                drafts[0] = Some(new_draft);
-                                if let Some(ref d) = drafts[0] {
-                                    display_draft(d, &hero_defs);
+                        let hero = parts[1..].join("_");
+                        let actual_hero = game.players[0].heroes.iter()
+                            .find(|h| h.as_str() == hero || h.to_lowercase() == hero.to_lowercase())
+                            .cloned();
+                        match actual_hero {
+                            Some(h) => {
+                                let available = available_heroes_for_player(&heroes, &game.players[0]);
+                                match game.players[0].reroll_hero(&h, &available, &mut rng) {
+                                    Ok(choices) => {
+                                        println!("  Discarded {}! (-{}g)", h, HERO_REROLL_COST);
+                                        let draft = DraftState { choices, round_tier: 0 };
+                                        display_draft(&draft, &hero_defs);
+                                        println!("  Pick one with: draft <1|2|3>");
+                                        drafts[0] = Some(draft);
+                                    }
+                                    Err(e) => println!("  Cannot reroll: {e}"),
                                 }
                             }
-                            Err(e) => println!("  Cannot reroll: {e}"),
+                            None => println!("  Hero not owned: {}", hero),
                         }
                     }
                 }
@@ -436,9 +445,11 @@ fn display_shop(player: &PlayerState, game: &GameState) {
         if shop.locked { "ON" } else { "OFF" },
         player.gold, BUY_COST,
         game.config.reroll_cost_override.unwrap_or(REROLL_COST));
+    let size = shop.offerings.len();
+    println!("  Commands: buy <1-{}>, reroll, lock, upgrade, sell <name>", size);
 }
 
-fn display_heroes(player: &PlayerState, game: &GameState) {
+fn display_heroes(player: &PlayerState, game: &GameState, hero_defs: &HashMap<String, HeroDef>) {
     println!("\n--- HEROES ({}/{}) ---", player.heroes.len(), MAX_HEROES);
     if player.heroes.is_empty() {
         println!("  (none - pick from draft!)");
@@ -459,8 +470,18 @@ fn display_heroes(player: &PlayerState, game: &GameState) {
         for _ in filled..slots {
             ability_strs.push("[empty]".to_string());
         }
-        println!("  {} - {}", hero_name, ability_strs.join(", "));
+        let attr = hero_defs.get(hero_name)
+            .map(|h| match h.primary_attribute {
+                aa2_data::Attribute::Strength => "STR",
+                aa2_data::Attribute::Agility => "AGI",
+                aa2_data::Attribute::Intelligence => "INT",
+                aa2_data::Attribute::Universal => "UNI",
+            })
+            .unwrap_or("???");
+        let pos = player.hero_positions.get(hero_name).copied().unwrap_or((1000.0, 500.0));
+        println!("  {} [{}] - {}  @ ({:.0}, {:.0})", hero_name, attr, ability_strs.join(", "), pos.0, pos.1);
     }
+    println!("  Commands: equip <ability> <hero>, unequip <ability> <hero>, reroll-hero <hero> ({}g)", HERO_REROLL_COST);
 }
 
 fn display_bench(player: &PlayerState) {
@@ -502,6 +523,17 @@ fn display_players(game: &GameState) {
     }
 }
 
+fn tier_letter(tier: u8) -> &'static str {
+    match tier {
+        0 => "D",
+        1 => "C",
+        2 => "B",
+        3 => "A",
+        4 => "S",
+        _ => "?",
+    }
+}
+
 fn display_draft(draft: &DraftState, hero_defs: &HashMap<String, HeroDef>) {
     println!("\n--- DRAFT (pick a hero) ---");
     let labels = ["STR", "AGI", "INT"];
@@ -509,12 +541,12 @@ fn display_draft(draft: &DraftState, hero_defs: &HashMap<String, HeroDef>) {
         match choice {
             Some(name) => {
                 let tier = hero_defs.get(name).map(|h| h.tier).unwrap_or(0);
-                println!("  {}. {} [{}] (Tier {})", i + 1, name, labels[i], tier);
+                println!("  {}. {} [{}] (Tier {})", i + 1, name, labels[i], tier_letter(tier));
             }
             None => println!("  {}. (none available)", i + 1),
         }
     }
-    println!("  Reroll cost: {}g", HERO_REROLL_COST);
+    println!("  Commands: draft <1-3>");
 }
 
 fn print_help() {
@@ -532,7 +564,7 @@ Commands:
   equip <a> <h>   - equip ability to hero
   unequip <a> <h> - unequip ability (1g)
   draft <1|2|3>   - pick hero from draft
-  reroll-hero     - reroll draft choices (2g)
+  reroll-hero <h> - discard hero, get 3 new choices (2g)
   position <h> <x> <y> - set hero position
   god             - show god info
   buff <hero>     - set paladin buff target

@@ -170,18 +170,37 @@ impl PlayerState {
         Ok(())
     }
 
-    /// Reroll the hero draft choices. Costs HERO_REROLL_COST gold.
-    pub fn reroll_draft(
+    /// Reroll (replace) an existing hero. Costs 2g.
+    /// Discards the named hero and returns 3 new choices (1 STR/AGI/INT) from all tiers.
+    /// The player MUST pick one of the new choices (old hero is gone).
+    pub fn reroll_hero(
         &mut self,
+        hero_to_discard: &str,
         available_heroes: &[&aa2_data::HeroDef],
         rng: &mut impl rand::Rng,
-    ) -> Result<crate::draft::DraftState, &'static str> {
+    ) -> Result<[Option<String>; 3], &'static str> {
         if self.gold < crate::economy::HERO_REROLL_COST {
             return Err("not enough gold");
         }
+        if !self.heroes.contains(&hero_to_discard.to_string()) {
+            return Err("you don't own that hero");
+        }
         self.gold -= crate::economy::HERO_REROLL_COST;
+        // Remove hero from roster
+        self.heroes.retain(|h| h != hero_to_discard);
+        // Move equipped abilities back to bench
+        if let Some(abilities) = self.equipped.remove(hero_to_discard) {
+            for ability in abilities {
+                if self.bench.len() < MAX_BENCH {
+                    self.bench.push(ability);
+                }
+            }
+        }
+        // Remove position
+        self.hero_positions.remove(hero_to_discard);
+        // Generate new choices from all available heroes (excluding owned)
         let choices = crate::draft::generate_reroll_choices(available_heroes, rng);
-        Ok(crate::draft::DraftState { choices, round_tier: 0 })
+        Ok(choices)
     }
 
     /// Reroll the shop offerings.

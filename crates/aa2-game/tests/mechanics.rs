@@ -194,7 +194,7 @@ fn test_ghost_matchup_damage_application() {
     assert!(total_hp_lost > 0.0, "Some damage should be dealt");
 }
 
-/// Verify: rerolling shop costs 1 gold, rerolling hero draft costs 2 gold
+/// Verify: rerolling shop costs 1 gold, rerolling hero costs 2 gold (discards hero)
 #[test]
 fn test_reroll_costs() {
     let mut rng = StdRng::seed_from_u64(42);
@@ -222,22 +222,32 @@ fn test_reroll_costs() {
     let result = player.reroll_shop(&mut pool, &ultimates, config.ultimate_unlock_level, config.shop_size_bonus, REROLL_COST, &mut rng);
     assert_eq!(result, Err("not enough gold"));
 
-    // Hero reroll costs 2 gold
+    // Hero reroll costs 2 gold and discards the hero
     let (hero_defs, _) = load_defs();
     let hero_refs: Vec<&HeroDef> = hero_defs.values().collect();
 
     let mut player2 = PlayerState::new(1);
     player2.gold = 10;
-    let draft = player2.reroll_draft(&hero_refs, &mut rng).unwrap();
-    assert_eq!(player2.gold, 8);
-    // Should return valid draft state
-    assert!(draft.choices.iter().any(|c| c.is_some()));
+    player2.heroes.push("Sven".to_string());
+    player2.equipped.insert("Sven".to_string(), vec!["ability_0".to_string()]);
+    player2.abilities.insert("ability_0".to_string(), 1);
 
-    // Reroll with 1 gold → rejected (not enough for cost of 2)
+    // Reroll hero: discards Sven, returns abilities to bench, gives 3 choices
+    let choices = player2.reroll_hero("Sven", &hero_refs, &mut rng).unwrap();
+    assert_eq!(player2.gold, 8);
+    assert!(!player2.heroes.contains(&"Sven".to_string()));
+    assert!(player2.bench.contains(&"ability_0".to_string()));
+    assert!(choices.iter().any(|c| c.is_some()));
+
+    // Reroll hero you don't own → rejected
+    let result = player2.reroll_hero("Sven", &hero_refs, &mut rng);
+    assert_eq!(result, Err("you don't own that hero"));
+
+    // Reroll with insufficient gold → rejected
     player2.gold = 1;
-    let result = player2.reroll_draft(&hero_refs, &mut rng);
-    assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), "not enough gold");
+    player2.heroes.push("Juggernaut".to_string());
+    let result = player2.reroll_hero("Juggernaut", &hero_refs, &mut rng);
+    assert_eq!(result, Err("not enough gold"));
 }
 
 /// Verify: during grace period, player can spend old gold. After grace ends, gold resets.
