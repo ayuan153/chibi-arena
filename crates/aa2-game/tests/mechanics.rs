@@ -545,3 +545,108 @@ fn test_empty_pool_available_for_shop() {
     let available = pool.available_for_shop(3, &ultimates, 3);
     assert!(available.is_empty());
 }
+
+/// Verify: full draft → buy → equip flow works with multi-word names.
+/// This is the deterministic equivalent of manually testing the CLI.
+#[test]
+fn test_full_equip_flow_multiword_names() {
+    let (_hero_defs, ability_defs) = load_defs();
+
+    // Build ultimates set and pool from real data (same as the binary does)
+    let ultimates: HashSet<String> = ability_defs
+        .values()
+        .filter(|a| a.is_ultimate)
+        .map(|a| a.name.clone())
+        .collect();
+    let roster: Vec<String> = ability_defs.keys().cloned().collect();
+    let mut rng = StdRng::seed_from_u64(42);
+    let pool = AbilityPool::new(&roster, roster.len(), 20, &mut rng);
+    let config = GameConfig::default();
+    let mut game = GameState::new(pool, ultimates.clone(), config);
+
+    // Give player 0 a multi-word hero
+    let player = &mut game.players[0];
+    player.heroes.push("Sand King".to_string());
+    player.equipped.insert("Sand King".to_string(), Vec::new());
+    player.hero_positions.insert("Sand King".to_string(), (1000.0, 500.0));
+
+    // Roll shop with fixed seed so offerings are deterministic
+    player.shop.roll(
+        &mut game.pool,
+        &game.ultimates,
+        game.config.ultimate_unlock_level,
+        game.config.shop_size_bonus,
+        &mut rng,
+    );
+
+    // Pick a multi-word ability from offerings if available, otherwise use the first
+    let ability_name = player
+        .shop
+        .offerings
+        .iter()
+        .filter_map(|o| o.as_ref())
+        .find(|name| name.contains(' '))
+        .cloned()
+        .unwrap_or_else(|| {
+            player.shop.offerings.iter().filter_map(|o| o.as_ref()).next().unwrap().clone()
+        });
+
+    // Buy it
+    player.gold = 10;
+    let buy_result = player.buy_ability(&ability_name, &mut game.pool);
+    assert!(buy_result.is_ok(), "buy_ability failed: {buy_result:?}");
+
+    // Verify it's on bench with exact name (spaces, proper case preserved)
+    assert!(
+        player.bench.contains(&ability_name),
+        "bench should contain '{ability_name}' but has: {:?}",
+        player.bench
+    );
+
+    // Equip it to the hero using the exact stored name
+    let equip_result = player.equip_ability(&ability_name, "Sand King", &ultimates, &game.config);
+    assert!(equip_result.is_ok(), "equip_ability failed: {equip_result:?}");
+
+    // Verify it's equipped on the hero
+    let equipped = player.equipped.get("Sand King").unwrap();
+    assert!(
+        equipped.contains(&ability_name),
+        "equipped should contain '{ability_name}' but has: {equipped:?}"
+    );
+    // Verify it's no longer on bench
+    assert!(!player.bench.contains(&ability_name));
+}
+
+/// Verify: slug-based name resolution finds the correct ability/hero.
+#[test]
+fn test_slug_name_resolution() {
+    fn slug(name: &str) -> String {
+        name.to_lowercase().replace(' ', "_")
+    }
+
+    let bench = vec![
+        "Spear of Mars".to_string(),
+        "Heavenly Grace".to_string(),
+        "Dark Pact".to_string(),
+    ];
+
+    // User types "spear_of_mars"
+    let found = bench.iter().find(|b| slug(b) == slug("spear_of_mars"));
+    assert_eq!(found, Some(&"Spear of Mars".to_string()));
+
+    // User types "heavenly_grace"
+    let found = bench.iter().find(|b| slug(b) == slug("heavenly_grace"));
+    assert_eq!(found, Some(&"Heavenly Grace".to_string()));
+
+    // User types "dark_pact"
+    let found = bench.iter().find(|b| slug(b) == slug("dark_pact"));
+    assert_eq!(found, Some(&"Dark Pact".to_string()));
+
+    // Heroes too
+    let heroes = vec!["Sand King".to_string(), "Crystal Maiden".to_string()];
+    let found = heroes.iter().find(|h| slug(h) == slug("sand_king"));
+    assert_eq!(found, Some(&"Sand King".to_string()));
+
+    let found = heroes.iter().find(|h| slug(h) == slug("crystal_maiden"));
+    assert_eq!(found, Some(&"Crystal Maiden".to_string()));
+}

@@ -32,7 +32,12 @@ fn run() -> Result<(), String> {
     let ability_defs: HashMap<String, AbilityDef> = abilities.iter().map(|a| (a.name.clone(), a.clone())).collect();
     let ultimates: HashSet<String> = abilities.iter().filter(|a| a.is_ultimate).map(|a| a.name.clone()).collect();
 
-    let mut rng = StdRng::from_entropy();
+    let seed: u64 = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(rand::random);
+    let mut rng = StdRng::seed_from_u64(seed);
+    eprintln!("  [seed: {}]", seed);
 
     // Build ability pool: all abilities with 20 copies each
     let roster: Vec<String> = abilities.iter().map(|a| a.name.clone()).collect();
@@ -223,11 +228,25 @@ fn run() -> Result<(), String> {
                     if parts.len() < 3 {
                         println!("  Usage: unequip <ability> <hero>");
                     } else {
-                        let ability = parts[1].to_string();
-                        let hero = parts[2..].join("_");
-                        match game.players[0].unequip_ability(&ability, &hero) {
-                            Ok(()) => println!("  Unequipped {} from {}", ability, hero),
-                            Err(e) => println!("  Cannot unequip: {e}"),
+                        let ability_input = parts[1].to_string();
+                        let hero_input = parts[2..].join("_");
+                        let ability_slug_val = slug(&ability_input);
+                        let hero_slug_val = slug(&hero_input);
+                        let actual_ability = game.players[0].equipped.values().flatten()
+                            .find(|a| slug(a) == ability_slug_val)
+                            .cloned();
+                        let actual_hero = game.players[0].heroes.iter()
+                            .find(|h| slug(h) == hero_slug_val)
+                            .cloned();
+                        match (actual_ability, actual_hero) {
+                            (Some(a), Some(h)) => {
+                                match game.players[0].unequip_ability(&a, &h) {
+                                    Ok(()) => println!("  Unequipped {} from {}", a, h),
+                                    Err(e) => println!("  Cannot unequip: {e}"),
+                                }
+                            }
+                            (None, _) => println!("  Ability not equipped: {}", ability_input),
+                            (_, None) => println!("  Hero not owned: {}", hero_input),
                         }
                     }
                 }
@@ -244,9 +263,10 @@ fn run() -> Result<(), String> {
                     if parts.len() < 2 {
                         println!("  Usage: reroll-hero <hero_name>");
                     } else {
-                        let hero = parts[1..].join("_");
+                        let hero_input = parts[1..].join("_");
+                        let hero_slug_val = slug(&hero_input);
                         let actual_hero = game.players[0].heroes.iter()
-                            .find(|h| h.as_str() == hero || h.to_lowercase() == hero.to_lowercase())
+                            .find(|h| slug(h) == hero_slug_val)
                             .cloned();
                         match actual_hero {
                             Some(h) => {
@@ -262,7 +282,7 @@ fn run() -> Result<(), String> {
                                     Err(e) => println!("  Cannot reroll: {e}"),
                                 }
                             }
-                            None => println!("  Hero not owned: {}", hero),
+                            None => println!("  Hero not owned: {}", hero_input),
                         }
                     }
                 }
@@ -270,13 +290,18 @@ fn run() -> Result<(), String> {
                     if parts.len() < 4 {
                         println!("  Usage: position <hero> <x> <y>");
                     } else {
-                        let hero = parts[1].to_string();
+                        let hero_input = parts[1].to_string();
+                        let hero_slug_val = slug(&hero_input);
                         if let (Ok(x), Ok(y)) = (parts[2].parse::<f32>(), parts[3].parse::<f32>()) {
-                            if game.players[0].heroes.contains(&hero) {
-                                game.players[0].hero_positions.insert(hero.clone(), (x, y));
-                                println!("  {} positioned at ({}, {})", hero, x, y);
-                            } else {
-                                println!("  Hero not owned: {}", hero);
+                            let actual_hero = game.players[0].heroes.iter()
+                                .find(|h| slug(h) == hero_slug_val)
+                                .cloned();
+                            match actual_hero {
+                                Some(h) => {
+                                    game.players[0].hero_positions.insert(h.clone(), (x, y));
+                                    println!("  {} positioned at ({}, {})", h, x, y);
+                                }
+                                None => println!("  Hero not owned: {}", hero_input),
                             }
                         } else {
                             println!("  Invalid coordinates");
@@ -287,12 +312,17 @@ fn run() -> Result<(), String> {
                     if parts.len() < 2 {
                         println!("  Usage: buff <hero>");
                     } else {
-                        let hero = parts[1..].join("_");
-                        if game.players[0].heroes.contains(&hero) {
-                            game.players[0].god_buff_target = Some(hero.clone());
-                            println!("  God buff target set to: {}", hero);
-                        } else {
-                            println!("  Hero not owned: {}", hero);
+                        let hero_input = parts[1..].join("_");
+                        let hero_slug_val = slug(&hero_input);
+                        let actual_hero = game.players[0].heroes.iter()
+                            .find(|h| slug(h) == hero_slug_val)
+                            .cloned();
+                        match actual_hero {
+                            Some(h) => {
+                                game.players[0].god_buff_target = Some(h.clone());
+                                println!("  God buff target set to: {}", h);
+                            }
+                            None => println!("  Hero not owned: {}", hero_input),
                         }
                     }
                 }
@@ -363,6 +393,10 @@ fn load_all_abilities(dir: &Path) -> Result<Vec<AbilityDef>, String> {
         }
     }
     Ok(abilities)
+}
+
+fn slug(name: &str) -> String {
+    name.to_lowercase().replace(' ', "_")
 }
 
 fn available_heroes_for_player<'a>(all_heroes: &'a [HeroDef], player: &PlayerState) -> Vec<&'a HeroDef> {
@@ -484,7 +518,7 @@ fn display_heroes(player: &PlayerState, game: &GameState, hero_defs: &HashMap<St
             })
             .unwrap_or("???");
         let pos = player.hero_positions.get(hero_name).copied().unwrap_or((1000.0, 500.0));
-        println!("  {}. {} [{}] @ ({:.0}, {:.0})", i + 1, hero_name, attr, pos.0, pos.1);
+        println!("  {}. {} [{}] [{}] @ ({:.0}, {:.0})", i + 1, hero_name, slug(hero_name), attr, pos.0, pos.1);
         println!("     Abilities: {}", ability_strs.join(", "));
     }
     println!("  Commands: equip <ability> <hero>, unequip <ability> <hero>, reroll-hero <hero> ({}g), position <hero> <x> <y>", HERO_REROLL_COST);
@@ -497,7 +531,7 @@ fn display_bench(player: &PlayerState) {
     } else {
         for name in &player.bench {
             let lv = player.abilities.get(name).copied().unwrap_or(1);
-            println!("  {} (Lv {})", name, lv);
+            println!("  {} [{}] (Lv {})", name, slug(name), lv);
         }
     }
 }
@@ -613,9 +647,9 @@ fn handle_buy(game: &mut GameState, player_id: usize, index: usize, ultimates: &
 }
 
 fn handle_sell(game: &mut GameState, player_id: usize, name: &str) {
-    // Try exact match first, then case-insensitive
+    let input_slug = slug(name);
     let actual_name = game.players[player_id].abilities.keys()
-        .find(|k| k.as_str() == name || k.to_lowercase() == name.to_lowercase())
+        .find(|k| slug(k) == input_slug)
         .cloned();
     match actual_name {
         Some(n) => {
@@ -629,12 +663,13 @@ fn handle_sell(game: &mut GameState, player_id: usize, name: &str) {
 }
 
 fn handle_equip(game: &mut GameState, player_id: usize, ability: &str, hero: &str, ultimates: &HashSet<String>) {
-    // Find actual ability name (case-insensitive)
+    let ability_slug = slug(ability);
+    let hero_slug = slug(hero);
     let actual_ability = game.players[player_id].bench.iter()
-        .find(|a| a.as_str() == ability || a.to_lowercase() == ability.to_lowercase())
+        .find(|a| slug(a) == ability_slug)
         .cloned();
     let actual_hero = game.players[player_id].heroes.iter()
-        .find(|h| h.as_str() == hero || h.to_lowercase() == hero.to_lowercase())
+        .find(|h| slug(h) == hero_slug)
         .cloned();
 
     match (actual_ability, actual_hero) {
