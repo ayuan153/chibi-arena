@@ -10,6 +10,7 @@ pub mod god;
 pub mod matchup;
 pub mod player;
 pub mod pool;
+pub mod scenario;
 pub mod shop;
 
 pub use combat::CombatResult;
