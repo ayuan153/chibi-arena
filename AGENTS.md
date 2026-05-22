@@ -37,6 +37,31 @@ When implementing a new mechanic:
 
 **Every manual verification MUST become an automated test.** If you ran the dev binary and checked the output to verify something works, that verification must be encoded as a test before the work is considered done.
 
+### Game Scenario Tests (aa2-game)
+
+Game logic changes MUST be locked in with a `GameScenario` fixture test. See `docs/design/testing/game-scenarios.md` for the full framework design.
+
+When to write a scenario test:
+- Bug found during manual testing → capture as scenario
+- New mechanic implemented → scenario proving it works
+- Balance change → scenario asserting new values
+- Edge case discovered → scenario preventing regression
+
+Pattern:
+```rust
+run_scenario(GameScenario {
+    seed: 42,
+    num_players: 2,
+    setup: vec![AddHero { player: 0, hero: "Sven", x: 1000.0, y: 500.0 }],
+    actions: vec![RoundActions { round: 1, player: 0, actions: vec![Action::Buy(0)] }],
+    assertions: vec![RoundAssertion { after_round: 2, check: |g| { /* assert */ Ok(()) } }],
+});
+```
+
+### Sim Fixture Tests (aa2-sim)
+
+Combat mechanic changes MUST be locked in with a sim fixture test. See `docs/design/testing/sim-fixtures.md`.
+
 ### When to write an integration test
 
 - You verified a mechanic by reading combat log output → write a test
@@ -84,9 +109,9 @@ fn test_specific_interaction() {
 ## Documentation Updates
 
 When making changes that affect architecture or project plan:
-- Update `docs/architecture.md` if system design changes
+- Update `docs/design/architecture.md` if system design changes
 - Update `docs/project-plan.md` if milestones shift
-- Update `docs/mechanics-reference.md` if formula implementations reveal corrections
+- Update `docs/specs/mechanics-reference.md` if formula implementations reveal corrections
 - Add inline doc comments (`///`) to all public types and functions
 
 ## Code Style
@@ -113,8 +138,8 @@ When making changes that affect architecture or project plan:
 
 ## Working on This Project
 
-1. Read `docs/mechanics-reference.md` before implementing any combat mechanic
-2. Read `docs/architecture.md` before adding new systems
+1. Read `docs/specs/mechanics-reference.md` before implementing any combat mechanic
+2. Read `docs/design/architecture.md` before adding new systems
 3. Check `docs/project-plan.md` to understand current phase and priorities
 4. When in doubt about a Dota2 mechanic, cite the source (wiki/liquipedia)
 
