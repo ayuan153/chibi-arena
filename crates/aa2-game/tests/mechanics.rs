@@ -533,8 +533,8 @@ fn test_shop_roll_with_depleted_pool() {
     // Should not panic, just offer what's available
     shop.roll(&mut pool, &ultimates, 3, 0, &mut rng);
     assert_eq!(shop.offerings.len(), 2);
-    assert!(shop.offerings.contains(&"ability_a".to_string()));
-    assert!(shop.offerings.contains(&"ability_b".to_string()));
+    assert!(shop.offerings.contains(&Some("ability_a".to_string())));
+    assert!(shop.offerings.contains(&Some("ability_b".to_string())));
 }
 
 /// Verify: available_for_shop with completely empty pool returns empty Vec.

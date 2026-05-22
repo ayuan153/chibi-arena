@@ -14,8 +14,8 @@ use crate::pool::AbilityPool;
 pub struct ShopState {
     /// Current shop level (1-5).
     pub level: u32,
-    /// Current ability offerings in the shop.
-    pub offerings: Vec<String>,
+    /// Current ability offerings in the shop. None = sold/empty slot.
+    pub offerings: Vec<Option<String>>,
     /// Rounds spent at each level without upgrading. Index 0 = level 1.
     pub decay_tracker: [u32; 5],
     /// Whether the shop is locked (won't auto-reroll at combat end).
@@ -55,8 +55,8 @@ impl ShopState {
         config: &GameConfig,
         rng: &mut impl rand::Rng,
     ) {
-        // Return current offerings to pool
-        for name in self.offerings.drain(..) {
+        // Return current offerings to pool (only Some values)
+        for name in self.offerings.drain(..).flatten() {
             pool.return_ability(&name);
         }
         let size = self.size(config.shop_size_bonus) as usize;
@@ -64,9 +64,9 @@ impl ShopState {
         let available = pool.available_for_shop(self.level, &ultimates, config.ultimate_unlock_level);
         let mut available_vec = available;
         available_vec.shuffle(rng);
-        self.offerings = available_vec.into_iter().take(size).collect();
+        self.offerings = available_vec.into_iter().take(size).map(Some).collect();
         // Take each from pool
-        for name in &self.offerings {
+        for name in self.offerings.iter().flatten() {
             pool.take(name);
         }
     }
@@ -80,17 +80,17 @@ impl ShopState {
         size_bonus: u32,
         rng: &mut impl rand::Rng,
     ) {
-        // Return current offerings to pool
-        for name in self.offerings.drain(..) {
+        // Return current offerings to pool (only Some values)
+        for name in self.offerings.drain(..).flatten() {
             pool.return_ability(&name);
         }
         let size = self.size(size_bonus) as usize;
         let available = pool.available_for_shop(self.level, ultimates, ultimate_unlock_level);
         let mut available_vec = available;
         available_vec.shuffle(rng);
-        self.offerings = available_vec.into_iter().take(size).collect();
+        self.offerings = available_vec.into_iter().take(size).map(Some).collect();
         // Take each from pool
-        for name in &self.offerings {
+        for name in self.offerings.iter().flatten() {
             pool.take(name);
         }
     }
@@ -99,7 +99,7 @@ impl ShopState {
     /// Returns the ability name. Does NOT return to pool (it's purchased).
     pub fn buy_from_shop(&mut self, index: usize) -> Option<String> {
         if index < self.offerings.len() {
-            Some(self.offerings.remove(index))
+            self.offerings[index].take()
         } else {
             None
         }
@@ -221,7 +221,7 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         shop.roll_shop(&mut pool, &config, &mut rng);
-        let set: HashSet<&String> = shop.offerings.iter().collect();
+        let set: HashSet<&String> = shop.offerings.iter().filter_map(|o| o.as_ref()).collect();
         assert_eq!(set.len(), shop.offerings.len());
     }
 
@@ -237,7 +237,7 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         shop.roll_shop(&mut pool, &config, &mut rng);
-        let first_offerings = shop.offerings.clone();
+        let first_offerings: Vec<String> = shop.offerings.iter().filter_map(|o| o.clone()).collect();
         // Total pool count should be reduced by 4 (offerings taken)
         let total: u32 = pool.counts.values().sum();
         assert_eq!(total, 20 * 5 - 4);
@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(total_after, 20 * 5 - 4); // same net reduction
         // First offerings should have been returned
         for name in &first_offerings {
-            if !shop.offerings.contains(name) {
+            if !shop.offerings.contains(&Some(name.clone())) {
                 assert!(pool.counts[name] >= 5); // returned
             }
         }
@@ -257,11 +257,12 @@ mod tests {
     #[test]
     fn test_buy_from_shop() {
         let mut shop = ShopState::new();
-        shop.offerings = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        shop.offerings = vec![Some("a".to_string()), Some("b".to_string()), Some("c".to_string())];
 
         let bought = shop.buy_from_shop(1);
         assert_eq!(bought, Some("b".to_string()));
-        assert_eq!(shop.offerings, vec!["a".to_string(), "c".to_string()]);
+        assert_eq!(shop.offerings, vec![Some("a".to_string()), None, Some("c".to_string())]);
+        assert_eq!(shop.buy_from_shop(1), None); // already sold
         assert_eq!(shop.buy_from_shop(10), None);
     }
 
@@ -296,18 +297,20 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         shop.roll(&mut pool, &ultimates, 3, 0, &mut rng);
-        assert!(!shop.offerings.contains(&"ult".to_string()));
+        assert!(!shop.offerings.contains(&Some("ult".to_string())));
 
         // Return offerings and try at level 3
-        for name in shop.offerings.drain(..) {
-            pool.return_ability(&name);
+        for slot in shop.offerings.drain(..) {
+            if let Some(name) = slot {
+                pool.return_ability(&name);
+            }
         }
         shop.level = 3;
         // Roll many times to check ult can appear
         let mut found_ult = false;
         for _ in 0..20 {
             shop.roll(&mut pool, &ultimates, 3, 0, &mut rng);
-            if shop.offerings.contains(&"ult".to_string()) {
+            if shop.offerings.contains(&Some("ult".to_string())) {
                 found_ult = true;
                 break;
             }

@@ -433,10 +433,15 @@ fn display_shop(player: &PlayerState, game: &GameState) {
     if shop.offerings.is_empty() {
         println!("  (empty)");
     }
-    for (i, name) in shop.offerings.iter().enumerate() {
-        let level = player.abilities.get(name).map(|l| format!(" <- you own Lv {}", l)).unwrap_or_default();
-        let ult = if game.ultimates.contains(name) { " [ULT]" } else { "" };
-        println!("  {}. {}{}{}", i + 1, name, ult, level);
+    for (i, slot) in shop.offerings.iter().enumerate() {
+        match slot {
+            Some(name) => {
+                let level = player.abilities.get(name).map(|l| format!(" <- you own Lv {}", l)).unwrap_or_default();
+                let ult = if game.ultimates.contains(name) { " [ULT]" } else { "" };
+                println!("  {}. {}{}{}", i + 1, name, ult, level);
+            }
+            None => println!("  {}. [SOLD]", i + 1),
+        }
     }
     if let Some(cost) = shop.upgrade_cost() {
         println!("  [Upgrade to Lv {} costs {}g]", shop.level + 1, cost);
@@ -455,7 +460,7 @@ fn display_heroes(player: &PlayerState, game: &GameState, hero_defs: &HashMap<St
         println!("  (none - pick from draft!)");
         return;
     }
-    for hero_name in &player.heroes {
+    for (i, hero_name) in player.heroes.iter().enumerate() {
         let equipped = player.equipped.get(hero_name);
         let slots = game.config.ability_slots_per_hero as usize;
         let mut ability_strs: Vec<String> = Vec::new();
@@ -479,9 +484,10 @@ fn display_heroes(player: &PlayerState, game: &GameState, hero_defs: &HashMap<St
             })
             .unwrap_or("???");
         let pos = player.hero_positions.get(hero_name).copied().unwrap_or((1000.0, 500.0));
-        println!("  {} [{}] - {}  @ ({:.0}, {:.0})", hero_name, attr, ability_strs.join(", "), pos.0, pos.1);
+        println!("  {}. {} [{}] @ ({:.0}, {:.0})", i + 1, hero_name, attr, pos.0, pos.1);
+        println!("     Abilities: {}", ability_strs.join(", "));
     }
-    println!("  Commands: equip <ability> <hero>, unequip <ability> <hero>, reroll-hero <hero> ({}g)", HERO_REROLL_COST);
+    println!("  Commands: equip <ability> <hero>, unequip <ability> <hero>, reroll-hero <hero> ({}g), position <hero> <x> <y>", HERO_REROLL_COST);
 }
 
 fn display_bench(player: &PlayerState) {
@@ -582,7 +588,13 @@ fn handle_buy(game: &mut GameState, player_id: usize, index: usize, ultimates: &
         println!("  Invalid shop index");
         return;
     }
-    let name = game.players[player_id].shop.offerings[index - 1].clone();
+    let name = match &game.players[player_id].shop.offerings[index - 1] {
+        Some(n) => n.clone(),
+        None => {
+            println!("  That slot is empty");
+            return;
+        }
+    };
     // Check if ultimate is locked
     if ultimates.contains(&name) && game.players[player_id].shop.level < game.config.ultimate_unlock_level {
         println!("  Ultimates require shop level {}", game.config.ultimate_unlock_level);
@@ -590,13 +602,11 @@ fn handle_buy(game: &mut GameState, player_id: usize, index: usize, ultimates: &
     }
     match game.players[player_id].buy_ability(&name, &mut game.pool) {
         Ok(()) => {
-            // Remove from shop offerings (already taken from pool by buy_ability... but shop still shows it)
-            // Actually buy_ability takes from pool, but shop.offerings still has it. Remove it.
-            if let Some(pos) = game.players[player_id].shop.offerings.iter().position(|n| n == &name) {
-                game.players[player_id].shop.offerings.remove(pos);
-            }
+            // Mark slot as sold
+            game.players[player_id].shop.offerings[index - 1] = None;
             let lv = game.players[player_id].abilities.get(&name).copied().unwrap_or(1);
             println!("  Bought {} (now Lv {}) | Gold: {}", name, lv, game.players[player_id].gold);
+            println!("  Ability on bench. Use 'equip <ability> <hero>' to equip.");
         }
         Err(e) => println!("  Cannot buy: {e}"),
     }
@@ -659,10 +669,9 @@ fn handle_draft(game: &mut GameState, drafts: &mut [Option<DraftState>], player_
     match &draft.choices[index - 1] {
         Some(name) => {
             game.players[player_id].heroes.push(name.clone());
-            // Set default position
-            let count = game.players[player_id].heroes.len() as f32;
+            // Set default position: center of player's half
             game.players[player_id].hero_positions.insert(
-                name.clone(), (400.0 * count, 500.0)
+                name.clone(), (1000.0, 500.0)
             );
             println!("  Drafted {}!", name);
             if let Some(h) = hero_defs.get(name) {
@@ -671,6 +680,7 @@ fn handle_draft(game: &mut GameState, drafts: &mut [Option<DraftState>], player_
                     if h.is_melee { "Melee" } else { "Ranged" },
                     h.attack_range);
             }
+            println!("  Use 'equip <ability> <hero>' to equip abilities");
             drafts[player_id] = None;
         }
         None => println!("  No hero available at that slot"),
@@ -701,9 +711,8 @@ fn ai_take_actions(
                 && let Some(ref name) = draft.choices[pick]
             {
                 game.players[i].heroes.push(name.clone());
-                let count = game.players[i].heroes.len() as f32;
                 game.players[i].hero_positions.insert(
-                    name.clone(), (400.0 * count, 500.0)
+                    name.clone(), (1000.0, 500.0)
                 );
             }
             drafts[i] = None;
@@ -711,11 +720,14 @@ fn ai_take_actions(
 
         // Buy: purchase random affordable abilities until can't
         let mut attempts = 0;
-        while game.players[i].can_buy() && !game.players[i].shop.offerings.is_empty() && attempts < 10 {
+        while game.players[i].can_buy() && game.players[i].shop.offerings.iter().any(|s| s.is_some()) && attempts < 10 {
             attempts += 1;
             let shop_len = game.players[i].shop.offerings.len();
             let idx = rng.gen_range(0..shop_len);
-            let name = game.players[i].shop.offerings[idx].clone();
+            let name = match &game.players[i].shop.offerings[idx] {
+                Some(n) => n.clone(),
+                None => continue,
+            };
 
             // Check bench space for new abilities
             let already_owned = game.players[i].abilities.contains_key(&name);
@@ -724,7 +736,7 @@ fn ai_take_actions(
             }
 
             if game.players[i].buy_ability(&name, &mut game.pool).is_ok() {
-                game.players[i].shop.offerings.retain(|n| n != &name);
+                game.players[i].shop.offerings[idx] = None;
             }
         }
 
