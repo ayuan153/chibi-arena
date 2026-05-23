@@ -63,7 +63,7 @@ impl GameManager {
         let pool = AbilityPool::from_counts(pool_counts);
 
         let config = GameConfig {
-            auto_advance: false,
+            auto_advance: true,
             ..GameConfig::default()
         };
         self.game = Some(GameState::new(pool, ultimates, config));
