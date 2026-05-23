@@ -1843,9 +1843,9 @@ fn test_lazy_targeting_no_walk() {
     let has_cast = sim.combat_log.iter().any(|e| matches!(e, CombatEvent::CastStart { ability_name, .. } if ability_name == "LazySpell"));
     assert!(!has_cast, "Lazy ability should not cast when target is out of range");
 
-    // Unit should not have moved (no target in acquisition range)
-    assert!((sim.units[0].position.x - initial_pos.x).abs() < 1.0,
-        "Unit with Lazy ability should not walk toward distant enemy");
+    // Unit SHOULD walk toward enemy (all units auto-attack)
+    assert!(sim.units[0].position.x > initial_pos.x + 1.0,
+        "Unit should walk toward enemy to auto-attack");
 }
 
 #[test]

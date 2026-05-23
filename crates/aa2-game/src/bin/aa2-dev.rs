@@ -68,7 +68,7 @@ fn run() -> Result<(), String> {
 
     let mut round_seed: u32 = rng.r#gen();
     let mut placements: Vec<(u8, u32)> = Vec::new(); // (player_id, round_eliminated)
-    let mut last_combat_log: Option<(u32, u8, Vec<aa2_sim::CombatEvent>)> = None; // (round, opponent_id, log)
+    let mut all_combat_logs: Vec<(String, Vec<aa2_sim::CombatEvent>)> = Vec::new(); // (description, log)
     let mut pending_reroll_draft: Option<[Option<String>; 3]> = None;
 
     println!("\n=== GAME START ===\n");
@@ -131,7 +131,25 @@ fn run() -> Result<(), String> {
                 "board" => display_board(&game.players[0]),
                 "god" => display_god(&game.players[0]),
                 "players" => display_players(&game),
-                "log" => display_combat_log(&last_combat_log),
+                "log" => {
+                    if parts.len() >= 2 {
+                        if let Ok(idx) = parts[1].parse::<usize>() {
+                            if let Some((desc, log)) = all_combat_logs.get(idx.saturating_sub(1)) {
+                                display_combat_log_entry(desc, log);
+                            } else {
+                                println!("  Invalid log index. Use 'log' to see available.");
+                            }
+                        }
+                    } else if all_combat_logs.is_empty() {
+                        println!("  No combat log available yet.");
+                    } else {
+                        println!("\n  Available combat logs (Round {}):", game.round);
+                        for (i, (desc, _)) in all_combat_logs.iter().enumerate() {
+                            println!("    {}. {}", i + 1, desc);
+                        }
+                        println!("  Use 'log <number>' to view details.");
+                    }
+                }
                 "lock" => {
                     game.players[0].shop.toggle_lock();
                     println!("  Shop lock: {}", if game.players[0].shop.locked { "ON" } else { "OFF" });
@@ -330,17 +348,11 @@ fn run() -> Result<(), String> {
         let results = game.run_combat_round(&hero_defs, &ability_defs, round_seed, &mut rng);
         round_seed = round_seed.wrapping_add(1);
 
-        // Store combat log for player 0's matchup
+        // Store all combat logs
+        all_combat_logs.clear();
         for result in &results {
-            if result.matchup.player_a == 0 || result.matchup.player_b == 0 {
-                let opponent = if result.matchup.player_a == 0 {
-                    result.matchup.player_b
-                } else {
-                    result.matchup.player_a
-                };
-                last_combat_log = Some((game.round, opponent, result.combat_log.clone()));
-                break;
-            }
+            let desc = format!("Player {} vs Player {}", result.matchup.player_a, result.matchup.player_b);
+            all_combat_logs.push((desc, result.combat_log.clone()));
         }
 
         display_combat_results(&results, &game, &hp_before);
@@ -682,12 +694,8 @@ Commands:
 ");
 }
 
-fn display_combat_log(log: &Option<(u32, u8, Vec<aa2_sim::CombatEvent>)>) {
-    let Some((round, opponent, events)) = log else {
-        println!("  No combat log available yet.");
-        return;
-    };
-    println!("\n=== COMBAT LOG (Round {}: You vs Player {}) ===", round, opponent);
+fn display_combat_log_entry(desc: &str, events: &[aa2_sim::CombatEvent]) {
+    println!("\n=== COMBAT LOG ({}) ===", desc);
     if events.is_empty() {
         println!("  (no events)");
         return;

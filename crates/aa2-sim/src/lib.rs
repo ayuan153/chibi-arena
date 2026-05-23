@@ -644,8 +644,8 @@ impl Simulation {
                 best = Some((other.id, d));
             }
         }
-        // Fallback: closest enemy anywhere (for re-engagement after displacement)
-        if best.is_none() && self.units[idx].target.is_some() {
+        // Fallback: closest enemy anywhere (ensures engagement regardless of distance)
+        if best.is_none() {
             for other in self.units.iter() {
                 if other.team == unit_team || !other.is_alive() { continue; }
                 if active_status(&other.buffs).invulnerable { continue; }
