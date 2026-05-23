@@ -248,6 +248,18 @@ fn test_reroll_costs() {
     player2.heroes.push("Juggernaut".to_string());
     let result = player2.reroll_hero("Juggernaut", &hero_refs, &mut rng);
     assert_eq!(result, Err("not enough gold"));
+
+    // Full flow: reroll → pick from choices → hero added to roster
+    player2.gold = 10;
+    let choices = player2.reroll_hero("Juggernaut", &hero_refs, &mut rng).unwrap();
+    assert!(!player2.heroes.contains(&"Juggernaut".to_string()));
+    // Pick the first available choice
+    let picked = choices.iter().find_map(|c| c.as_ref()).unwrap().clone();
+    player2.heroes.push(picked.clone());
+    player2.equipped.insert(picked.clone(), Vec::new());
+    player2.hero_positions.insert(picked.clone(), (1000.0, 500.0));
+    assert!(player2.heroes.contains(&picked));
+    assert_eq!(player2.heroes.len(), 1); // only the new hero (Jugg was removed)
 }
 
 /// Verify: during grace period, player can spend old gold. After grace ends, gold resets.
