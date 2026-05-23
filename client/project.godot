@@ -1,0 +1,10 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly.
+
+[application]
+config/name="AA2"
+config/features=PackedStringArray("4.3", "Forward Plus")
+run/main_scene=""
+
+[rendering]
+renderer/rendering_method="forward_plus"

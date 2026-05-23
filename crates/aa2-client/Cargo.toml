@@ -1,0 +1,15 @@
+[package]
+name = "aa2-client"
+version = "0.1.0"
+edition = "2024"
+authors = ["ayuan153"]
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot = "0.5"
+aa2-game = { path = "../aa2-game" }
+aa2-sim = { path = "../aa2-sim" }
+aa2-data = { path = "../aa2-data" }
