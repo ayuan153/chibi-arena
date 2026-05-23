@@ -1,0 +1,17 @@
+[package]
+name = "aa2-ffi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aa2-game = { path = "../aa2-game" }
+aa2-sim = { path = "../aa2-sim" }
+aa2-data = { path = "../aa2-data" }
+serde = { workspace = true }
+serde_json = "1"
+rand = { workspace = true }

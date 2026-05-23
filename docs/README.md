@@ -44,11 +44,65 @@ aa2/
 ## Dev Workflow
 
 ```bash
-cargo check            # Fast compile check
-cargo test             # All tests (should always pass)
-cargo clippy -- -D warnings  # Lint (treat warnings as errors)
-cargo run -p aa2-game --bin aa2-dev -- <seed>  # Play the game (CLI)
+cargo check                        # Fast compile check
+cargo test                         # All tests (231, should always pass)
+cargo clippy -- -D warnings        # Lint (treat warnings as errors)
 ```
+
+## Playing Locally (CLI Dev Mode)
+
+```bash
+cargo run -p aa2-game --bin aa2-dev
+```
+
+This launches an interactive single-player game against 7 AI opponents. You play as Player 0.
+
+**Optional:** Pass a seed for reproducible runs:
+```bash
+cargo run -p aa2-game --bin aa2-dev -- 42
+```
+
+### Quick Start
+
+1. Pick a god (1 or 2)
+2. `draft <1-3>` — pick a hero from the tier-locked choices
+3. `buy <1-4>` — buy abilities from the shop
+4. `equip <ability> <hero>` — equip to a hero (use snake_case: `equip fury_swipes spectre`)
+5. `position <hero> <x> <y>` — place hero on your half (0-2000 x, 0-1000 y)
+6. `ready` — end shop phase, start combat
+
+### All Commands
+
+| Command | Description |
+|---------|-------------|
+| `ready` | End shop phase |
+| `shop` | Show shop offerings |
+| `buy <index>` | Buy ability (1-indexed) |
+| `sell <name>` | Sell ability (snake_case) |
+| `reroll` | Reroll shop (1g) |
+| `lock` | Toggle shop lock |
+| `upgrade` | Upgrade shop level |
+| `bench` | Show bench |
+| `heroes` | Show heroes + stats + abilities |
+| `equip <a> <h>` | Equip ability to hero |
+| `unequip <a> <h>` | Unequip ability (1g) |
+| `draft <1\|2\|3>` | Pick hero from draft |
+| `reroll-hero <h>` | Replace hero (2g) |
+| `position <h> <x> <y>` | Set hero position |
+| `god` | Show god info |
+| `buff <hero>` | Set Paladin buff target |
+| `status` | Show gold, HP, round |
+| `players` | Show all players' HP |
+| `log` | List combat logs |
+| `log <N>` | View specific matchup log |
+| `help` | Show all commands |
+
+### Tips
+
+- Names use snake_case in commands: `crystal_maiden`, `fury_swipes`, `spear_of_mars`
+- The `heroes` command shows slugs in brackets: `Spectre [spectre]`
+- After combat, type `log` to see available matchup logs, then `log 1` to view details
+- Sorcery (Archmage) procs are shown with ✨ at shop start
 
 ## Agent Skills
 
