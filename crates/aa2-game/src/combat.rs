@@ -148,8 +148,8 @@ pub fn run_combat_with_log(
         sim.step();
     }
 
-    let survivors_a = sim.units.iter().filter(|u| u.team == 0 && u.is_alive()).count() as u32;
-    let survivors_b = sim.units.iter().filter(|u| u.team == 1 && u.is_alive()).count() as u32;
+    let survivors_a = sim.units.iter().filter(|u| u.team == 0 && u.is_alive() && !u.is_illusion).count() as u32;
+    let survivors_b = sim.units.iter().filter(|u| u.team == 1 && u.is_alive() && !u.is_illusion).count() as u32;
 
     let winner = if sim.is_finished() {
         sim.winner()

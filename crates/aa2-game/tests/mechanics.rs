@@ -662,3 +662,30 @@ fn test_slug_name_resolution() {
     let found = heroes.iter().find(|h| slug(h) == slug("crystal_maiden"));
     assert_eq!(found, Some(&"Crystal Maiden".to_string()));
 }
+
+/// Verify: illusions do not count as surviving heroes for damage calculation.
+#[test]
+fn test_illusions_not_counted_as_survivors() {
+    use aa2_game::combat::run_combat_with_log;
+    use aa2_data::*;
+    use aa2_sim::vec2::Vec2;
+
+    let data_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+    let spectre = load_hero_def(&data_dir.join("heroes/spectre.ron")).unwrap();
+    let spirit_lance = load_ability_def(&data_dir.join("abilities/spirit_lance.ron")).unwrap();
+
+    // Team A: Spectre with Spirit Lance (creates illusion on hit)
+    let config_a = UnitConfig { hero: spectre.clone(), abilities: vec![(spirit_lance, 1)], slot_count: 4, level: 5 };
+    // Team B: naked Spectre (will die, leaving only illusion alive on team A)
+    let config_b = UnitConfig { hero: spectre.clone(), abilities: vec![], slot_count: 4, level: 2 };
+
+    let team_a = vec![(config_a, Vec2::new(1000.0, 500.0), vec![])];
+    let team_b = vec![(config_b, Vec2::new(1000.0, 1500.0), vec![])];
+
+    let (winner, survivors_a, survivors_b, _log) = run_combat_with_log(&team_a, &team_b, 42);
+
+    // Team A should win
+    assert_eq!(winner, Some(0));
+    // Survivors should only count real heroes, not illusions
+    assert_eq!(survivors_a, 1, "Only the real Spectre should count as survivor, not illusions");
+}
