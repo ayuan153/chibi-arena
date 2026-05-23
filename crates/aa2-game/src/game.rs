@@ -113,6 +113,8 @@ pub struct GameState {
     pub matchup_rotation: Vec<u8>,
     /// Current position within the round-robin cycle.
     pub cycle_round: usize,
+    /// Players who have signaled ready this phase.
+    pub ready_players: HashSet<u8>,
 }
 
 impl GameState {
@@ -131,6 +133,7 @@ impl GameState {
             draft_pending: false,
             matchup_rotation: Vec::new(),
             cycle_round: 0,
+            ready_players: HashSet::new(),
         }
     }
 
@@ -403,7 +406,25 @@ impl GameState {
                 // Actual reroll logic requires available heroes list from caller
                 Ok(())
             }
-            Action::Ready => Ok(()),
+            Action::Ready => {
+                self.ready_players.insert(player_id);
+                // Check if all alive players are ready
+                let all_ready = self.players.iter()
+                    .filter(|p| p.alive)
+                    .all(|p| self.ready_players.contains(&p.id));
+                if all_ready {
+                    self.ready_players.clear();
+                    self.timer = 0.0;
+                    // Force auto_advance for one tick to trigger transition
+                    let was = self.config.auto_advance;
+                    self.config.auto_advance = true;
+                    let events = self.tick(0.01, rng);
+                    self.config.auto_advance = was;
+                    // Events are lost here but phase transition happened
+                    let _ = events;
+                }
+                Ok(())
+            }
         }
     }
 
