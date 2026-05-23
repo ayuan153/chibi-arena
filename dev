@@ -59,6 +59,14 @@ case "${1:-all}" in
         build
         launch
         ;;
+    editor)
+        build
+        kill_godot
+        echo "→ Opening Godot editor..."
+        cd "$CLIENT_DIR"
+        "$( find_godot)" --editor --path . &
+        echo "✓ Editor running (PID $!)"
+        ;;
     run)
         launch
         ;;
@@ -81,10 +89,11 @@ case "${1:-all}" in
         echo "✓ Godot installed. Run: ./dev"
         ;;
     *)
-        echo "Usage: ./dev [all|client|run|check|setup]"
+        echo "Usage: ./dev [all|client|editor|run|check|setup]"
         echo ""
         echo "  all      Build all + launch Godot (default)"
         echo "  client   Build aa2-client + launch Godot"
+        echo "  editor   Build + open Godot editor (inspect/debug)"
         echo "  run      Skip build, just launch Godot"
         echo "  check    cargo check + clippy + test"
         echo "  setup    Install Godot via Homebrew"
