@@ -53,6 +53,16 @@ impl IControl for MainScene {
         manager.bind_mut().tick(delta as f32);
 
         let phase = manager.bind().get_phase().to_string();
+
+        // AI player auto-actions
+        if phase == "GodPick" {
+            // AI picks a god if it hasn't yet
+            let ai_god = manager.bind().get_player_god(1).to_string();
+            if ai_god.is_empty() {
+                manager.bind_mut().apply_player_action(1, "PickGod".into(), "Paladin".into());
+            }
+        }
+
         if phase == self.current_phase {
             return;
         }
