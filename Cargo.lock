@@ -10,6 +10,7 @@ dependencies = [
  "aa2-game",
  "aa2-sim",
  "godot",
+ "rand",
 ]
 
 [[package]]
