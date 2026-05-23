@@ -84,6 +84,24 @@ impl GameManager {
             "RerollShop" => Action::RerollShop,
             "UpgradeShop" => Action::UpgradeShop,
             "LockShop" => Action::LockShop,
+            "SetPosition" => {
+                let parts: Vec<&str> = param_str.splitn(3, ',').collect();
+                if parts.len() != 3 { return "bad params".into(); }
+                let name = parts[0].to_string();
+                let x: f32 = parts[1].parse().unwrap_or(1000.0);
+                let y: f32 = parts[2].parse().unwrap_or(500.0);
+                Action::SetPosition(name, x, y)
+            }
+            "Equip" => {
+                let parts: Vec<&str> = param_str.splitn(2, ',').collect();
+                if parts.len() != 2 { return "bad params".into(); }
+                Action::Equip(parts[0].to_string(), parts[1].to_string())
+            }
+            "Unequip" => {
+                let parts: Vec<&str> = param_str.splitn(2, ',').collect();
+                if parts.len() != 2 { return "bad params".into(); }
+                Action::Unequip(parts[0].to_string(), parts[1].to_string())
+            }
             _ => return GString::from(format!("unknown action: {action_str}").as_str()),
         };
 
@@ -158,5 +176,73 @@ impl GameManager {
         if let (Some(game), Some(rng)) = (&mut self.game, &mut self.rng) {
             game.tick(dt, rng);
         }
+    }
+
+    #[func]
+    pub fn get_heroes(&self, player_id: i32) -> PackedStringArray {
+        let mut arr = PackedStringArray::new();
+        if let Some(game) = &self.game
+            && let Some(player) = game.players.get(player_id as usize)
+        {
+            for h in &player.heroes {
+                arr.push(&GString::from(h.as_str()));
+            }
+        }
+        arr
+    }
+
+    #[func]
+    pub fn get_hero_position(&self, player_id: i32, hero_name: GString) -> Vector2 {
+        if let Some(game) = &self.game
+            && let Some(player) = game.players.get(player_id as usize)
+        {
+            let name = hero_name.to_string();
+            if let Some(&(x, y)) = player.hero_positions.get(&name) {
+                return Vector2::new(x, y);
+            }
+        }
+        Vector2::new(1000.0, 500.0)
+    }
+
+    #[func]
+    pub fn get_bench(&self, player_id: i32) -> PackedStringArray {
+        let mut arr = PackedStringArray::new();
+        if let Some(game) = &self.game
+            && let Some(player) = game.players.get(player_id as usize)
+        {
+            for a in &player.bench {
+                arr.push(&GString::from(a.as_str()));
+            }
+        }
+        arr
+    }
+
+    #[func]
+    pub fn get_equipped_abilities(&self, player_id: i32, hero_name: GString) -> PackedStringArray {
+        let mut arr = PackedStringArray::new();
+        if let Some(game) = &self.game
+            && let Some(player) = game.players.get(player_id as usize)
+        {
+            let name = hero_name.to_string();
+            if let Some(abilities) = player.equipped.get(&name) {
+                for a in abilities {
+                    arr.push(&GString::from(a.as_str()));
+                }
+            }
+        }
+        arr
+    }
+
+    #[func]
+    pub fn get_ability_level(&self, player_id: i32, ability_name: GString) -> i32 {
+        if let Some(game) = &self.game
+            && let Some(player) = game.players.get(player_id as usize)
+        {
+            let name = ability_name.to_string();
+            if let Some(&level) = player.abilities.get(&name) {
+                return level as i32;
+            }
+        }
+        0
     }
 }
