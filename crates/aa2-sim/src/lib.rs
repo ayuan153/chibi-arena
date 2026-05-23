@@ -77,6 +77,10 @@ pub enum CombatEvent {
     DarkPactPulse { tick: u32, caster_id: u32, enemies_hit: u32, self_damage: f32 },
     /// An expanding wave hit a unit.
     WaveHit { tick: u32, target_id: u32, damage: f32, stun_duration: f32 },
+    /// Emitted at tick 0 for each unit. Gives client initial state.
+    UnitSpawn { tick: u32, unit_id: u32, team: u8, name: String, x: f32, y: f32, max_hp: f32 },
+    /// Emitted when a unit starts moving toward a new position.
+    MoveTo { tick: u32, unit_id: u32, x: f32, y: f32, speed: f32 },
 }
 
 /// Xoshiro128++ RNG for deterministic damage rolls.
@@ -194,12 +198,24 @@ impl Simulation {
 
     /// Create a new simulation with a specific RNG seed (for reproducibility).
     pub fn with_seed(units: Vec<Unit>, seed: u32) -> Self {
+        let mut combat_log = Vec::new();
+        for unit in &units {
+            combat_log.push(CombatEvent::UnitSpawn {
+                tick: 0,
+                unit_id: unit.id,
+                team: unit.team,
+                name: unit.name.clone(),
+                x: unit.position.x,
+                y: unit.position.y,
+                max_hp: unit.max_hp,
+            });
+        }
         Self {
             units,
             projectiles: Vec::new(),
             pending_effects: Vec::new(),
             tick: 0,
-            combat_log: Vec::new(),
+            combat_log,
             finished: false,
             winner: None,
             rng: Rng::new(seed),
@@ -435,6 +451,8 @@ impl Simulation {
             // Skip units that are casting
             if self.units[i].cast_state.is_some() { continue; }
 
+            let prev_state = self.units[i].state;
+
             // Try to cast an ability before falling through to auto-attack
             if let Some((ability_index, target_id, target_pos, cast_behavior)) = ai::try_find_cast(&self.units[i], &self.units) {
                 let cast_range = self.units[i].abilities[ability_index].def.cast_range;
@@ -454,6 +472,15 @@ impl Simulation {
                                     // Walk toward target until in cast range
                                     self.move_toward(i, tpos);
                                     self.units[i].state = UnitState::Moving;
+                                    if prev_state != UnitState::Moving {
+                                        events.push(CombatEvent::MoveTo {
+                                            tick: self.tick,
+                                            unit_id: self.units[i].id,
+                                            x: tpos.x,
+                                            y: tpos.y,
+                                            speed: self.units[i].move_speed,
+                                        });
+                                    }
                                     continue;
                                 }
                             }
@@ -628,6 +655,15 @@ impl Simulation {
                 if status.rooted { continue; } // cannot move
                 self.move_toward(i, target_pos);
                 self.units[i].state = UnitState::Moving;
+                if prev_state != UnitState::Moving {
+                    events.push(CombatEvent::MoveTo {
+                        tick: self.tick,
+                        unit_id: self.units[i].id,
+                        x: target_pos.x,
+                        y: target_pos.y,
+                        speed: self.units[i].move_speed,
+                    });
+                }
                 continue;
             }
 

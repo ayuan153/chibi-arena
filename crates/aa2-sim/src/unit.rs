@@ -41,6 +41,8 @@ pub enum UnitState {
 /// A combat unit in the simulation.
 #[derive(Debug, Clone)]
 pub struct Unit {
+    /// Display name (from HeroDef).
+    pub name: String,
     /// Unique identifier.
     pub id: u32,
     /// Team index (0 or 1).
@@ -202,6 +204,7 @@ impl Unit {
         let projectile_speed = if def.is_melee { None } else { def.projectile_speed.or(Some(900.0)) };
 
         Self {
+            name: def.name.clone(),
             id,
             team,
             hp: stats.max_hp,

@@ -254,5 +254,11 @@ fn print_event(event: &CombatEvent, names: &HashMap<u32, String>, units: &[Unit]
             println!("[tick {tick}] {} hit by wave for {damage:.1} damage, stunned {stun_duration:.2}s",
                 name(*target_id));
         }
+        CombatEvent::UnitSpawn { tick, unit_id, team, name: unit_name, x, y, max_hp } => {
+            println!("[tick {tick}] SPAWN: {unit_name} (id={unit_id}, team={team}) at ({x:.0}, {y:.0}) HP={max_hp:.0}");
+        }
+        CombatEvent::MoveTo { tick, unit_id, x, y, speed } => {
+            println!("[tick {tick}] {} moves toward ({x:.0}, {y:.0}) at speed {speed:.0}", name(*unit_id));
+        }
     }
 }
