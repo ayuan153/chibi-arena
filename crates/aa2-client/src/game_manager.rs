@@ -366,6 +366,24 @@ impl GameManager {
     pub fn get_round(&self) -> i32 {
         self.game.as_ref().map(|g| g.round as i32).unwrap_or(0)
     }
+
+    #[func]
+    pub fn set_gold(&mut self, player_id: i32, gold: i32) {
+        if let Some(ref mut game) = self.game
+            && let Some(p) = game.players.get_mut(player_id as usize)
+        {
+            p.gold = gold as u32;
+        }
+    }
+
+    #[func]
+    pub fn set_hp(&mut self, player_id: i32, hp: f32) {
+        if let Some(ref mut game) = self.game
+            && let Some(p) = game.players.get_mut(player_id as usize)
+        {
+            p.hp = hp;
+        }
+    }
 }
 
 fn combat_event_to_dict(event: &aa2_sim::CombatEvent) -> VarDictionary {

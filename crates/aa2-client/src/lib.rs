@@ -9,6 +9,7 @@ mod combat_viewer_ui;
 mod god_pick_ui;
 mod draft_ui;
 mod scoreboard_ui;
+mod dev_console;
 
 struct Aa2Extension;
 

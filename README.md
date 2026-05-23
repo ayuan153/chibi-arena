@@ -7,9 +7,9 @@
 
 A standalone cross-platform autobattler inspired by the Dota 2 mod Ability Arena. Eight players compete in a free-for-all, picking gods, drafting hero bodies, and equipping abilities to outlast their opponents.
 
-## Status: Phase 2 Complete ✓ — Now in Phase 3 (Client)
+## Status: Phase 3 In Progress — Client (Godot + gdext)
 
-Game systems complete with full game loop, economy, draft, shop, gods, and 234 tests. Building Godot client next.
+Game systems complete with full game loop, economy, draft, shop, gods, and 234 tests. Godot client has all screens (shop, board, draft, combat viewer, scoreboard, dev console).
 
 ## Tech Stack
 
@@ -46,8 +46,6 @@ aa2/
 - **Rust** (stable, latest) — [rustup.rs](https://rustup.rs)
 - **Godot 4.3+** — for client work only
 
-### Build
-
 ### Build & Test
 
 ```bash
@@ -61,7 +59,7 @@ cargo clippy            # Lint (must pass with no warnings)
 
 Every mechanic verification is encoded as an automated test. If you can observe it in the combat log, it should be an assertion in a test file. Tests use actual RON data files and deterministic seeds — same input always produces same output.
 
-### Run Dev Mode
+### Run CLI Dev Mode (no Godot needed)
 
 ```bash
 cargo run --bin aa2-dev                                    # 1v1 default (Sven vs Drow)
@@ -69,6 +67,39 @@ cargo run --bin aa2-dev -- data/heroes/sven.ron data/heroes/drow.ron  # Custom 1
 cargo run --bin aa2-dev -- --5v5                            # 5v5 brawl with all heroes
 cargo run --bin aa2-dev -- --loadout data/loadouts/sven_ravage.ron data/loadouts/cm_ravage.ron  # With abilities
 ```
+
+### Run Godot Client (visual game)
+
+**Prerequisites:** [Godot 4.3+](https://godotengine.org/download) installed and in PATH.
+
+```bash
+# 1. Build the GDExtension library
+cargo build -p aa2-client
+
+# 2. Run Godot (from repo root)
+cd client && godot --path . 2>/dev/null
+```
+
+**Iterate loop:**
+```bash
+# Terminal 1: rebuild on changes (or just re-run manually)
+cargo build -p aa2-client
+
+# Terminal 2: run Godot (reload picks up new .dylib automatically)
+cd client && godot --path .
+```
+
+Godot loads `libaa2_client.dylib` from `../target/debug/` via the `.gdextension` file. After rebuilding the Rust crate, restart Godot to pick up changes.
+
+**Dev Console:** Always visible on the right side. Type commands:
+- `state` — show gold, HP, phase, round
+- `gold 99` — set gold to 99
+- `hp 50` — set HP to 50
+- `buy 0` — buy shop slot 0
+- `reroll` — reroll shop
+- `combat` — force run combat
+- `ready` — end current phase
+- `help` — list all commands
 
 ## Heroes Available
 

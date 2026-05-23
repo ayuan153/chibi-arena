@@ -141,8 +141,8 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 | 24 | Combat replay viewer (animate CombatEvent stream with tweens; add MoveTo/StartMoving events to sim) |
 | 25 | Draft screen, god pick, scoreboard |
 | 26 | Full playable game in Godot (local mode, placeholder art) |
-| 27 | Polish: animations, damage numbers, ability VFX |
-| 28 | Dev console, performance profiling |
+| 27 | Dev console (always-visible panel, cheat commands, state inspection) |
+| 28 | Structural polish: HP bars, damage numbers, death fade, cast indicators |
 
 **Deliverables:**
 - Godot 4.3 project with GDExtension (gdext 0.5)

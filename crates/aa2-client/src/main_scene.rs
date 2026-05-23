@@ -4,6 +4,7 @@ use godot::classes::{Control, IControl};
 use crate::bench_ui::BenchUI;
 use crate::board_ui::BoardUI;
 use crate::combat_viewer_ui::CombatViewerUI;
+use crate::dev_console::DevConsole;
 use crate::draft_ui::DraftUI;
 use crate::game_manager::GameManager;
 use crate::god_pick_ui::GodPickUI;
@@ -41,6 +42,11 @@ impl IControl for MainScene {
         self.add_control_child(BenchUI::new_alloc(), "BenchUI");
         self.add_control_child(CombatViewerUI::new_alloc(), "CombatViewerUI");
         self.add_control_child(ScoreboardUI::new_alloc(), "ScoreboardUI");
+
+        // DevConsole — always visible, not affected by phase changes
+        let mut console = DevConsole::new_alloc();
+        console.upcast_mut::<Node>().set_name("DevConsole");
+        self.base_mut().add_child(&console);
 
         self.switch_to_phase("GodPick");
     }

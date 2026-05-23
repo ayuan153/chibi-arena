@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use godot::prelude::*;
-use godot::classes::{Control, IControl, Label};
+use godot::classes::{Control, IControl, Label, ProgressBar};
 
 use crate::game_manager::GameManager;
 
@@ -19,6 +19,17 @@ struct UnitVisual {
     node: Gd<Control>,
     target_pos: Vector2,
     speed: f32,
+    hp_bar: Gd<ProgressBar>,
+    max_hp: f32,
+    cast_label: Option<Gd<Label>>,
+    /// If Some, unit is fading out. Counts down from 0.5.
+    death_timer: Option<f32>,
+}
+
+struct DamagePopup {
+    label: Gd<Label>,
+    time_remaining: f32,
+    start_pos: Vector2,
 }
 
 #[derive(GodotClass)]
@@ -30,6 +41,7 @@ pub struct CombatViewerUI {
     next_event_index: usize,
     matchup_index: i32,
     units: HashMap<u32, UnitVisual>,
+    popups: Vec<DamagePopup>,
 }
 
 #[godot_api]
@@ -81,6 +93,38 @@ impl IControl for CombatViewerUI {
             }
         }
 
+        // Update death fades
+        let mut dead_ids = Vec::new();
+        for (&id, unit) in self.units.iter_mut() {
+            if let Some(ref mut timer) = unit.death_timer {
+                *timer -= dt;
+                let alpha = (*timer / 0.5).max(0.0);
+                unit.node.set_modulate(Color::from_rgba(1.0, 1.0, 1.0, alpha));
+                if *timer <= 0.0 {
+                    dead_ids.push(id);
+                }
+            }
+        }
+        for id in dead_ids {
+            if let Some(unit) = self.units.remove(&id) {
+                unit.node.clone().free();
+            }
+        }
+
+        // Update damage popups
+        self.popups.retain_mut(|popup| {
+            popup.time_remaining -= dt;
+            if popup.time_remaining <= 0.0 {
+                popup.label.clone().free();
+                return false;
+            }
+            let progress = 1.0 - (popup.time_remaining / 1.0);
+            let y_offset = progress * 30.0;
+            popup.label.set_position(popup.start_pos + Vector2::new(0.0, -y_offset));
+            popup.label.set_modulate(Color::from_rgba(1.0, 1.0, 1.0, popup.time_remaining));
+            true
+        });
+
         // Stop at round end
         if self.next_event_index >= event_count && event_count > 0 {
             self.playing = false;
@@ -94,6 +138,9 @@ impl CombatViewerUI {
     pub fn start_playback(&mut self, matchup_index: i32) {
         for (_, unit) in self.units.drain() {
             unit.node.clone().free();
+        }
+        for popup in self.popups.drain(..) {
+            popup.label.clone().free();
         }
         self.matchup_index = matchup_index;
         self.playback_time = 0.0;
@@ -113,24 +160,55 @@ impl CombatViewerUI {
 
     fn handle_event(&mut self, event_type: &str, event: &VarDictionary) {
         match event_type {
-            "Attack" => {
+            "Attack" | "ProjectileHit" | "AbilityDamage" => {
                 let target_id = event.get("target_id").map(|v| v.to::<u32>()).unwrap_or(0);
                 let damage = event.get("damage").map(|v| v.to::<f32>()).unwrap_or(0.0);
+                if let Some(unit) = self.units.get_mut(&target_id) {
+                    // Update HP bar
+                    let new_val = (unit.hp_bar.get_value() - damage as f64).max(0.0);
+                    unit.hp_bar.set_value(new_val);
+                }
                 if let Some(unit) = self.units.get(&target_id) {
-                    self.spawn_damage_number(unit.node.get_position(), damage);
+                    self.spawn_damage_popup(unit.node.get_position(), damage, false);
                 }
             }
-            "ProjectileHit" => {
+            "Heal" => {
                 let target_id = event.get("target_id").map(|v| v.to::<u32>()).unwrap_or(0);
-                let damage = event.get("damage").map(|v| v.to::<f32>()).unwrap_or(0.0);
+                let amount = event.get("amount").map(|v| v.to::<f32>()).unwrap_or(0.0);
+                if let Some(unit) = self.units.get_mut(&target_id) {
+                    let new_val = (unit.hp_bar.get_value() + amount as f64).min(unit.max_hp as f64);
+                    unit.hp_bar.set_value(new_val);
+                }
                 if let Some(unit) = self.units.get(&target_id) {
-                    self.spawn_damage_number(unit.node.get_position(), damage);
+                    self.spawn_damage_popup(unit.node.get_position(), amount, true);
                 }
             }
             "Death" => {
                 let unit_id = event.get("unit_id").map(|v| v.to::<u32>()).unwrap_or(0);
-                if let Some(unit) = self.units.get(&unit_id) {
-                    unit.node.clone().set_visible(false);
+                if let Some(unit) = self.units.get_mut(&unit_id) {
+                    unit.death_timer = Some(0.5);
+                }
+            }
+            "CastStart" => {
+                let caster_id = event.get("caster_id").map(|v| v.to::<u32>()).unwrap_or(0);
+                let ability_name = event.get("ability_name")
+                    .map(|v| v.to::<GString>().to_string())
+                    .unwrap_or_default();
+                if let Some(unit) = self.units.get_mut(&caster_id) {
+                    let mut label = Label::new_alloc();
+                    label.set_text(&format!("Casting: {ability_name}"));
+                    label.set_position(Vector2::new(0.0, -20.0));
+                    label.add_theme_color_override("font_color", Color::from_rgb(0.3, 0.8, 1.0));
+                    unit.node.add_child(&label);
+                    unit.cast_label = Some(label);
+                }
+            }
+            "CastComplete" => {
+                let caster_id = event.get("caster_id").map(|v| v.to::<u32>()).unwrap_or(0);
+                if let Some(unit) = self.units.get_mut(&caster_id)
+                    && let Some(label) = unit.cast_label.take()
+                {
+                    label.clone().free();
                 }
             }
             "UnitSpawn" => {
@@ -139,13 +217,40 @@ impl CombatViewerUI {
                 let x = event.get("x").map(|v| v.to::<f32>()).unwrap_or(0.0);
                 let y = event.get("y").map(|v| v.to::<f32>()).unwrap_or(0.0);
                 let team = event.get("team").map(|v| v.to::<i32>()).unwrap_or(0);
+                let max_hp = event.get("max_hp").map(|v| v.to::<f32>()).unwrap_or(100.0);
                 let pos = game_to_screen(x, y);
+
+                // Container control for unit
+                let mut container = Control::new_alloc();
+                container.set_position(pos);
+
+                // Name label
                 let mut label = Label::new_alloc();
                 label.set_text(&format!("{name} [T{team}]"));
-                label.set_position(pos);
-                let control: Gd<Control> = label.clone().upcast();
-                self.base_mut().add_child(&label);
-                self.units.insert(unit_id, UnitVisual { node: control, target_pos: pos, speed: 0.0 });
+                label.set_position(Vector2::ZERO);
+                container.add_child(&label);
+
+                // HP bar below name
+                let mut hp_bar = ProgressBar::new_alloc();
+                hp_bar.set_min(0.0);
+                hp_bar.set_max(max_hp as f64);
+                hp_bar.set_value(max_hp as f64);
+                hp_bar.set_position(Vector2::new(0.0, 16.0));
+                hp_bar.set_size(Vector2::new(40.0, 6.0));
+                hp_bar.set_show_percentage(false);
+                container.add_child(&hp_bar);
+
+                self.base_mut().add_child(&container);
+                let control: Gd<Control> = container.upcast();
+                self.units.insert(unit_id, UnitVisual {
+                    node: control,
+                    target_pos: pos,
+                    speed: 0.0,
+                    hp_bar,
+                    max_hp,
+                    cast_label: None,
+                    death_timer: None,
+                });
             }
             "MoveTo" => {
                 let unit_id = event.get("unit_id").map(|v| v.to::<u32>()).unwrap_or(0);
@@ -161,12 +266,27 @@ impl CombatViewerUI {
         }
     }
 
-    fn spawn_damage_number(&mut self, pos: Vector2, damage: f32) {
+    fn spawn_damage_popup(&mut self, pos: Vector2, value: f32, is_heal: bool) {
         let mut label = Label::new_alloc();
-        let text = format!("-{:.0}", damage);
+        let text = if is_heal {
+            format!("+{:.0}", value)
+        } else {
+            format!("-{:.0}", value)
+        };
         label.set_text(&text);
-        label.set_position(pos + Vector2::new(0.0, -20.0));
-        label.add_theme_color_override("font_color", Color::from_rgb(1.0, 0.2, 0.2));
+        let start_pos = pos + Vector2::new(20.0, -10.0);
+        label.set_position(start_pos);
+        let color = if is_heal {
+            Color::from_rgb(0.2, 1.0, 0.2)
+        } else {
+            Color::from_rgb(1.0, 0.2, 0.2)
+        };
+        label.add_theme_color_override("font_color", color);
         self.base_mut().add_child(&label);
+        self.popups.push(DamagePopup {
+            label,
+            time_remaining: 1.0,
+            start_pos,
+        });
     }
 }
