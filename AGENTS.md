@@ -1,5 +1,14 @@
 # AGENTS.md — AI Agent Guidelines for AA2
 
+## Client Development (Godot + gdext)
+
+When working on `aa2-client` or anything in `client/`, read `docs/design/godot-dev-workflow.md` first. It covers:
+- Local iteration loop (`./dev` script)
+- First-time setup (must run `./dev editor` once)
+- How GDExtension loading works
+- Common issues and fixes
+- Architecture and key patterns
+
 ## Commit Convention
 
 Use Conventional Commits: `type(scope): description`
