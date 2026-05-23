@@ -138,7 +138,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 | 21 | aa2-client crate (gdext), Godot project setup, extension loading |
 | 22 | Shop screen (buy/sell/reroll/equip via UI) |
 | 23 | Board positioning (drag & drop heroes), bench UI |
-| 24 | Combat replay viewer (units move, attack, die with placeholder art) |
+| 24 | Combat replay viewer (animate CombatEvent stream with tweens; add MoveTo/StartMoving events to sim) |
 | 25 | Draft screen, god pick, scoreboard |
 | 26 | Full playable game in Godot (local mode, placeholder art) |
 | 27 | Polish: animations, damage numbers, ability VFX |
@@ -148,7 +148,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 - Godot 4.3 project with GDExtension (gdext 0.5)
 - `aa2-client` crate (cdylib) loaded by Godot via .gdextension
 - All game screens: shop, draft, combat viewer, scoreboard, god pick
-- Combat replay system (downsampled snapshots at ~1Hz for animation interpolation)
+- Combat replay system (event-based — client animates CombatEvent stream using tweens)
 - LOCAL MODE: aa2-client calls aa2-game directly (same process, no serialization)
 - Placeholder art (colored shapes with labels)
 - Code-first approach: hand-written project.godot, no editor dependency

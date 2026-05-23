@@ -124,7 +124,7 @@ GDExtension crate loaded by Godot. Bridges Rust game logic to Godot scenes.
 - Exposes GDExtension classes (via gdext 0.5) for Godot to instantiate
 - Owns an `aa2-game::GameState` instance in local mode
 - Translates Godot input/signals into aa2-game actions
-- Provides combat replay data (downsampled snapshots at ~1Hz) for animation interpolation
+- Provides combat replay data (event-based — schedules CombatEvent stream as Godot tweens)
 - Manages screen transitions (god pick, draft, shop, combat viewer)
 
 **Architecture:** Direct Rust function calls to aa2-game. No serialization boundary, no C FFI, no JSON marshaling.
@@ -137,7 +137,7 @@ Multiplayer game server.
 - WebSocket server (tokio + tungstenite)
 - Matchmaking queue with MMR-based pairing
 - Lobby management (8 players per game)
-- Replay recording (snapshot stream → file)
+- Replay recording (CombatEvent stream → file)
 - Anti-cheat validation (all mutations server-authoritative)
 - Reconnection handling
 
@@ -292,14 +292,16 @@ aa2/
 
 ### Recording
 
-During combat, the sim produces per-tick state. For client playback, snapshots are downsampled to ~1Hz for animation interpolation.
+During combat, the sim runs to completion instantly (~50ms) and produces a `Vec<CombatEvent>`. The event stream includes: Attack, ProjectileSpawn, ProjectileHit, Death, CastStart, CastComplete, AbilityDamage, Heal, BuffApplied, BuffExpired, MoveTo, StartMoving, etc. Each event carries a tick number for temporal ordering.
 
 ### Playback
 
-The combat viewer interpolates between snapshots to produce smooth 60fps animation. Supports:
+The client receives the full event stream and schedules animations using Godot tweens. Tick → time conversion: `tick / 30 = seconds`. Animation is cosmetic-only and doesn't need to be deterministic. Supports:
 - Play/pause/seek
 - Speed control (0.5x–4x)
 - Board switching (view any player)
+
+Data size: ~10KB per fight. Network-friendly — only transmit when something happens.
 
 ### Use Cases
 

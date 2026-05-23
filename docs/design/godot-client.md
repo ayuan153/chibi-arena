@@ -33,7 +33,7 @@ crates/aa2-client/              # Rust GDExtension crate
 │   ├── lib.rs                  # gdext entry point, ExtensionLibrary impl
 │   ├── game_manager.rs         # Owns GameState, drives game loop
 │   ├── shop_ui.rs              # Shop screen logic
-│   ├── combat_viewer.rs        # Replay playback with interpolation
+│   ├── combat_viewer.rs        # Replay playback with event-driven tweens
 │   ├── draft_ui.rs             # Hero draft logic
 │   └── god_pick_ui.rs          # God selection logic
 ```
@@ -64,7 +64,7 @@ Full-screen choice between available gods with descriptions.
 
 ### 3. Combat Phase
 - Arena view with both teams
-- Units move smoothly (interpolate between snapshot positions)
+- Units move smoothly (tweened from MoveTo/StartMoving events)
 - Attack animations, projectiles, ability VFX (placeholder: colored shapes)
 - Floating damage numbers, health bars
 - Speed controls (1x, 2x, 4x, skip)
@@ -75,15 +75,21 @@ All 8 players: HP, heroes, god, placement (if eliminated).
 ## Combat Replay System
 
 Combat is NOT rendered in real-time. Instead:
-1. Rust runs the full combat instantly (~50ms for aa2-sim)
-2. aa2-client downsamples the tick-by-tick results to ~1Hz snapshots
-3. Godot interpolates between snapshots for smooth 60fps animation
-4. Player can speed up (2x, 4x) or skip
+1. Rust runs the full combat instantly (~50ms for aa2-sim), producing a `Vec<CombatEvent>`
+2. Client receives the full event stream (Attack, ProjectileSpawn, ProjectileHit, Death, CastStart, CastComplete, AbilityDamage, Heal, BuffApplied, BuffExpired, MoveTo, StartMoving, etc.)
+3. Events carry tick numbers — client converts tick → time (tick / 30 = seconds) for scheduling
+4. Godot animates events using tweens/AnimationPlayer for smooth 60fps playback
+5. Player can speed up (2x, 4x) or skip
+
+The only sim change needed is adding movement events (`MoveTo { tick, unit_id, x, y }` or `StartMoving { tick, unit_id, target_x, target_y, speed }`). All other events already exist in the CombatEvent enum (13 event types).
 
 Benefits:
 - No frame-rate coupling between sim and rendering
 - Replays are deterministic and replayable
 - Can show other players' fights too
+- Data size: ~10KB per fight (vs ~100KB for snapshots)
+- Network-friendly: only transmit when something happens
+- Client animation is cosmetic-only, doesn't need to be deterministic
 
 ## Local vs Networked Mode
 
@@ -107,7 +113,7 @@ Godot scenes ←→ aa2-client (gdext) → WebSocket → aa2-server → aa2-game
 - Server owns the game loop and timer
 - aa2-client sends actions via WebSocket
 - Server broadcasts state snapshots (10Hz)
-- Client interpolates between snapshots
+- Client interpolates between snapshots for shop/board state
 
 The transition is clean: swap direct aa2-game calls for WebSocket messages. UI code doesn't change.
 
