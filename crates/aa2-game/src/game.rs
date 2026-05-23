@@ -487,10 +487,8 @@ mod tests {
         let mut game = test_game();
         game.round = 5;
         game.apply_draw_damage(0, 1, 2, 3);
-        // Player 0 takes damage from 3 survivors: 5*0.5 + (1+5*0.1)*3 = 2.5 + 4.5 = 7.0
         let expected_dmg_to_0 = damage::calculate_damage(5, 3);
         assert!((game.players[0].hp - (200.0 - expected_dmg_to_0)).abs() < 0.001);
-        // Player 1 takes damage from 2 survivors: 5*0.5 + (1+5*0.1)*2 = 2.5 + 3.0 = 5.5
         let expected_dmg_to_1 = damage::calculate_damage(5, 2);
         assert!((game.players[1].hp - (200.0 - expected_dmg_to_1)).abs() < 0.001);
     }

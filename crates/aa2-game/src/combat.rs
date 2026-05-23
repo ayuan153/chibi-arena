@@ -26,6 +26,8 @@ pub struct CombatResult {
     pub survivors_a: u32,
     /// Surviving units on team B.
     pub survivors_b: u32,
+    /// Combat event log from the simulation.
+    pub combat_log: Vec<aa2_sim::CombatEvent>,
 }
 
 /// Build UnitConfigs for a player's team.
@@ -94,14 +96,26 @@ pub fn run_combat(
     team_b: &[(UnitConfig, Vec2, Vec<Buff>)],
     seed: u32,
 ) -> (Option<u8>, u32, u32) {
+    let (winner, sa, sb, _log) = run_combat_with_log(team_a, team_b, seed);
+    (winner, sa, sb)
+}
+
+/// Run a single combat between two teams, returning the combat log.
+///
+/// Returns (winner_team: Option<0|1>, survivors_a, survivors_b, combat_log).
+pub fn run_combat_with_log(
+    team_a: &[(UnitConfig, Vec2, Vec<Buff>)],
+    team_b: &[(UnitConfig, Vec2, Vec<Buff>)],
+    seed: u32,
+) -> (Option<u8>, u32, u32, Vec<aa2_sim::CombatEvent>) {
     if team_a.is_empty() && team_b.is_empty() {
-        return (None, 0, 0);
+        return (None, 0, 0, Vec::new());
     }
     if team_a.is_empty() {
-        return (Some(1), 0, team_b.len() as u32);
+        return (Some(1), 0, team_b.len() as u32, Vec::new());
     }
     if team_b.is_empty() {
-        return (Some(0), team_a.len() as u32, 0);
+        return (Some(0), team_a.len() as u32, 0, Vec::new());
     }
 
     let mut units = Vec::new();
@@ -148,7 +162,8 @@ pub fn run_combat(
         }
     };
 
-    (winner, survivors_a, survivors_b)
+    let log = std::mem::take(&mut sim.combat_log);
+    (winner, survivors_a, survivors_b, log)
 }
 
 /// Run all matchups for a round and return results.
@@ -182,7 +197,7 @@ pub fn run_all_matchups(
             .map(|p| build_team(p, hero_defs, ability_defs, hero_level, round))
             .unwrap_or_default();
 
-        let (winner_team, survivors_a, survivors_b) = run_combat(&team_a, &team_b, seed);
+        let (winner_team, survivors_a, survivors_b, combat_log) = run_combat_with_log(&team_a, &team_b, seed);
 
         let winner = match winner_team {
             Some(0) => Some(matchup.player_a),
@@ -201,6 +216,7 @@ pub fn run_all_matchups(
             winner,
             survivors_a,
             survivors_b,
+            combat_log,
         });
     }
 

@@ -68,61 +68,13 @@ fn run() -> Result<(), String> {
 
     let mut round_seed: u32 = rng.r#gen();
     let mut placements: Vec<(u8, u32)> = Vec::new(); // (player_id, round_eliminated)
+    let mut last_combat_log: Option<(u32, u8, Vec<aa2_sim::CombatEvent>)> = None; // (round, opponent_id, log)
 
     println!("\n=== GAME START ===\n");
 
     loop {
         if game.alive_count() <= 1 {
             break;
-        }
-
-        // Combat phase (skip round 1)
-        if game.round > 1 {
-            game.end_shop();
-            println!("\n=== ROUND {} | COMBAT ===", game.round);
-
-            let prev_alive: Vec<u8> = game.players.iter().filter(|p| p.alive).map(|p| p.id).collect();
-            let results = game.run_combat_round(&hero_defs, &ability_defs, round_seed, &mut rng);
-            round_seed = round_seed.wrapping_add(1);
-
-            display_combat_results(&results, &game);
-
-            // Check eliminations
-            for pid in &prev_alive {
-                if !game.players[*pid as usize].alive {
-                    println!("  *** Player {} has been ELIMINATED! ***", pid);
-                    placements.push((*pid, game.round));
-                }
-            }
-
-            if game.alive_count() <= 1 {
-                break;
-            }
-
-            // Grace period → new shop phase
-            game.end_combat(false);
-            game.end_grace_period(&mut rng);
-
-            // Roll shops for players that need it
-            for player in &mut game.players {
-                if player.alive && player.shop.needs_reroll {
-                    player.shop.roll(&mut game.pool, &ultimates, game.config.ultimate_unlock_level, game.config.shop_size_bonus, &mut rng);
-                    player.shop.needs_reroll = false;
-                }
-            }
-
-            // Generate draft if needed
-            if game.draft_pending {
-                #[allow(clippy::needless_range_loop)]
-                for i in 0..8 {
-                    if game.players[i].alive {
-                        let available = available_heroes_for_player(&heroes, &game.players[i]);
-                        let tier = tier_for_draft_round(game.round).unwrap_or(0);
-                        let choices = generate_draft_choices(&available, tier, &mut rng);
-                        drafts[i] = Some(DraftState { choices, round_tier: tier });
-                    }
-                }
-            }
         }
 
         // Display status
@@ -162,6 +114,7 @@ fn run() -> Result<(), String> {
                 "board" => display_board(&game.players[0]),
                 "god" => display_god(&game.players[0]),
                 "players" => display_players(&game),
+                "log" => display_combat_log(&last_combat_log),
                 "lock" => {
                     game.players[0].shop.toggle_lock();
                     println!("  Shop lock: {}", if game.players[0].shop.locked { "ON" } else { "OFF" });
@@ -333,20 +286,19 @@ fn run() -> Result<(), String> {
         // AI takes actions
         ai_take_actions(&mut game, &mut drafts, &hero_defs, &ultimates, &mut rng);
 
-        // After round 1 (no combat), manually advance to round 2
+        // Round 1: no combat, advance to round 2
         if game.round == 1 {
-            game.round = 1; // end_grace_period will increment to 2
-            game.end_shop();
-            game.end_combat(false);
-            game.end_grace_period(&mut rng);
+            game.round += 1;
+            game.start_round();
             // Roll shops
             for player in &mut game.players {
-                if player.alive && player.shop.needs_reroll {
+                if player.alive {
                     player.shop.roll(&mut game.pool, &ultimates, game.config.ultimate_unlock_level, game.config.shop_size_bonus, &mut rng);
-                    player.shop.needs_reroll = false;
                 }
             }
-            if game.draft_pending {
+            // Generate draft if needed
+            if draft::is_draft_round(game.round) {
+                game.draft_pending = true;
                 #[allow(clippy::needless_range_loop)]
                 for i in 0..8 {
                     if game.players[i].alive {
@@ -356,7 +308,76 @@ fn run() -> Result<(), String> {
                         drafts[i] = Some(DraftState { choices, round_tier: tier });
                     }
                 }
+            } else {
+                game.draft_pending = false;
             }
+            continue;
+        }
+
+        // Combat phase (round >= 2)
+        game.end_shop();
+        println!("\n=== ROUND {} | COMBAT ===", game.round);
+
+        let prev_alive: Vec<u8> = game.players.iter().filter(|p| p.alive).map(|p| p.id).collect();
+        let results = game.run_combat_round(&hero_defs, &ability_defs, round_seed, &mut rng);
+        round_seed = round_seed.wrapping_add(1);
+
+        // Store combat log for player 0's matchup
+        for result in &results {
+            if result.matchup.player_a == 0 || result.matchup.player_b == 0 {
+                let opponent = if result.matchup.player_a == 0 {
+                    result.matchup.player_b
+                } else {
+                    result.matchup.player_a
+                };
+                last_combat_log = Some((game.round, opponent, result.combat_log.clone()));
+                break;
+            }
+        }
+
+        display_combat_results(&results, &game);
+
+        // Check eliminations
+        for pid in &prev_alive {
+            if !game.players[*pid as usize].alive {
+                println!("  *** Player {} has been ELIMINATED! ***", pid);
+                placements.push((*pid, game.round));
+            }
+        }
+
+        if game.alive_count() <= 1 {
+            break;
+        }
+
+        // Advance to next round
+        game.round += 1;
+        game.start_round();
+
+        // Roll shops for all alive players
+        for player in &mut game.players {
+            if player.alive {
+                if !player.shop.locked {
+                    player.shop.roll(&mut game.pool, &ultimates, game.config.ultimate_unlock_level, game.config.shop_size_bonus, &mut rng);
+                } else {
+                    player.shop.locked = false;
+                }
+            }
+        }
+
+        // Generate draft if needed
+        if draft::is_draft_round(game.round) {
+            game.draft_pending = true;
+            #[allow(clippy::needless_range_loop)]
+            for i in 0..8 {
+                if game.players[i].alive {
+                    let available = available_heroes_for_player(&heroes, &game.players[i]);
+                    let tier = tier_for_draft_round(game.round).unwrap_or(0);
+                    let choices = generate_draft_choices(&available, tier, &mut rng);
+                    drafts[i] = Some(DraftState { choices, round_tier: tier });
+                }
+            }
+        } else {
+            game.draft_pending = false;
         }
     }
 
@@ -608,11 +629,73 @@ Commands:
   position <h> <x> <y> - set hero position
   god             - show god info
   buff <hero>     - set paladin buff target
+  log             - show last combat log
   status          - show gold, HP, round
   board           - show hero positions
   players         - show all players HP
   help            - show this help
 ");
+}
+
+fn display_combat_log(log: &Option<(u32, u8, Vec<aa2_sim::CombatEvent>)>) {
+    let Some((round, opponent, events)) = log else {
+        println!("  No combat log available yet.");
+        return;
+    };
+    println!("\n=== COMBAT LOG (Round {}: You vs Player {}) ===", round, opponent);
+    if events.is_empty() {
+        println!("  (no events)");
+        return;
+    }
+    let mut last_snapshot_tick: u32 = 0;
+    for event in events {
+        match event {
+            aa2_sim::CombatEvent::Attack { tick, attacker_id, target_id, damage } => {
+                println!("  [{:.1}s] Unit {} attacks Unit {} for {:.0} damage",
+                    *tick as f32 / 30.0, attacker_id, target_id, damage);
+            }
+            aa2_sim::CombatEvent::ProjectileHit { tick, target_id, damage } => {
+                println!("  [{:.1}s] Projectile hits Unit {} for {:.0} damage",
+                    *tick as f32 / 30.0, target_id, damage);
+            }
+            aa2_sim::CombatEvent::Death { tick, unit_id } => {
+                println!("  [{:.1}s] Unit {} dies", *tick as f32 / 30.0, unit_id);
+            }
+            aa2_sim::CombatEvent::CastStart { tick, caster_id, ability_name } => {
+                println!("  [{:.1}s] Unit {} begins casting {}",
+                    *tick as f32 / 30.0, caster_id, ability_name);
+            }
+            aa2_sim::CombatEvent::CastComplete { tick, caster_id, ability_name } => {
+                println!("  [{:.1}s] Unit {} casts {}",
+                    *tick as f32 / 30.0, caster_id, ability_name);
+            }
+            aa2_sim::CombatEvent::AbilityDamage { tick, caster_id, target_id, ability_name, damage, .. } => {
+                println!("  [{:.1}s] {} (Unit {}) hits Unit {} for {:.0} damage",
+                    *tick as f32 / 30.0, ability_name, caster_id, target_id, damage);
+            }
+            aa2_sim::CombatEvent::Heal { tick, target_id, amount } => {
+                println!("  [{:.1}s] Unit {} healed for {:.0}",
+                    *tick as f32 / 30.0, target_id, amount);
+            }
+            aa2_sim::CombatEvent::RoundEnd { tick, winning_team } => {
+                println!("  [{:.1}s] Combat ends — Team {} wins",
+                    *tick as f32 / 30.0, winning_team);
+            }
+            // Skip: ProjectileSpawn, BuffApplied, BuffExpired, DarkPactPulse, WaveHit
+            _ => {
+                // Periodic snapshot every 150 ticks (~5s)
+                let tick_val = match event {
+                    aa2_sim::CombatEvent::BuffApplied { tick, .. }
+                    | aa2_sim::CombatEvent::BuffExpired { tick, .. }
+                    | aa2_sim::CombatEvent::ProjectileSpawn { tick, .. }
+                    | aa2_sim::CombatEvent::DarkPactPulse { tick, .. }
+                    | aa2_sim::CombatEvent::WaveHit { tick, .. } => *tick,
+                    _ => 0,
+                };
+                let _ = (tick_val, &mut last_snapshot_tick);
+            }
+        }
+    }
 }
 
 // --- Action Handlers ---
