@@ -24,11 +24,14 @@ pub struct MainScene {
 #[godot_api]
 impl IControl for MainScene {
     fn ready(&mut self) {
+        godot_print!("[AA2] MainScene ready - initializing game...");
+
         // Add GameManager as our child (UIs find it via /root/MainScene/GameManager)
         let mut manager = GameManager::new_alloc();
         manager.set_name("GameManager");
         self.base_mut().add_child(&manager);
         manager.bind_mut().init_game(42, 2, "data".into());
+        godot_print!("[AA2] GameManager initialized");
 
         // Create UI screens as children
         self.add_control_child::<GodPickUI>(GodPickUI::new_alloc(), "GodPickUI");
@@ -59,6 +62,7 @@ impl IControl for MainScene {
             // AI picks a god if it hasn't yet
             let ai_god = manager.bind().get_player_god(1).to_string();
             if ai_god.is_empty() {
+                godot_print!("[AA2] AI picking god: Paladin");
                 manager.bind_mut().apply_player_action(1, "PickGod".into(), "Paladin".into());
             }
         }
@@ -67,6 +71,7 @@ impl IControl for MainScene {
             return;
         }
 
+        godot_print!("[AA2] Phase transition: {} -> {}", self.current_phase, phase);
         self.current_phase = phase.clone();
         self.switch_to_phase(&phase);
 

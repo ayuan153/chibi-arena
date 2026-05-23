@@ -82,8 +82,10 @@ impl GodPickUI {
         let gods = manager.bind().get_available_gods();
         if let Some(dict) = gods.get(idx) {
             let name = dict.get("name").unwrap_or_default().to::<GString>();
+            godot_print!("[AA2] Player picking god: {name}");
             if let Some(mut mgr) = self.get_manager() {
-                mgr.bind_mut().apply_player_action(0, "PickGod".into(), name);
+                let result = mgr.bind_mut().apply_player_action(0, "PickGod".into(), name.clone());
+                godot_print!("[AA2] PickGod result: {result}");
             }
         }
     }
