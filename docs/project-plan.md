@@ -133,21 +133,54 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 ---
 
-## Phase 3: Multiplayer (Weeks 21–28)
+## Phase 3: Client + Platform (Weeks 21–28) ← CURRENT
 
 | Week | Focus |
 |------|-------|
-| 21–22 | aa2-server binary (headless sim, WebSocket server) |
-| 23–24 | State-sync protocol (10Hz snapshots, delta compression) |
-| 25 | Matchmaking + lobby system (region + MMR filtering) |
-| 26 | Reconnect support (full state snapshot on rejoin) |
-| 27 | Spectating (subscribe to other player boards) |
-| 28 | Anti-cheat (server-authoritative validation), load testing |
+| 21 | aa2-ffi crate (C API), Unity project setup, plugin loading |
+| 22 | Shop screen (buy/sell/reroll/equip via UI) |
+| 23 | Board positioning (drag & drop heroes), bench UI |
+| 24 | Combat replay viewer (units move, attack, die with placeholder art) |
+| 25 | Draft screen, god pick, scoreboard |
+| 26 | Full playable game in Unity (local mode, placeholder art) |
+| 27 | Polish: animations, damage numbers, ability VFX |
+| 28 | Dev console, iOS simulator build, performance profiling |
+
+**Deliverables:**
+- Rust FFI bridge (aa2-ffi crate, cdylib)
+- Unity project with native plugin integration
+- All game screens: shop, draft, combat viewer, scoreboard, god pick
+- Combat replay system (Rust runs sim → Unity plays back visually)
+- LOCAL MODE: game runs in-process, no server needed
+- Placeholder art (colored shapes with labels)
+- Dev console with same observability as CLI
+
+**Milestone:** Playable full game in Unity with placeholder art.
+
+**Success Criteria:**
+- All game actions work via UI (no CLI needed)
+- Combat viewer shows fights with smooth unit movement
+- Runs at 60fps on macOS and iOS simulator
+- Dev console provides full observability
+
+---
+
+## Phase 4: Multiplayer (Weeks 29–36)
+
+| Week | Focus |
+|------|-------|
+| 29–30 | aa2-server binary (headless sim, WebSocket server) |
+| 31–32 | State-sync protocol (10Hz snapshots, delta compression) |
+| 33 | Matchmaking + lobby system (region + MMR filtering) |
+| 34 | Reconnect support (full state snapshot on rejoin) |
+| 35 | Spectating (subscribe to other player boards) |
+| 36 | Anti-cheat (server-authoritative validation), load testing |
 
 **Deliverables:**
 - Dedicated server binary running headless simulation
 - WebSocket-based state sync with delta compression
 - Matchmaking, reconnect, and spectating
+- Unity client switches from local to networked mode
 
 **Milestone:** 8 humans playing online.
 
@@ -155,31 +188,6 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 - Stable 8-player game with <100ms perceived latency
 - Reconnect restores full game state within 2 seconds
 - Server validates all client actions (no trust-the-client)
-
----
-
-## Phase 4: Polish + Platform (Weeks 29–36)
-
-| Week | Focus |
-|------|-------|
-| 29–30 | Full UI/UX (draft screen, shop, combat viewer, scoreboard) |
-| 31–32 | Art assets (AI-generated chibi characters, ability VFX, audio) |
-| 33 | iOS build + TestFlight submission |
-| 34 | Android build + Play Store |
-| 35 | Steam integration (achievements, friends) |
-| 36 | F2P monetization (battle pass, cosmetics shop, IAP) |
-
-**Deliverables:**
-- Production UI across all game screens
-- Art and audio assets (AI-generated where possible)
-- Builds for iOS, Android, and Steam
-
-**Milestone:** App Store approved, playable on all platforms.
-
-**Success Criteria:**
-- Passes Apple review on first or second submission
-- Runs at 60fps on iPhone 12+
-- IAP and battle pass functional on all platforms
 
 ---
 

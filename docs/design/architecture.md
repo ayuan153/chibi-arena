@@ -344,12 +344,30 @@ Key design: aa2-game is SHARED between client and server. This enables:
 
 **Binaries:**
 - `bin/aa2-dev.rs` — CLI dev mode, interactive single-player game vs AI
+- `scenario.rs` — GameScenario fixture test framework
+
+### aa2-ffi (Phase 3 — Client Integration)
+
+C-compatible FFI bridge. Exposes aa2-game to Unity via native plugin.
+
+**Crate type:** `cdylib` (produces .dylib/.so/.dll)
+
+**API pattern:** Opaque `GameContext` pointer + JSON serialization for complex data.
+- `aa2_create_game(config_json)` → context pointer
+- `aa2_player_action(ctx, player_id, action_json)` → result JSON
+- `aa2_tick(ctx, dt)` → events JSON
+- `aa2_run_combat(ctx)` → results JSON
+- `aa2_get_player_view(ctx, player_id)` → state JSON
+- `aa2_get_combat_replay(ctx, matchup_index)` → replay JSON
+- `aa2_destroy_game(ctx)` → free memory
+
+See `docs/design/ffi-bridge.md` for full API specification.
 
 ### Dependency Graph
 ```
-aa2-server → aa2-game → aa2-sim → aa2-data
-                ↑
-client (Unity) ─┘ (via FFI, for offline/replay)
+Unity (C#) → aa2-ffi (cdylib) → aa2-game → aa2-sim → aa2-data
+                                     ↑
+aa2-server ──────────────────────────┘ (same game logic)
 ```
 
 ## Client/Server Protocol
