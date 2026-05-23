@@ -64,7 +64,7 @@ impl IControl for DraftUI {
 #[godot_api]
 impl DraftUI {
     fn get_manager(&self) -> Option<Gd<GameManager>> {
-        self.base().get_node_or_null("/root/GameManager")
+        self.base().get_node_or_null("/root/MainScene/GameManager")
             .map(|n| n.cast::<GameManager>())
     }
 

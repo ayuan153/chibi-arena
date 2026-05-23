@@ -24,24 +24,20 @@ pub struct MainScene {
 #[godot_api]
 impl IControl for MainScene {
     fn ready(&mut self) {
-        // Add GameManager to /root so all UIs find it at /root/GameManager
+        // Add GameManager as our child (UIs find it via /root/MainScene/GameManager)
         let mut manager = GameManager::new_alloc();
         manager.set_name("GameManager");
-        let mut root = self.base().get_tree().get_root().unwrap();
-        root.add_child(&manager);
+        self.base_mut().add_child(&manager);
         manager.bind_mut().init_game(42, 2, "data".into());
 
-        // AI picks god immediately so it doesn't block
-        manager.bind_mut().apply_player_action(1, "PickGod".into(), "Ares".into());
-
         // Create UI screens as children
-        self.add_control_child(GodPickUI::new_alloc(), "GodPickUI");
-        self.add_control_child(DraftUI::new_alloc(), "DraftUI");
-        self.add_control_child(ShopUI::new_alloc(), "ShopUI");
-        self.add_control_child(BoardUI::new_alloc(), "BoardUI");
-        self.add_control_child(BenchUI::new_alloc(), "BenchUI");
-        self.add_control_child(CombatViewerUI::new_alloc(), "CombatViewerUI");
-        self.add_control_child(ScoreboardUI::new_alloc(), "ScoreboardUI");
+        self.add_control_child::<GodPickUI>(GodPickUI::new_alloc(), "GodPickUI");
+        self.add_control_child::<DraftUI>(DraftUI::new_alloc(), "DraftUI");
+        self.add_control_child::<ShopUI>(ShopUI::new_alloc(), "ShopUI");
+        self.add_control_child::<BoardUI>(BoardUI::new_alloc(), "BoardUI");
+        self.add_control_child::<BenchUI>(BenchUI::new_alloc(), "BenchUI");
+        self.add_control_child::<CombatViewerUI>(CombatViewerUI::new_alloc(), "CombatViewerUI");
+        self.add_control_child::<ScoreboardUI>(ScoreboardUI::new_alloc(), "ScoreboardUI");
 
         // DevConsole — always visible, not affected by phase changes
         let mut console = DevConsole::new_alloc();
@@ -119,8 +115,7 @@ impl MainScene {
     }
 
     fn get_manager(&self) -> Option<Gd<GameManager>> {
-        let root = self.base().get_tree().get_root()?;
-        root.get_node_or_null("GameManager")
+        self.base().get_node_or_null("GameManager")
             .map(|n| n.cast::<GameManager>())
     }
 }

@@ -152,7 +152,7 @@ impl DevConsole {
 
     fn get_manager(&self) -> Option<Gd<GameManager>> {
         let root = self.base().get_tree().get_root()?;
-        root.get_node_or_null("GameManager")
+        root.get_node_or_null("MainScene/GameManager")
             .map(|n| n.cast::<GameManager>())
     }
 }
