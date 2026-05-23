@@ -644,6 +644,17 @@ impl Simulation {
                 best = Some((other.id, d));
             }
         }
+        // Fallback: closest enemy anywhere (for re-engagement after displacement)
+        if best.is_none() && self.units[idx].target.is_some() {
+            for other in self.units.iter() {
+                if other.team == unit_team || !other.is_alive() { continue; }
+                if active_status(&other.buffs).invulnerable { continue; }
+                let d = unit_pos.distance(other.position);
+                if best.is_none() || d < best.unwrap().1 {
+                    best = Some((other.id, d));
+                }
+            }
+        }
         self.units[idx].target = best.map(|(id, _)| id);
     }
 

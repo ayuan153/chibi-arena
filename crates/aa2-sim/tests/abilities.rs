@@ -2609,3 +2609,37 @@ fn test_spear_of_mars_deals_damage_on_impale() {
         .collect();
     assert!(!damage_events.is_empty(), "Should have AbilityDamage event for Spear of Mars impale");
 }
+
+/// Verify: units re-engage after being displaced beyond acquisition range.
+#[test]
+fn test_units_reengage_after_displacement() {
+    // Two melee units with Spear of Mars — displacement can push beyond ACQUISITION_RANGE.
+    // After displacement, units should re-acquire targets and auto-attack.
+    let hero = make_hero();
+    let ability = spear_of_mars_ability(3);
+    let config = UnitConfig::new(hero.clone()).with_ability(ability, 3);
+
+    let mut u0 = Unit::from_config(&config, 0, 0, Vec2::new(1000.0, 1000.0));
+    u0.facing = 0.0; // facing right
+    let mut u1 = Unit::from_config(&config, 1, 1, Vec2::new(1100.0, 1000.0));
+    u1.facing = std::f32::consts::PI; // facing left
+
+    let mut sim = Simulation::new(vec![u0, u1]);
+
+    // Run for 900 ticks (30 seconds at 30 tps)
+    for _ in 0..900 {
+        sim.step();
+    }
+
+    // Assert: Attack events exist (units auto-attacked between casts)
+    let attack_count = sim.combat_log.iter()
+        .filter(|e| matches!(e, CombatEvent::Attack { .. }))
+        .count();
+    assert!(attack_count > 0, "Units should auto-attack after displacement, got 0 attacks");
+
+    // Assert: combat is not a draw (someone took damage)
+    let total_damage: f32 = sim.combat_log.iter()
+        .filter_map(|e| if let CombatEvent::Attack { damage, .. } = e { Some(*damage) } else { None })
+        .sum();
+    assert!(total_damage > 50.0, "Expected significant auto-attack damage, got {total_damage}");
+}
