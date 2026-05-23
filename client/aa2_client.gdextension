@@ -4,9 +4,9 @@ compatibility_minimum = 4.2
 reloadable = true
 
 [libraries]
-macos.debug = "../target/debug/libaa2_client.dylib"
-macos.release = "../target/release/libaa2_client.dylib"
-linux.debug.x86_64 = "../target/debug/libaa2_client.so"
-linux.release.x86_64 = "../target/release/libaa2_client.so"
-windows.debug.x86_64 = "../target/debug/aa2_client.dll"
-windows.release.x86_64 = "../target/release/aa2_client.dll"
+macos.debug = "res://bin/libaa2_client.dylib"
+macos.release = "res://bin/libaa2_client.dylib"
+linux.debug.x86_64 = "res://bin/libaa2_client.so"
+linux.release.x86_64 = "res://bin/libaa2_client.so"
+windows.debug.x86_64 = "res://bin/aa2_client.dll"
+windows.release.x86_64 = "res://bin/aa2_client.dll"
