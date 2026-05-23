@@ -4,62 +4,43 @@
 
 AA2 (Ability Arena 2) is a standalone cross-platform port of the Dota 2 mod Ability Arena — an 8-player free-for-all autobattler. Players pick gods, draft hero bodies (tiers 1–5), equip abilities (levels 1–9), and watch fully automated combat resolve with Dota 2-fidelity mechanics.
 
-**Targets:** iOS (primary), Android, PC/Mac (Steam)  
+**Targets:** macOS (primary dev), iOS, Android, Windows, Linux  
 **Art style:** 2D chibi/anime, top-down perspective  
-**Engine:** Unity 6 LTS (presentation) + Rust (simulation)
+**Engine:** Godot 4.3 (presentation) + Rust (simulation + game logic)
 
 ---
 
 ## System Architecture
 
-The system is a hybrid: a deterministic Rust simulation drives all game logic, while Unity handles rendering, UI, audio, and platform deployment.
+The system is a hybrid: a deterministic Rust simulation drives all game logic, while Godot handles rendering, UI, audio, and platform deployment. The client crate (aa2-client) is loaded by Godot as a GDExtension — no FFI boundary or serialization layer between client and game logic.
 
-```mermaid
-graph TD
-    subgraph Client ["Client (Unity 6 LTS + URP 2D)"]
-        UI[UI / Draft / Shop]
-        Renderer[Sprite Renderer + VFX]
-        Interp[Snapshot Interpolator]
-        FFI[Native Plugin FFI]
-    end
+```
+┌─────────────────────────────────────────────────────────┐
+│ Godot 4.3 (GDExtension)                                │
+│   Scenes, UI, Rendering, Audio, Input                   │
+│         ↕ (gdext bindings)                              │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ aa2-client (Rust cdylib)                            │ │
+│ │   GDExtension classes, scene management             │ │
+│ │         ↓ (direct Rust calls, same process)         │ │
+│ │ ┌─────────────────────────────────────────────────┐ │ │
+│ │ │ aa2-game                                        │ │ │
+│ │ │   Game state machine, economy, draft, shop      │ │ │
+│ │ │         ↓                                       │ │ │
+│ │ │ ┌───────────────────────────────────────────┐   │ │ │
+│ │ │ │ aa2-sim                                   │   │ │ │
+│ │ │ │   Deterministic combat simulation (30Hz)  │   │ │ │
+│ │ │ └───────────────────────────────────────────┘   │ │ │
+│ │ └─────────────────────────────────────────────────┘ │ │
+│ └─────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
 
-    subgraph SimCrate ["aa2-sim (Rust)"]
-        ECS[ECS Combat Simulation]
-        Attr[Attribute System]
-        Proj[Projectiles / AoE]
-        Path[Pathfinding]
-        Buff[Buff/Debuff Framework]
-    end
-
-    subgraph Server ["aa2-server (Rust)"]
-        GS[Game State Machine]
-        WS[WebSocket Server]
-        MM[Matchmaking / MMR]
-        Replay[Replay Recorder]
-        AC[Anti-Cheat]
-    end
-
-    subgraph Data ["aa2-data (Rust)"]
-        Types[Shared Types]
-        RON[RON Loader + Hot-Reload]
-        PG[PostgreSQL JSONB]
-    end
-
-    UI --> FFI
-    FFI --> ECS
-    Interp --> Renderer
-    WS -->|State Snapshots 10Hz| Interp
-    GS --> ECS
-    ECS --> Attr
-    ECS --> Proj
-    ECS --> Path
-    ECS --> Buff
-    GS --> Replay
-    GS --> AC
-    Types --> ECS
-    Types --> GS
-    RON --> Types
-    PG --> Types
+┌─────────────────────────────────────────────────────────┐
+│ aa2-server (Phase 4)                                    │
+│   WebSocket server, matchmaking, anti-cheat             │
+│         ↓                                               │
+│   aa2-game → aa2-sim → aa2-data                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Layer Responsibilities
@@ -67,15 +48,24 @@ graph TD
 | Layer | Technology | Role |
 |-------|-----------|------|
 | Simulation | Rust (`aa2-sim`) | Deterministic ECS combat at 30Hz, f32 math, server-authoritative |
-| Presentation | Unity 6 LTS, URP 2D | Sprites, VFX, UI, audio, platform builds |
+| Game Logic | Rust (`aa2-game`) | Game state machine, economy, draft, shop, matchups |
+| Client | Rust (`aa2-client`) + Godot 4.3 | GDExtension bridge, UI, rendering, audio |
 | Server | Rust (`aa2-server`) | Headless sim, WebSocket, matchmaking, MMR, anti-cheat |
 | Data | Rust (`aa2-data`) | Shared types, RON/JSON deserialization, validation |
-
-The Rust sim compiles to a native library linked into Unity via C FFI (dev mode) and also compiles into the server binary (production).
 
 ---
 
 ## Crate Architecture
+
+### Dependency Graph
+
+```
+Godot (scenes/UI) ←→ aa2-client (cdylib, gdext) → aa2-game → aa2-sim → aa2-data
+                                                       ↑
+aa2-server ────────────────────────────────────────────┘ (same game logic)
+```
+
+No C boundary. No JSON serialization for client-game communication. aa2-client calls aa2-game directly as Rust library code in the same process.
 
 ### `aa2-sim`
 
@@ -92,36 +82,68 @@ The core combat simulation. ECS-based (custom lightweight ECS, not bevy) running
 - Targeting AI (aggro, priority, range checks)
 - Turn rate and movement
 
-**Compile targets:** `staticlib` (iOS), `cdylib` (Android/PC/Mac), server binary.
+**Compile targets:** Native (macOS/Windows/Linux), `wasm32-unknown-unknown` (must always compile to WASM for future web client or server-side validation).
 
 ### `aa2-data`
 
 Shared data definitions and loading.
 
 **Responsibilities:**
-- Type definitions: `Hero`, `Ability`, `God`, `Item`, `Buff`, `Projectile`
+- Type definitions: `Hero`, `Ability`, `God`, `Buff`, `Projectile`
 - `serde::Serialize` + `serde::Deserialize` on all types
 - RON file loader with hot-reload via `notify` crate (dev)
 - Validation (stat ranges, ability references, tier constraints)
 - Same structs deserialize from RON (dev) and PostgreSQL JSONB (prod)
 
-### `aa2-server`
+### `aa2-game`
+
+Owns the full game loop. Depends on aa2-sim and aa2-data.
+
+**Responsibilities:**
+- `PlayerState`: gold, HP, heroes, ability inventory, god, shop state
+- `GameState`: 8 players, round counter, phase, ability pool, matchups
+- `Economy`: gold calculation, shop upgrade costs with decay
+- `Draft`: ability pool management, shop rolls, buy/sell/equip
+- `RoundFlow`: timer-based state machine — GodPick → Combat → GracePeriod → Shop cycle
+- `Matchmaker`: round-robin pairing with ghost opponents for odd counts
+- `DamageCalc`: player damage formula
+- `GodSystem`: god passive application, rule modifications
+
+**Key design:** aa2-game is SHARED between client and server. This enables:
+- Offline/dev mode (full game locally)
+- Client-side prediction (optional)
+- Server-side validation (authoritative)
+
+### `aa2-client`
+
+GDExtension crate loaded by Godot. Bridges Rust game logic to Godot scenes.
+
+**Crate type:** `cdylib` (produces .dylib/.so/.dll loaded via .gdextension file)
+
+**Responsibilities:**
+- Exposes GDExtension classes (via gdext 0.5) for Godot to instantiate
+- Owns an `aa2-game::GameState` instance in local mode
+- Translates Godot input/signals into aa2-game actions
+- Provides combat replay data (downsampled snapshots at ~1Hz) for animation interpolation
+- Manages screen transitions (god pick, draft, shop, combat viewer)
+
+**Architecture:** Direct Rust function calls to aa2-game. No serialization boundary, no C FFI, no JSON marshaling.
+
+### `aa2-server` (Phase 4)
 
 Multiplayer game server.
 
 **Responsibilities:**
-- Game state machine (GodPick → Combat → GracePeriod → Shop cycle → Finished)
 - WebSocket server (tokio + tungstenite)
 - Matchmaking queue with MMR-based pairing
 - Lobby management (8 players per game)
 - Replay recording (snapshot stream → file)
-- MMR calculation (placement, gain/loss per finish position)
 - Anti-cheat validation (all mutations server-authoritative)
 - Reconnection handling
 
 ---
 
-## Networking Architecture
+## Networking Architecture (Phase 4)
 
 AA2 uses a **state-sync** model. The server is the single source of truth.
 
@@ -187,7 +209,7 @@ mult = 1 - (0.06 * armor) / (1 + 0.06 * |armor|)
 - **Attack loop:** Acquire target → turn → wind-up (attack point) → launch projectile/apply damage → backswing
 - **Projectiles:** Homing with configurable speed. Travel time = distance / speed. On-hit effects applied on arrival.
 - **Abilities:** Cast point → effect → cooldown. Targeting modes: unit, point, no-target, passive.
-- **Buffs/Debuffs:** Stack rules (refresh, independent, max stacks). Tick-based duration. Modifier priority system. DamageReflection buff (reflects % of incoming damage back to attacker).
+- **Buffs/Debuffs:** Stack rules (refresh, independent, max stacks). Tick-based duration. Modifier priority system. DamageReflection buff.
 - **Pathfinding:** Grid-based A* with unit collision. Recalculates on obstruction.
 - **Turn rate:** Units must face target before attacking/casting. Configurable degrees/second.
 
@@ -207,9 +229,8 @@ All game content is data-driven. The same Rust structs deserialize from two sour
 ### Content Types
 
 - **Gods** — passive/active abilities that define playstyle
-- **Hero Bodies** — tiers 1–5, base stats, BAT, attack range, movement speed
+- **Hero Bodies** — tiers D/C/B/A/S, base stats, BAT, attack range, movement speed
 - **Abilities** — levels 1–9, scaling values, targeting, cooldowns
-- **Items** — stat bonuses, active effects, recipes
 
 ### Hot-Reload (Dev)
 
@@ -224,7 +245,7 @@ The `notify` crate watches RON files. On change:
 
 A single developer can run the full game loop locally without a server.
 
-- Sim runs in-process inside Unity (via FFI, same as production client)
+- aa2-client loads aa2-game directly (same process, no network)
 - Developer controls all 8 player slots (draft, positioning)
 - Hot-reload data files for instant balance iteration
 - AI bots fill empty slots for testing combat
@@ -235,15 +256,35 @@ A single developer can run the full game loop locally without a server.
 
 ## Platform Deployment
 
-| Platform | Unity Build | Rust Target | Linking |
-|----------|-------------|-------------|---------|
-| iOS | IPA (Xcode) | `aarch64-apple-ios` | Static lib (`.a`) |
-| Android | APK/AAB | `aarch64-linux-android` | Shared lib (`.so`) |
-| PC (Windows) | Standalone | `x86_64-pc-windows-msvc` | DLL |
-| Mac | Standalone | `aarch64-apple-darwin` | dylib |
+| Platform | Godot Export | Rust Target | Output |
+|----------|-------------|-------------|--------|
+| macOS | .app bundle | `aarch64-apple-darwin` | .dylib |
+| iOS | IPA (Xcode) | `aarch64-apple-ios` | .dylib |
+| Android | APK/AAB | `aarch64-linux-android` | .so |
+| Windows | Standalone | `x86_64-pc-windows-msvc` | .dll |
+| Linux | Standalone | `x86_64-unknown-linux-gnu` | .so |
 | Server | N/A | `aarch64-unknown-linux-gnu` | Binary |
 
-Server deployment: containerized Rust binary on Linux (AWS/GCP), horizontally scalable per game instance.
+Build: `cargo build` produces the native library, Godot loads it via `.gdextension` file pointing to `../target/`.
+
+Server deployment: containerized Rust binary on Linux, horizontally scalable per game instance.
+
+---
+
+## Crate Structure
+
+```
+aa2/
+├── crates/
+│   ├── aa2-data/       # Shared types, RON loading ✓
+│   ├── aa2-sim/        # Combat simulation engine ✓
+│   ├── aa2-game/       # Game state machine, economy, draft ✓
+│   ├── aa2-client/     # GDExtension crate (gdext, cdylib) ← Phase 3
+│   └── aa2-server/     # Networking, matchmaking, WebSocket (Phase 4)
+├── client/             # Godot 4.3 project
+├── data/               # RON data files
+└── docs/               # Architecture & design documentation
+```
 
 ---
 
@@ -251,15 +292,11 @@ Server deployment: containerized Rust binary on Linux (AWS/GCP), horizontally sc
 
 ### Recording
 
-During combat, the server writes state snapshots to a replay buffer. At game end, the buffer is flushed to storage.
-
-### Format
-
-A replay is a sequence of timestamped state snapshots — the same format sent over WebSocket during live play.
+During combat, the sim produces per-tick state. For client playback, snapshots are downsampled to ~1Hz for animation interpolation.
 
 ### Playback
 
-The replay viewer reuses the client's rendering and interpolation code. Instead of reading from a WebSocket, it reads from a file. Supports:
+The combat viewer interpolates between snapshots to produce smooth 60fps animation. Supports:
 - Play/pause/seek
 - Speed control (0.5x–4x)
 - Board switching (view any player)
@@ -273,104 +310,15 @@ The replay viewer reuses the client's rendering and interpolation code. Instead 
 
 ---
 
-## Monetization Architecture
-
-F2P freemium model. All gameplay-affecting content is earnable; monetization is cosmetic + progression.
-
-| Revenue Stream | Platform Integration |
-|----------------|---------------------|
-| Battle Pass (seasonal) | Server-tracked progression |
-| Cosmetics (direct purchase) | Skins, boards, effects |
-| Apple IAP | StoreKit 2 |
-| Google Play Billing | Billing Library v6+ |
-| Steam Microtransactions | Steamworks API |
-
-**Validation:** All purchases are validated server-side. The client sends a receipt; the server verifies with the platform's API before granting items. No client-trusted transactions.
-
----
-
 ## Security Model
 
 - **Server-authoritative:** Clients send intents (draft picks, board positions). The server validates and applies.
 - **No client simulation during multiplayer:** Clients only interpolate received state. Cannot fabricate game state.
-- **Purchase validation:** Server-side receipt verification for all IAP.
 - **Replay integrity:** Replays are server-recorded, not client-generated.
 
 ---
 
-## Phase 2: Crate Structure
-
-```
-aa2/
-├── crates/
-│   ├── aa2-data/       # Shared types, RON loading (Phase 0) ✓
-│   ├── aa2-sim/        # Combat simulation engine (Phase 0-1) ✓
-│   ├── aa2-game/       # Game state machine, economy, draft (Phase 2) ← NEW
-│   └── aa2-server/     # Networking, matchmaking, WebSocket (Phase 3)
-├── client/             # Unity project (Phase 4)
-└── data/               # RON data files
-```
-
-### aa2-game (NEW - Phase 2)
-Owns the full game loop. Depends on aa2-sim and aa2-data.
-- `PlayerState`: gold, HP, heroes, ability inventory, god, shop state
-- `GameState`: 8 players, round counter, phase, ability pool, matchups
-- `Economy`: gold calculation, shop upgrade costs with decay
-- `Draft`: ability pool management, shop rolls, buy/sell/equip
-- `RoundFlow`: timer-based state machine — GodPick (pre-game) → Combat → GracePeriod → Shop cycle
-  - GamePhase enum: GodPick, Combat, GracePeriod, Shop, Finished
-  - Draft is concurrent with shop (draft_pending flag)
-  - Timer constants: ROUND_DURATION=80s, COMBAT_TIMEOUT=50s, GRACE_PERIOD=3s, ROUND1_DURATION=40s
-- `Matchmaker`: round-robin pairing with ghost opponents for odd counts
-- `DamageCalc`: player damage formula
-- `GodSystem`: god passive application, rule modifications
-
-**Modules:**
-- `economy.rs` — gold formulas, costs
-- `shop.rs` — shop state, levels, offerings, lock, upgrade
-- `pool.rs` — shared ability pool with depletion
-- `player.rs` — player state, buy/sell/equip/unequip
-- `draft.rs` — hero draft logic
-- `damage.rs` — player damage calculation
-- `game.rs` — game state, timer-based state machine, GameConfig
-- `matchup.rs` — round-robin pairing with ghost seat
-- `combat.rs` — bridges PlayerState to aa2-sim (build_team, run_combat, mirroring)
-- `god.rs` — god definitions, passive triggers (Archmage Sorcery, Paladin Radiant Shield)
-
-Key design: aa2-game is SHARED between client and server. This enables:
-- Offline/dev mode (full game locally)
-- Client-side prediction (optional)
-- Server-side validation (authoritative)
-
-**Binaries:**
-- `bin/aa2-dev.rs` — CLI dev mode, interactive single-player game vs AI
-- `scenario.rs` — GameScenario fixture test framework
-
-### aa2-ffi (Phase 3 — Client Integration)
-
-C-compatible FFI bridge. Exposes aa2-game to Unity via native plugin.
-
-**Crate type:** `cdylib` (produces .dylib/.so/.dll)
-
-**API pattern:** Opaque `GameContext` pointer + JSON serialization for complex data.
-- `aa2_create_game(config_json)` → context pointer
-- `aa2_player_action(ctx, player_id, action_json)` → result JSON
-- `aa2_tick(ctx, dt)` → events JSON
-- `aa2_run_combat(ctx)` → results JSON
-- `aa2_get_player_view(ctx, player_id)` → state JSON
-- `aa2_get_combat_replay(ctx, matchup_index)` → replay JSON
-- `aa2_destroy_game(ctx)` → free memory
-
-See `docs/design/ffi-bridge.md` for full API specification.
-
-### Dependency Graph
-```
-Unity (C#) → aa2-ffi (cdylib) → aa2-game → aa2-sim → aa2-data
-                                     ↑
-aa2-server ──────────────────────────┘ (same game logic)
-```
-
-## Client/Server Protocol
+## Client/Server Protocol (Phase 4)
 
 ### State Sync (Server → Client)
 - During combat: state snapshots at 10Hz (unit positions, HP, buffs, events)

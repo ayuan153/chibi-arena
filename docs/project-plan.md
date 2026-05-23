@@ -10,14 +10,13 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 | Week | Focus |
 |------|-------|
-| 1 | Monorepo setup (Rust workspace + Unity project), FFI bridge prototype |
+| 1 | Monorepo setup (Rust workspace), sim crate skeleton |
 | 2 | aa2-sim crate: ECS skeleton, attribute system |
 | 3 | Basic attack loop (BAT, attack speed, armor reduction) |
-| 4 | Unity combat viewer (1v1, placeholder art, dev mode) |
+| 4 | Dev CLI binary with 1v1 combat viewer |
 
 **Deliverables:**
 - Rust workspace with `aa2-sim` crate
-- Unity native plugin loading Rust dylib via C FFI
 - LOCAL DEV MODE: sim runs in-process, 1v1 combat viewer
 - Placeholder art (colored polygons with labels)
 
@@ -26,7 +25,6 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 **Success Criteria:**
 - Attack interval matches `BAT / (AS / 100)` formula
 - Damage reduced by armor formula: `multiplier = 1 - (0.06 * armor) / (1 + 0.06 * |armor|)`
-- FFI bridge works on macOS and iOS simulator
 
 **Completed:** All success criteria met. Combat simulation operational with:
 - Attribute system (STR/AGI/INT → HP, mana, armor, AS, damage)
@@ -133,39 +131,46 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 ---
 
-## Phase 3: Client + Platform (Weeks 21–28) ← CURRENT
+## Phase 3: Client (Weeks 21–28) ← CURRENT
 
 | Week | Focus |
 |------|-------|
-| 21 | aa2-ffi crate (C API), Unity project setup, plugin loading |
+| 21 | aa2-client crate (gdext), Godot project setup, extension loading |
 | 22 | Shop screen (buy/sell/reroll/equip via UI) |
 | 23 | Board positioning (drag & drop heroes), bench UI |
 | 24 | Combat replay viewer (units move, attack, die with placeholder art) |
 | 25 | Draft screen, god pick, scoreboard |
-| 26 | Full playable game in Unity (local mode, placeholder art) |
+| 26 | Full playable game in Godot (local mode, placeholder art) |
 | 27 | Polish: animations, damage numbers, ability VFX |
-| 28 | Dev console, iOS simulator build, performance profiling |
+| 28 | Dev console, performance profiling |
 
 **Deliverables:**
-- Rust FFI bridge (aa2-ffi crate, cdylib)
-- Unity project with native plugin integration
+- Godot 4.3 project with GDExtension (gdext 0.5)
+- `aa2-client` crate (cdylib) loaded by Godot via .gdextension
 - All game screens: shop, draft, combat viewer, scoreboard, god pick
-- Combat replay system (Rust runs sim → Unity plays back visually)
-- LOCAL MODE: game runs in-process, no server needed
+- Combat replay system (downsampled snapshots at ~1Hz for animation interpolation)
+- LOCAL MODE: aa2-client calls aa2-game directly (same process, no serialization)
 - Placeholder art (colored shapes with labels)
-- Dev console with same observability as CLI
+- Code-first approach: hand-written project.godot, no editor dependency
 
-**Milestone:** Playable full game in Unity with placeholder art.
+**Architecture:**
+```
+Godot (GDScript scenes) → aa2-client (gdext cdylib) → aa2-game → aa2-sim → aa2-data
+```
+
+The aa2-client crate calls aa2-game directly in the same process. No FFI boundary, no JSON serialization — just Rust function calls.
+
+**Milestone:** Playable full game in Godot with placeholder art.
 
 **Success Criteria:**
 - All game actions work via UI (no CLI needed)
 - Combat viewer shows fights with smooth unit movement
-- Runs at 60fps on macOS and iOS simulator
+- Runs at 60fps on macOS
 - Dev console provides full observability
 
 ---
 
-## Phase 4: Multiplayer (Weeks 29–36)
+## Phase 4: Networking (Weeks 29–36)
 
 | Week | Focus |
 |------|-------|
@@ -180,7 +185,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 - Dedicated server binary running headless simulation
 - WebSocket-based state sync with delta compression
 - Matchmaking, reconnect, and spectating
-- Unity client switches from local to networked mode
+- Client switches from local to networked mode
 
 **Milestone:** 8 humans playing online.
 
@@ -198,6 +203,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 - Launch cadence: closed beta → open beta → soft launch → full launch
 - Seasonal content: new gods, abilities, battle pass each season
 - Ongoing: community feedback, balance patches, live ops
+- Platform targets: macOS, iOS, Android, Windows, Linux
 
 **Milestone:** Sustainable live game with active player base.
 
@@ -211,11 +217,11 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| iOS App Store rejection | Blocks mobile launch | Follow guidelines strictly, TestFlight early in Phase 4 |
+| iOS App Store rejection | Blocks mobile launch | Follow guidelines strictly, TestFlight early |
 | Combat feel doesn't match Dota2 | Core value prop fails | Phase 1 dedicated entirely to this, replay comparison tooling |
 | Solo dev burnout | Project stalls | Realistic timeline, MVP subset, heavy agent assistance |
-| Unity–Rust FFI issues on iOS | Blocks mobile | Prototype FFI bridge in Phase 0 week 1, test on device early |
-| Networking complexity | Delays multiplayer | State-sync (simpler than lockstep), defer entirely to Phase 3 |
+| gdext breaking changes | Blocks client progress | Pin gdext version, test upgrades in branch |
+| Networking complexity | Delays multiplayer | State-sync (simpler than lockstep), defer entirely to Phase 4 |
 
 ---
 
@@ -224,8 +230,9 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 | Dependency | When Needed | Notes |
 |------------|-------------|-------|
 | Rust stable + cross-compilation | Phase 0 | aarch64-apple-ios, aarch64-linux-android targets |
-| Unity 6 LTS (6000.0) | Phase 0 | Long-term support, mobile build support |
-| PostgreSQL | Phase 3+ | Player accounts, matchmaking, leaderboards |
-| Cloud hosting | Phase 3+ | Game servers, matchmaking service |
-| Apple Developer account | Phase 4 | $99/year, needed for TestFlight and App Store |
-| Art assets (AI-generated) | Phase 4 | Characters, VFX, UI elements |
+| Godot 4.3+ | Phase 3 | GDExtension support, cross-platform builds |
+| gdext 0.5 | Phase 3 | Rust GDExtension bindings |
+| PostgreSQL | Phase 4+ | Player accounts, matchmaking, leaderboards |
+| Cloud hosting | Phase 4+ | Game servers, matchmaking service |
+| Apple Developer account | Phase 5 | $99/year, needed for TestFlight and App Store |
+| Art assets (AI-generated) | Phase 5 | Characters, VFX, UI elements |

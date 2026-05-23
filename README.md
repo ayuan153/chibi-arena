@@ -1,23 +1,24 @@
 # AA2 — Ability Arena 2
 
 <!-- Badges -->
-![Status](https://img.shields.io/badge/status-Phase%202%20Game%20Systems-blue)
+![Status](https://img.shields.io/badge/status-Phase%203%20Client-blue)
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A standalone cross-platform autobattler inspired by the Dota 2 mod Ability Arena. Eight players compete in a free-for-all, picking gods, drafting hero bodies, and equipping abilities to outlast their opponents.
 
-## Status: Phase 1 Complete ✓ — Now in Phase 2 (Game Systems)
+## Status: Phase 2 Complete ✓ — Now in Phase 3 (Client)
 
-Combat simulation complete with 11 abilities, illusions, attack modifiers, magic immunity, and 132 tests. Building game loop next.
+Game systems complete with full game loop, economy, draft, shop, gods, and 234 tests. Building Godot client next.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Simulation | Rust (`aa2-sim`, `aa2-data` crates) |
-| Client | Unity 6 LTS (URP 2D) |
-| Server | Rust (`aa2-server`, Phase 3) |
+| Game Logic | Rust (`aa2-game` crate) |
+| Client | Godot 4.3 + gdext (`aa2-client` crate) |
+| Server | Rust (`aa2-server`, Phase 4) |
 | Networking | WebSocket, state-sync at 10 Hz |
 | Data | RON files (dev) / PostgreSQL JSONB (production) |
 
@@ -28,8 +29,10 @@ aa2/
 ├── crates/
 │   ├── aa2-sim/        # Deterministic combat simulation
 │   ├── aa2-data/       # Shared types, schemas, RON loaders
-│   └── aa2-server/     # Authoritative game server (Phase 3)
-├── client/             # Unity 6 project (URP 2D)
+│   ├── aa2-game/       # Game state machine, economy, draft
+│   ├── aa2-client/     # Godot GDExtension (gdext)
+│   └── aa2-server/     # Authoritative game server (Phase 4)
+├── client/             # Godot 4.3 project
 ├── data/               # RON data files (gods, abilities, bodies)
 ├── docs/               # Architecture & design documentation
 ├── tests/              # Integration tests
@@ -41,7 +44,7 @@ aa2/
 ### Prerequisites
 
 - **Rust** (stable, latest) — [rustup.rs](https://rustup.rs)
-- **Unity 6 LTS** (6000.0+) — for client work only
+- **Godot 4.3+** — for client work only
 
 ### Build
 

@@ -10,8 +10,7 @@ Start here. This is a standalone cross-platform autobattler (iOS/Android/PC) ins
 | Understand game rules (economy, draft, combat, gods) | [specs/game-systems.md](specs/game-systems.md) |
 | Understand Dota2 combat formulas (damage, armor, attack speed) | [specs/mechanics-reference.md](specs/mechanics-reference.md) |
 | Understand crate structure and system design | [design/architecture.md](design/architecture.md) |
-| Understand the FFI bridge (Rust → Unity) | [design/ffi-bridge.md](design/ffi-bridge.md) |
-| Understand the Unity client design | [design/unity-client.md](design/unity-client.md) |
+| Understand the Godot client design | [design/godot-client.md](design/godot-client.md) |
 | Understand combat AI behavior | [design/combat-ai.md](design/combat-ai.md) |
 | Understand the test framework for game logic | [design/testing/game-scenarios.md](design/testing/game-scenarios.md) |
 | Understand the test framework for combat sim | [design/testing/sim-fixtures.md](design/testing/sim-fixtures.md) |
@@ -23,7 +22,9 @@ aa2/
 ├── crates/
 │   ├── aa2-data/     — Data types + RON loaders (no logic)
 │   ├── aa2-sim/      — Combat simulation (Dota2-fidelity)
-│   └── aa2-game/     — Game loop: economy, draft, shop, gods, matchups
+│   ├── aa2-game/     — Game loop: economy, draft, shop, gods, matchups
+│   └── aa2-client/   — Godot GDExtension (gdext, cdylib)
+├── client/           — Godot 4.3 project
 ├── data/
 │   ├── heroes/       — Hero body definitions (.ron)
 │   └── abilities/    — Ability definitions (.ron)
@@ -38,8 +39,8 @@ aa2/
 - **Phase 0** ✓ Foundation (Rust workspace, combat prototype)
 - **Phase 1** ✓ Combat fidelity (buffs, abilities, 5v5, replays)
 - **Phase 2** ✓ Game systems (economy, draft, shop, gods, CLI dev mode)
-- **Phase 3** ← CURRENT: Client + Platform (FFI bridge, Unity, visual game)
-- **Phase 4** Multiplayer (server, networking, matchmaking)
+- **Phase 3** ← CURRENT: Client (Godot + gdext, visual game)
+- **Phase 4** Networking (server, WebSocket, matchmaking)
 
 ## Dev Workflow
 
