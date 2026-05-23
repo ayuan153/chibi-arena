@@ -78,6 +78,17 @@ fn run() -> Result<(), String> {
             break;
         }
 
+        // Archmage sorcery at shop start (all players)
+        for i in 0..8 {
+            if !game.players[i].alive { continue; }
+            if let Some(name) = god::maybe_trigger_sorcery(&mut game.players[i], &mut rng)
+                && i == 0
+            {
+                let lv = game.players[0].abilities.get(&name).copied().unwrap_or(1);
+                println!("  ✨ Sorcery! {} upgraded to Lv {}", name, lv);
+            }
+        }
+
         // Display status
         println!("\n=== ROUND {} | SHOP PHASE | Gold: {} | HP: {:.0} ===",
             game.round, game.players[0].gold, game.players[0].hp);
@@ -165,7 +176,8 @@ fn run() -> Result<(), String> {
                         if god::is_archmage(&game.players[0])
                             && let Some(name) = god::trigger_sorcery(&mut game.players[0], &mut rng)
                         {
-                            println!("  Sorcery! {} leveled up!", name);
+                            let lv = game.players[0].abilities.get(&name).copied().unwrap_or(1);
+                            println!("  ✨ Sorcery! {} upgraded to Lv {}", name, lv);
                         }
                     } else {
                         let cost_str = game.players[0].shop.upgrade_cost()
@@ -306,35 +318,10 @@ fn run() -> Result<(), String> {
         // AI takes actions
         ai_take_actions(&mut game, &mut drafts, &hero_defs, &ultimates, &mut rng);
 
-        // Round 1: no combat, advance to round 2
-        if game.round == 1 {
-            game.round += 1;
-            game.start_round();
-            // Roll shops
-            for player in &mut game.players {
-                if player.alive {
-                    player.shop.roll(&mut game.pool, &ultimates, game.config.ultimate_unlock_level, game.config.shop_size_bonus, &mut rng);
-                }
-            }
-            // Generate draft if needed
-            if draft::is_draft_round(game.round) {
-                game.draft_pending = true;
-                #[allow(clippy::needless_range_loop)]
-                for i in 0..8 {
-                    if game.players[i].alive {
-                        let available = available_heroes_for_player(&heroes, &game.players[i]);
-                        let tier = tier_for_draft_round(game.round).unwrap_or(0);
-                        let choices = generate_draft_choices(&available, tier, &mut rng);
-                        drafts[i] = Some(DraftState { choices, round_tier: tier });
-                    }
-                }
-            } else {
-                game.draft_pending = false;
-            }
-            continue;
-        }
+        // AI sorcery on upgrade (silently)
+        // (AI upgrades happen inside ai_take_actions — sorcery already handled there if needed)
 
-        // Combat phase (round >= 2)
+        // Combat phase
         game.end_shop();
         println!("\n=== ROUND {} | COMBAT ===", game.round);
 
