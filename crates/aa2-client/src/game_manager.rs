@@ -29,7 +29,7 @@ impl INode for GameManager {}
 #[godot_api]
 impl GameManager {
     #[func]
-    pub fn init_game(&mut self, seed: i64, _num_players: i32, data_path: GString) {
+    pub fn init_game(&mut self, seed: i64, num_players: i32, data_path: GString) {
         let data_path_str = data_path.to_string();
         let data_dir = std::path::Path::new(&data_path_str);
 
@@ -68,6 +68,13 @@ impl GameManager {
         };
         self.game = Some(GameState::new(pool, ultimates, config));
         self.rng = Some(StdRng::seed_from_u64(seed as u64));
+
+        // Mark extra players as dead
+        if let Some(ref mut game) = self.game {
+            for i in num_players as usize..8 {
+                game.players[i].alive = false;
+            }
+        }
     }
 
     #[func]
