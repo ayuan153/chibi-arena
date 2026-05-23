@@ -29,9 +29,17 @@ Before any commit:
 3. `cargo clippy` — no warnings (treat warnings as errors)
 
 When implementing a new mechanic:
-1. Write a failing test first (reference `docs/mechanics-reference.md` for expected values)
+1. Write a failing test first (reference `docs/specs/mechanics-reference.md` for expected values)
 2. Implement until test passes
 3. Run full test suite to ensure no regressions
+
+When fixing a bug:
+1. Write a test that reproduces the bug (fails before fix)
+2. Fix the bug
+3. Verify the test passes
+4. Commit the fix AND the test together
+
+**No fix ships without a test.** If the fix is game logic, use a GameScenario or unit test. If the fix is purely CLI/presentation (no state mutation), a test is optional but the fix must not break existing tests.
 
 ## Integration Tests (MANDATORY)
 
