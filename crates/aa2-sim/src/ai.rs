@@ -5,14 +5,14 @@ use crate::buff::active_status;
 use crate::unit::Unit;
 use crate::vec2::Vec2;
 
-/// Try to find an ability to cast. Returns `(ability_index, target_id, target_pos)` if found.
+/// Try to find an ability to cast. Returns `(ability_index, target_id, target_pos, cast_behavior)` if found.
 ///
 /// Iterates abilities in order; first ready ability with a valid target wins.
 /// An ability is ready if off cooldown, unit has enough mana, and unit is not silenced.
 pub fn try_find_cast(
     unit: &Unit,
     units: &[Unit],
-) -> Option<(usize, Option<u32>, Option<Vec2>)> {
+) -> Option<(usize, Option<u32>, Option<Vec2>, CastBehavior)> {
     let status = active_status(&unit.buffs);
     if status.silenced || status.stunned || status.hexed {
         return None;
@@ -35,17 +35,16 @@ pub fn try_find_cast(
             CastBehavior::Seek => 9999.0,
             CastBehavior::SeekPlus(extra) => cast_range + extra,
         };
+        let behavior = ability.def.cast_behavior.clone();
         match &ability.def.targeting {
             TargetType::SingleEnemy | TargetType::PointAoE => {
                 if let Some((id, pos)) = closest_living_enemy(unit, units, search_range) {
-                    let target_pos = Some(pos);
-                    let target_id = Some(id);
-                    return Some((i, target_id, target_pos));
+                    return Some((i, Some(id), Some(pos), behavior));
                 }
             }
             TargetType::SingleAlly => {
                 if let Some((id, pos)) = closest_living_ally(unit, units, search_range) {
-                    return Some((i, Some(id), Some(pos)));
+                    return Some((i, Some(id), Some(pos), behavior));
                 }
             }
             TargetType::SingleAllyHG => {
@@ -55,7 +54,7 @@ pub fn try_find_cast(
                     .collect();
 
                 if allies_in_range.is_empty() {
-                    return Some((i, Some(unit.id), Some(unit.position)));
+                    return Some((i, Some(unit.id), Some(unit.position), behavior));
                 }
 
                 // First cast (fresh cooldown): highest y-axis ally
@@ -73,12 +72,12 @@ pub fn try_find_cast(
                 };
 
                 if let Some(ally) = target {
-                    return Some((i, Some(ally.id), Some(ally.position)));
+                    return Some((i, Some(ally.id), Some(ally.position), behavior));
                 }
-                return Some((i, Some(unit.id), Some(unit.position)));
+                return Some((i, Some(unit.id), Some(unit.position), behavior));
             }
             TargetType::NoTarget => {
-                return Some((i, None, None));
+                return Some((i, None, None, behavior));
             }
             TargetType::Passive => unreachable!(),
         }

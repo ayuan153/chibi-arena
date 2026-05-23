@@ -604,7 +604,7 @@ fn test_hg_targets_highest_y_ally() {
     let result = try_find_cast(&units[0], &units);
 
     assert!(result.is_some());
-    let (_, target_id, _) = result.unwrap();
+    let (_, target_id, _, _) = result.unwrap();
     assert_eq!(target_id, Some(2), "Should target ally with highest y (id=2, y=300)");
 }
 
@@ -641,7 +641,7 @@ fn test_hg_self_cast_when_no_allies() {
     let result = try_find_cast(&units[0], &units);
 
     assert!(result.is_some());
-    let (_, target_id, _) = result.unwrap();
+    let (_, target_id, _, _) = result.unwrap();
     assert_eq!(target_id, Some(0), "Should self-cast when no allies in range");
 }
 
@@ -680,7 +680,7 @@ fn test_hg_targets_furthest_on_subsequent_cast() {
     let result = try_find_cast(&units[0], &units);
 
     assert!(result.is_some());
-    let (_, target_id, _) = result.unwrap();
+    let (_, target_id, _, _) = result.unwrap();
     assert_eq!(target_id, Some(2), "Should target furthest ally on subsequent cast");
 }
 
@@ -2642,4 +2642,226 @@ fn test_units_reengage_after_displacement() {
         .filter_map(|e| if let CombatEvent::Attack { damage, .. } = e { Some(*damage) } else { None })
         .sum();
     assert!(total_damage > 50.0, "Expected significant auto-attack damage, got {total_damage}");
+}
+
+/// Verify: unit with Lazy ability does NOT walk toward distant enemy to cast.
+/// Instead falls through to auto-attack (walks toward enemy for attack range).
+/// After reaching cast_range, Lazy ability fires (it's now in range).
+#[test]
+fn test_lazy_does_not_drive_movement_for_cast() {
+    let hero = make_hero(); // melee, attack_range 150
+    let ability = AbilityDef {
+        name: "LazySpell".to_string(),
+        cooldown: vec![30.0],
+        mana_cost: vec![10.0],
+        cast_point: 0.0,
+        targeting: TargetType::SingleEnemy,
+        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+        description: String::new(),
+        is_ultimate: false,
+        aoe_shape: None,
+        cast_range: 300.0,
+        cast_behavior: aa2_data::CastBehavior::Lazy,
+        max_charges: None,
+    };
+    let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 1);
+    let mut u0 = Unit::from_config(&config_a, 0, 0, Vec2::new(0.0, 0.0));
+    u0.mana = 500.0;
+    let u1 = Unit::from_hero_def(&HeroDef { base_damage_min: 1.0, base_damage_max: 1.0, ..hero }, 1, 1, Vec2::new(500.0, 0.0));
+
+    let mut sim = Simulation::new(vec![u0, u1]);
+
+    // Run enough ticks for unit to walk into range and act
+    for _ in 0..600 {
+        sim.step();
+        if sim.is_finished() { break; }
+    }
+
+    // The Lazy ability should have eventually cast (once unit walked into 300 range for auto-attack pathing)
+    let cast_events: Vec<_> = sim.combat_log.iter()
+        .filter(|e| matches!(e, CombatEvent::CastStart { ability_name, .. } if ability_name == "LazySpell"))
+        .collect();
+    assert!(!cast_events.is_empty(), "Lazy ability should cast once target is in range");
+
+    // Auto-attacks should also have happened (unit walked for auto-attack, not for Lazy)
+    let attack_count = sim.combat_log.iter()
+        .filter(|e| matches!(e, CombatEvent::Attack { .. }))
+        .count();
+    assert!(attack_count > 0, "Unit should auto-attack (Lazy doesn't drive movement)");
+}
+
+/// Verify: unit with Seek ability walks past spell-immune enemy to reach valid target.
+#[test]
+fn test_seek_walks_past_spell_immune() {
+    let hero = make_hero();
+    let ability = AbilityDef {
+        name: "SeekSpell".to_string(),
+        cooldown: vec![30.0],
+        mana_cost: vec![10.0],
+        cast_point: 0.0,
+        targeting: TargetType::SingleEnemy,
+        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+        description: String::new(),
+        is_ultimate: false,
+        aoe_shape: None,
+        cast_range: 600.0,
+        cast_behavior: aa2_data::CastBehavior::Seek,
+        max_charges: None,
+    };
+    let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 1);
+    let mut u0 = Unit::from_config(&config_a, 0, 0, Vec2::new(0.0, 0.0));
+    u0.mana = 500.0;
+    u0.hp = 5000.0;
+
+    // Spell-immune enemy at 400 range (stationary — high HP, no attack so it doesn't move)
+    let mut u1 = Unit::from_hero_def(&HeroDef {
+        base_damage_min: 0.0, base_damage_max: 0.0,
+        move_speed: 0.0, // stationary
+        ..hero.clone()
+    }, 1, 1, Vec2::new(400.0, 0.0));
+    u1.hp = 9999.0;
+    u1.buffs.push(Buff {
+        name: "rage".to_string(),
+        remaining_ticks: 9999,
+        tick_effect: None,
+        stacking: StackBehavior::RefreshDuration,
+        dispel_type: DispelType::Undispellable,
+        status: StatusFlags { magic_immune: true, ..StatusFlags::default() },
+        stat_modifier: None,
+        source_id: 1,
+        is_debuff: false,
+        pierces_magic_immunity: false,
+        damage_reflection_pct: 0.0,
+    });
+
+    // Non-immune enemy at 1200 range (stationary)
+    let mut u2 = Unit::from_hero_def(&HeroDef {
+        base_damage_min: 0.0, base_damage_max: 0.0,
+        move_speed: 0.0,
+        ..hero
+    }, 2, 1, Vec2::new(1200.0, 0.0));
+    u2.hp = 9999.0;
+
+    let mut sim = Simulation::new(vec![u0, u1, u2]);
+
+    // Track max x position reached
+    let mut max_x = 0.0_f32;
+    for _ in 0..900 {
+        sim.step();
+        max_x = max_x.max(sim.units[0].position.x);
+        if sim.is_finished() { break; }
+    }
+
+    // SeekSpell should have cast (targeting the non-immune enemy)
+    let cast_events: Vec<_> = sim.combat_log.iter()
+        .filter(|e| matches!(e, CombatEvent::CastStart { ability_name, .. } if ability_name == "SeekSpell"))
+        .collect();
+    assert!(!cast_events.is_empty(), "Seek ability should cast on non-immune target");
+
+    // Unit should have walked past the spell-immune enemy (at 400) to reach cast range of target at 1200
+    // Cast range is 600, so unit needs to reach at least 600 (1200 - 600)
+    assert!(max_x >= 550.0,
+        "Unit should walk past spell-immune enemy (at 400) toward cast range (600 from 1200), max_x={}", max_x);
+}
+
+/// Verify: abilities are checked in slot order (left to right).
+#[test]
+fn test_slot_priority_order() {
+    let hero = make_hero();
+    let ability_a = AbilityDef {
+        name: "SlotA".to_string(),
+        cooldown: vec![30.0],
+        mana_cost: vec![10.0],
+        cast_point: 0.0,
+        targeting: TargetType::SingleEnemy,
+        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![50.0] }],
+        description: String::new(),
+        is_ultimate: false,
+        aoe_shape: None,
+        cast_range: 600.0,
+        cast_behavior: aa2_data::CastBehavior::Seek,
+        max_charges: None,
+    };
+    let ability_b = AbilityDef {
+        name: "SlotB".to_string(),
+        cooldown: vec![30.0],
+        mana_cost: vec![10.0],
+        cast_point: 0.0,
+        targeting: TargetType::SingleEnemy,
+        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![50.0] }],
+        description: String::new(),
+        is_ultimate: false,
+        aoe_shape: None,
+        cast_range: 300.0,
+        cast_behavior: aa2_data::CastBehavior::Seek,
+        max_charges: None,
+    };
+    let config = UnitConfig::new(hero.clone())
+        .with_ability(ability_a, 1)
+        .with_ability(ability_b, 1);
+    let mut u0 = Unit::from_config(&config, 0, 0, Vec2::new(0.0, 0.0));
+    u0.mana = 500.0;
+    let u1 = Unit::from_hero_def(&HeroDef { base_damage_min: 1.0, base_damage_max: 1.0, ..hero }, 1, 1, Vec2::new(800.0, 0.0));
+
+    let mut sim = Simulation::new(vec![u0, u1]);
+
+    // Run until both abilities have cast
+    for _ in 0..1800 {
+        sim.step();
+        if sim.is_finished() { break; }
+    }
+
+    let cast_names: Vec<&str> = sim.combat_log.iter()
+        .filter_map(|e| if let CombatEvent::CastStart { ability_name, .. } = e { Some(ability_name.as_str()) } else { None })
+        .collect();
+
+    // SlotA (index 0) should cast before SlotB (index 1)
+    let a_pos = cast_names.iter().position(|n| *n == "SlotA");
+    let b_pos = cast_names.iter().position(|n| *n == "SlotB");
+    assert!(a_pos.is_some(), "SlotA should have cast");
+    assert!(b_pos.is_some(), "SlotB should have cast");
+    assert!(a_pos.unwrap() < b_pos.unwrap(), "SlotA (slot 0) should cast before SlotB (slot 1)");
+}
+
+/// Verify: when all abilities are on cooldown, unit auto-attacks.
+#[test]
+fn test_auto_attack_when_abilities_on_cooldown() {
+    let hero = make_hero();
+    let ability = AbilityDef {
+        name: "BigSpell".to_string(),
+        cooldown: vec![10.0],
+        mana_cost: vec![10.0],
+        cast_point: 0.0,
+        targeting: TargetType::SingleEnemy,
+        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![50.0] }],
+        description: String::new(),
+        is_ultimate: false,
+        aoe_shape: None,
+        cast_range: 600.0,
+        cast_behavior: aa2_data::CastBehavior::Seek,
+        max_charges: None,
+    };
+    let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
+    let mut u0 = Unit::from_config(&config, 0, 0, Vec2::new(0.0, 0.0));
+    u0.mana = 500.0;
+    // Enemy close enough that we get into range quickly
+    let u1 = Unit::from_hero_def(&HeroDef { base_damage_min: 1.0, base_damage_max: 1.0, ..hero }, 1, 1, Vec2::new(200.0, 0.0));
+
+    let mut sim = Simulation::new(vec![u0, u1]);
+
+    // Run for 15 seconds (ability has 10s CD, so auto-attacks should happen during CD)
+    for _ in 0..450 {
+        sim.step();
+        if sim.is_finished() { break; }
+    }
+
+    let cast_count = sim.combat_log.iter()
+        .filter(|e| matches!(e, CombatEvent::CastStart { ability_name, .. } if ability_name == "BigSpell"))
+        .count();
+    let attack_count = sim.combat_log.iter()
+        .filter(|e| matches!(e, CombatEvent::Attack { .. }))
+        .count();
+
+    assert!(cast_count >= 1, "Ability should cast at least once");
+    assert!(attack_count > 0, "Unit should auto-attack during ability cooldown");
 }
