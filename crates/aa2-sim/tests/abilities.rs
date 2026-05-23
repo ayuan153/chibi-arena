@@ -2555,3 +2555,57 @@ fn test_spear_drag_disables_unit() {
     assert!(drag_stun_found,
         "Impaled unit should be stunned (disabled) while being dragged by the spear");
 }
+
+#[test]
+fn test_spear_of_mars_deals_damage_on_impale() {
+    use aa2_sim::pending::{PendingEffect, PendingEffectKind};
+
+    let hero = make_hero();
+    // Caster at origin, target 200 units to the right (within width)
+    let u0 = Unit::from_hero_def(&hero, 0, 0, Vec2::new(0.0, 0.0));
+    let u1 = Unit::from_hero_def(&hero, 1, 1, Vec2::new(200.0, 0.0));
+
+    let mut sim = Simulation::new(vec![u0, u1]);
+    let initial_hp = sim.units[1].hp;
+
+    // Manually inject a SpearOfMarsTravel heading toward the target
+    sim.pending_effects.push(PendingEffect {
+        caster_id: 0,
+        caster_team: 0,
+        ability_name: "Spear of Mars".to_string(),
+        kind: PendingEffectKind::SpearOfMarsTravel {
+            start_pos: Vec2::new(0.0, 0.0),
+            direction: Vec2::new(1.0, 0.0),
+            travel_speed: 1400.0,
+            max_range: 900.0,
+            current_distance: 0.0,
+            width: 125.0,
+            damage: 100.0,
+            stun_duration_secs: 1.6,
+            impaled_unit: None,
+            pass_through_hit: Vec::new(),
+            fire_trail_dps: 0.0,
+            fire_trail_slow: 0.0,
+            fire_trail_duration_secs: 0.0,
+            bounces_remaining: 0,
+            fire_trail_positions: Vec::new(),
+        },
+        delay_ticks_remaining: 0,
+    });
+
+    // Run enough ticks for spear to reach the target (200 units at 1400 speed ~ 5 ticks)
+    for _ in 0..10 {
+        sim.step();
+    }
+
+    // Target should have taken damage
+    assert!(sim.units[1].hp < initial_hp, "Spear of Mars should deal damage on impale");
+
+    // Check for AbilityDamage event
+    let damage_events: Vec<_> = sim.combat_log.iter()
+        .filter(|e| matches!(e, CombatEvent::AbilityDamage {
+            ability_name, damage_type, target_id, ..
+        } if ability_name == "Spear of Mars" && *damage_type == DamageType::Magical && *target_id == 1))
+        .collect();
+    assert!(!damage_events.is_empty(), "Should have AbilityDamage event for Spear of Mars impale");
+}

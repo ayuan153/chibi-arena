@@ -985,6 +985,16 @@ impl Simulation {
                     damage_reflection_pct: 0.0,
                             };
                             apply_buff(&mut u.buffs, drag_buff);
+                            // Deal damage on impale
+                            let actual = apply_magic_resistance(dmg, u.magic_resistance);
+                            if actual > 0.0 {
+                                u.hp -= actual;
+                                events.push(CombatEvent::AbilityDamage {
+                                    tick, caster_id, target_id: uid,
+                                    ability_name: ability_name.clone(),
+                                    damage: actual, damage_type: DamageType::Magical,
+                                });
+                            }
                         } else if !pass_through_hit.contains(&uid) {
                             // PASS-THROUGH damage
                             pass_through_hit.push(uid);
@@ -1035,20 +1045,7 @@ impl Simulation {
                     damage_reflection_pct: 0.0,
                                 };
                                 apply_buff(&mut u.buffs, stun_buff);
-                                // Deal damage on pin
-                                let actual = if active_status(&u.buffs).magic_immune {
-                                    0.0
-                                } else {
-                                    apply_magic_resistance(dmg, u.magic_resistance)
-                                };
-                                if actual > 0.0 {
-                                    u.hp -= actual;
-                                    events.push(CombatEvent::AbilityDamage {
-                                        tick, caster_id, target_id: imp_id,
-                                        ability_name: ability_name.clone(),
-                                        damage: actual, damage_type: DamageType::Magical,
-                                    });
-                                }
+                                // Damage already applied on impale; wall-pin only adds stun
                             }
 
                         // Gaben bounce

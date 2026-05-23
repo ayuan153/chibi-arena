@@ -326,6 +326,7 @@ fn run() -> Result<(), String> {
         println!("\n=== ROUND {} | COMBAT ===", game.round);
 
         let prev_alive: Vec<u8> = game.players.iter().filter(|p| p.alive).map(|p| p.id).collect();
+        let hp_before: Vec<f32> = game.players.iter().map(|p| p.hp).collect();
         let results = game.run_combat_round(&hero_defs, &ability_defs, round_seed, &mut rng);
         round_seed = round_seed.wrapping_add(1);
 
@@ -342,7 +343,7 @@ fn run() -> Result<(), String> {
             }
         }
 
-        display_combat_results(&results, &game);
+        display_combat_results(&results, &game, &hp_before);
         println!("  Type 'log' to see detailed combat log");
 
         // Check eliminations
@@ -468,7 +469,7 @@ fn god_pick_phase(game: &mut GameState, rng: &mut StdRng) -> Result<(), String> 
 
 // --- Display Functions ---
 
-fn display_combat_results(results: &[aa2_game::CombatResult], game: &GameState) {
+fn display_combat_results(results: &[aa2_game::CombatResult], game: &GameState, hp_before: &[f32]) {
     for result in results {
         let a = result.matchup.player_a;
         let b = result.matchup.player_b;
@@ -480,11 +481,23 @@ fn display_combat_results(results: &[aa2_game::CombatResult], game: &GameState) 
                     a, b, ghost_str, w,
                     if w == a { result.survivors_a } else { result.survivors_b });
                 if !result.matchup.ghost || w != b {
-                    println!("    Player {} HP: {:.0}", loser, game.players[loser as usize].hp);
+                    let before = hp_before[loser as usize];
+                    let after = game.players[loser as usize].hp;
+                    let delta = after - before;
+                    println!("    Player {} HP: {:.0} → {:.0} ({:.0})", loser, before, after, delta);
                 }
             }
             None => {
-                println!("  Player {} vs Player {}{}: DRAW", a, b, ghost_str);
+                let before_a = hp_before[a as usize];
+                let after_a = game.players[a as usize].hp;
+                let delta_a = after_a - before_a;
+                let before_b = hp_before[b as usize];
+                let after_b = game.players[b as usize].hp;
+                let delta_b = after_b - before_b;
+                println!("  Player {} vs Player {}{}: DRAW | Player {} HP: {:.0} → {:.0} ({:.0}) | Player {} HP: {:.0} → {:.0} ({:.0})",
+                    a, b, ghost_str,
+                    a, before_a, after_a, delta_a,
+                    b, before_b, after_b, delta_b);
             }
         }
     }
