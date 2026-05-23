@@ -7,6 +7,7 @@ use rand::SeedableRng;
 
 use aa2_game::{GameConfig, GamePhase, GameState};
 use aa2_game::combat::CombatResult;
+use aa2_game::god::all_gods;
 use aa2_game::scenario::Action;
 use aa2_game::pool::AbilityPool;
 use aa2_data::{AbilityDef, HeroDef};
@@ -104,6 +105,18 @@ impl GameManager {
                 if parts.len() != 2 { return "bad params".into(); }
                 Action::Unequip(parts[0].to_string(), parts[1].to_string())
             }
+            "PickGod" => {
+                let gods = all_gods();
+                match gods.into_iter().find(|g| g.name == param_str) {
+                    Some(god) => Action::PickGod(god),
+                    None => return GString::from("unknown god"),
+                }
+            }
+            "DraftHero" => {
+                let idx: usize = param_str.parse().unwrap_or(0);
+                Action::DraftHero(idx)
+            }
+            "Ready" => Action::Ready,
             _ => return GString::from(format!("unknown action: {action_str}").as_str()),
         };
 
@@ -292,6 +305,66 @@ impl GameManager {
     #[func]
     pub fn get_combat_matchup_count(&self) -> i32 {
         self.last_combat_results.len() as i32
+    }
+
+    #[func]
+    pub fn get_available_gods(&self) -> Array<VarDictionary> {
+        let mut arr = Array::new();
+        for god in all_gods() {
+            let mut d = VarDictionary::new();
+            d.set("name", &GString::from(god.name.as_str()));
+            d.set("description", &GString::from(god.description.as_str()));
+            arr.push(&d);
+        }
+        arr
+    }
+
+    #[func]
+    pub fn get_player_god(&self, player_id: i32) -> GString {
+        self.game.as_ref()
+            .and_then(|g| g.players.get(player_id as usize))
+            .and_then(|p| p.god.as_ref())
+            .map(|g| GString::from(g.name.as_str()))
+            .unwrap_or_default()
+    }
+
+    #[func]
+    pub fn get_draft_choices(&self, player_id: i32) -> PackedStringArray {
+        let _ = player_id;
+        // Draft choices are managed externally in the dev binary;
+        // return empty for now (client will populate via signals)
+        PackedStringArray::new()
+    }
+
+    #[func]
+    pub fn is_draft_active(&self) -> bool {
+        self.game.as_ref().map(|g| g.draft_pending).unwrap_or(false)
+    }
+
+    #[func]
+    pub fn get_player_count(&self) -> i32 {
+        self.game.as_ref().map(|g| g.players.len() as i32).unwrap_or(0)
+    }
+
+    #[func]
+    pub fn get_player_hp(&self, player_id: i32) -> f32 {
+        self.game.as_ref()
+            .and_then(|g| g.players.get(player_id as usize))
+            .map(|p| p.hp)
+            .unwrap_or(0.0)
+    }
+
+    #[func]
+    pub fn get_player_alive(&self, player_id: i32) -> bool {
+        self.game.as_ref()
+            .and_then(|g| g.players.get(player_id as usize))
+            .map(|p| p.alive)
+            .unwrap_or(false)
+    }
+
+    #[func]
+    pub fn get_round(&self) -> i32 {
+        self.game.as_ref().map(|g| g.round as i32).unwrap_or(0)
     }
 }
 
