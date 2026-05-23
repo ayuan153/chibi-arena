@@ -6,6 +6,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use aa2_game::{GameConfig, GamePhase, GameState};
+use aa2_game::combat::CombatResult;
 use aa2_game::scenario::Action;
 use aa2_game::pool::AbilityPool;
 use aa2_data::{AbilityDef, HeroDef};
@@ -18,6 +19,7 @@ pub struct GameManager {
     hero_defs: HashMap<String, HeroDef>,
     ability_defs: HashMap<String, AbilityDef>,
     rng: Option<StdRng>,
+    last_combat_results: Vec<CombatResult>,
 }
 
 #[godot_api]
@@ -245,4 +247,134 @@ impl GameManager {
         }
         0
     }
+
+    #[func]
+    pub fn run_combat(&mut self) -> bool {
+        let (Some(game), Some(rng)) = (&mut self.game, &mut self.rng) else { return false };
+        use rand::RngCore;
+        let seed = rng.next_u32();
+        let results = game.run_combat_round(&self.hero_defs, &self.ability_defs, seed, rng);
+        self.last_combat_results = results;
+        !self.last_combat_results.is_empty()
+    }
+
+    #[func]
+    pub fn get_combat_event_count(&self, matchup_index: i32) -> i32 {
+        self.last_combat_results
+            .get(matchup_index as usize)
+            .map(|r| r.combat_log.len() as i32)
+            .unwrap_or(0)
+    }
+
+    #[func]
+    pub fn get_combat_event(&self, matchup_index: i32, event_index: i32) -> VarDictionary {
+        let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
+            return VarDictionary::new();
+        };
+        let Some(event) = result.combat_log.get(event_index as usize) else {
+            return VarDictionary::new();
+        };
+        combat_event_to_dict(event)
+    }
+
+    #[func]
+    pub fn get_combat_result(&self, matchup_index: i32) -> VarDictionary {
+        let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
+            return VarDictionary::new();
+        };
+        let mut d = VarDictionary::new();
+        d.set("winner", result.winner.map(|w| w as i32).unwrap_or(-1));
+        d.set("survivors_a", result.survivors_a as i32);
+        d.set("survivors_b", result.survivors_b as i32);
+        d
+    }
+
+    #[func]
+    pub fn get_combat_matchup_count(&self) -> i32 {
+        self.last_combat_results.len() as i32
+    }
+}
+
+fn combat_event_to_dict(event: &aa2_sim::CombatEvent) -> VarDictionary {
+    use aa2_sim::CombatEvent;
+    let mut d = VarDictionary::new();
+    match event {
+        CombatEvent::Attack { tick, attacker_id, target_id, damage } => {
+            d.set("type", "Attack");
+            d.set("tick", *tick as i32);
+            d.set("attacker_id", *attacker_id as i32);
+            d.set("target_id", *target_id as i32);
+            d.set("damage", *damage);
+        }
+        CombatEvent::Death { tick, unit_id } => {
+            d.set("type", "Death");
+            d.set("tick", *tick as i32);
+            d.set("unit_id", *unit_id as i32);
+        }
+        CombatEvent::ProjectileHit { tick, target_id, damage } => {
+            d.set("type", "ProjectileHit");
+            d.set("tick", *tick as i32);
+            d.set("target_id", *target_id as i32);
+            d.set("damage", *damage);
+        }
+        CombatEvent::ProjectileSpawn { tick, attacker_id, target_id } => {
+            d.set("type", "ProjectileSpawn");
+            d.set("tick", *tick as i32);
+            d.set("attacker_id", *attacker_id as i32);
+            d.set("target_id", *target_id as i32);
+        }
+        CombatEvent::CastStart { tick, caster_id, ability_name } => {
+            d.set("type", "CastStart");
+            d.set("tick", *tick as i32);
+            d.set("caster_id", *caster_id as i32);
+            d.set("ability_name", ability_name.as_str());
+        }
+        CombatEvent::CastComplete { tick, caster_id, ability_name } => {
+            d.set("type", "CastComplete");
+            d.set("tick", *tick as i32);
+            d.set("caster_id", *caster_id as i32);
+            d.set("ability_name", ability_name.as_str());
+        }
+        CombatEvent::AbilityDamage { tick, caster_id, target_id, ability_name, damage, .. } => {
+            d.set("type", "AbilityDamage");
+            d.set("tick", *tick as i32);
+            d.set("caster_id", *caster_id as i32);
+            d.set("target_id", *target_id as i32);
+            d.set("ability_name", ability_name.as_str());
+            d.set("damage", *damage);
+        }
+        CombatEvent::Heal { tick, target_id, amount } => {
+            d.set("type", "Heal");
+            d.set("tick", *tick as i32);
+            d.set("target_id", *target_id as i32);
+            d.set("amount", *amount);
+        }
+        CombatEvent::RoundEnd { tick, winning_team } => {
+            d.set("type", "RoundEnd");
+            d.set("tick", *tick as i32);
+            d.set("winning_team", *winning_team as i32);
+        }
+        CombatEvent::UnitSpawn { tick, unit_id, team, name, x, y, max_hp } => {
+            d.set("type", "UnitSpawn");
+            d.set("tick", *tick as i32);
+            d.set("unit_id", *unit_id as i32);
+            d.set("team", *team as i32);
+            d.set("name", name.as_str());
+            d.set("x", *x);
+            d.set("y", *y);
+            d.set("max_hp", *max_hp);
+        }
+        CombatEvent::MoveTo { tick, unit_id, x, y, speed } => {
+            d.set("type", "MoveTo");
+            d.set("tick", *tick as i32);
+            d.set("unit_id", *unit_id as i32);
+            d.set("x", *x);
+            d.set("y", *y);
+            d.set("speed", *speed);
+        }
+        _ => {
+            d.set("type", "Other");
+        }
+    }
+    d
 }
