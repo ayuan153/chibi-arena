@@ -35,6 +35,8 @@ build() {
     # Symlink dylib into client/bin/ so Godot can find it via res://
     mkdir -p "$CLIENT_DIR/bin"
     ln -sf "../../target/debug/libaa2_client.dylib" "$CLIENT_DIR/bin/libaa2_client.dylib"
+    # Clear Godot import cache so it picks up fresh extension
+    rm -rf "$CLIENT_DIR/.godot"
     echo "✓ Build complete"
 }
 

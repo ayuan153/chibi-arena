@@ -1,4 +1,0 @@
-# Symlinked native libraries (created by ./dev script)
-bin/
-# Godot import cache
-.godot/
