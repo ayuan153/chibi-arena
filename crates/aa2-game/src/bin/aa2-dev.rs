@@ -69,6 +69,7 @@ fn run() -> Result<(), String> {
     let mut round_seed: u32 = rng.r#gen();
     let mut placements: Vec<(u8, u32)> = Vec::new(); // (player_id, round_eliminated)
     let mut last_combat_log: Option<(u32, u8, Vec<aa2_sim::CombatEvent>)> = None; // (round, opponent_id, log)
+    let mut pending_reroll_draft: Option<[Option<String>; 3]> = None;
 
     println!("\n=== GAME START ===\n");
 
@@ -85,6 +86,11 @@ fn run() -> Result<(), String> {
             && let Some(ref draft) = drafts[0]
         {
             display_draft(draft, &hero_defs);
+        }
+        if let Some(ref choices) = pending_reroll_draft {
+            let draft = DraftState { choices: choices.clone(), round_tier: 0 };
+            display_draft(&draft, &hero_defs);
+            println!("  Pick one with: draft <1|2|3>");
         }
 
         display_shop(&game.players[0], &game);
@@ -207,7 +213,21 @@ fn run() -> Result<(), String> {
                     if parts.len() < 2 {
                         println!("  Usage: draft <1|2|3>");
                     } else if let Ok(idx) = parts[1].parse::<usize>() {
-                        handle_draft(&mut game, &mut drafts, 0, idx, &hero_defs);
+                        if let Some(ref choices) = pending_reroll_draft {
+                            if !(1..=3).contains(&idx) {
+                                println!("  Pick 1, 2, or 3");
+                            } else if let Some(Some(hero_name)) = choices.get(idx - 1) {
+                                let hero_name = hero_name.clone();
+                                game.players[0].heroes.push(hero_name.clone());
+                                game.players[0].hero_positions.insert(hero_name.clone(), (1000.0, 500.0));
+                                println!("  Drafted {}!", hero_name);
+                                pending_reroll_draft = None;
+                            } else {
+                                println!("  No hero available at that slot");
+                            }
+                        } else {
+                            handle_draft(&mut game, &mut drafts, 0, idx, &hero_defs);
+                        }
                     } else {
                         println!("  Invalid index");
                     }
@@ -227,10 +247,10 @@ fn run() -> Result<(), String> {
                                 match game.players[0].reroll_hero(&h, &available, &mut rng) {
                                     Ok(choices) => {
                                         println!("  Discarded {}! (-{}g)", h, HERO_REROLL_COST);
+                                        pending_reroll_draft = Some(choices.clone());
                                         let draft = DraftState { choices, round_tier: 0 };
                                         display_draft(&draft, &hero_defs);
                                         println!("  Pick one with: draft <1|2|3>");
-                                        drafts[0] = Some(draft);
                                     }
                                     Err(e) => println!("  Cannot reroll: {e}"),
                                 }
@@ -336,6 +356,7 @@ fn run() -> Result<(), String> {
         }
 
         display_combat_results(&results, &game);
+        println!("  Type 'log' to see detailed combat log");
 
         // Check eliminations
         for pid in &prev_alive {
@@ -515,6 +536,7 @@ fn display_heroes(player: &PlayerState, game: &GameState, hero_defs: &HashMap<St
         println!("  (none - pick from draft!)");
         return;
     }
+    let level = 1.0 + game.round as f32;
     for (i, hero_name) in player.heroes.iter().enumerate() {
         let equipped = player.equipped.get(hero_name);
         let slots = game.config.ability_slots_per_hero as usize;
@@ -530,16 +552,39 @@ fn display_heroes(player: &PlayerState, game: &GameState, hero_defs: &HashMap<St
         for _ in filled..slots {
             ability_strs.push("[empty]".to_string());
         }
-        let attr = hero_defs.get(hero_name)
-            .map(|h| match h.primary_attribute {
+        let pos = player.hero_positions.get(hero_name).copied().unwrap_or((1000.0, 500.0));
+
+        if let Some(h) = hero_defs.get(hero_name) {
+            let attr_str = match h.primary_attribute {
                 aa2_data::Attribute::Strength => "STR",
                 aa2_data::Attribute::Agility => "AGI",
                 aa2_data::Attribute::Intelligence => "INT",
                 aa2_data::Attribute::Universal => "UNI",
-            })
-            .unwrap_or("???");
-        let pos = player.hero_positions.get(hero_name).copied().unwrap_or((1000.0, 500.0));
-        println!("  {}. {} [{}] [{}] @ ({:.0}, {:.0})", i + 1, hero_name, slug(hero_name), attr, pos.0, pos.1);
+            };
+            let lvl = level as u32;
+            let str_total = h.base_str + h.str_gain * (level - 1.0);
+            let agi_total = h.base_agi + h.agi_gain * (level - 1.0);
+            let int_total = h.base_int + h.int_gain * (level - 1.0);
+            let primary = match h.primary_attribute {
+                aa2_data::Attribute::Strength => str_total,
+                aa2_data::Attribute::Agility => agi_total,
+                aa2_data::Attribute::Intelligence => int_total,
+                aa2_data::Attribute::Universal => 0.0,
+            };
+            let hp = 120.0 + 22.0 * str_total;
+            let mana = 75.0 + 12.0 * int_total;
+            let armor = agi_total / 6.0;
+            let atk_speed = 100.0 + agi_total;
+            let dmg_min = h.base_damage_min + primary;
+            let dmg_max = h.base_damage_max + primary;
+
+            println!("  {}. {} [{}] [{}] Lv {} @ ({:.0}, {:.0})", i + 1, hero_name, slug(hero_name), attr_str, lvl, pos.0, pos.1);
+            println!("     HP: {:.0}  Mana: {:.0}  Armor: {:.1}  MS: {:.0}", hp, mana, armor, h.move_speed);
+            println!("     Damage: {:.0}-{:.0}  BAT: {:.1}  AS: {:.0}  Range: {:.0}", dmg_min, dmg_max, h.base_attack_time, atk_speed, h.attack_range);
+            println!("     STR: {:.0}+{:.1}  AGI: {:.0}+{:.1}  INT: {:.0}+{:.1}", h.base_str, h.str_gain, h.base_agi, h.agi_gain, h.base_int, h.int_gain);
+        } else {
+            println!("  {}. {} [{}] [???] @ ({:.0}, {:.0})", i + 1, hero_name, slug(hero_name), pos.0, pos.1);
+        }
         println!("     Abilities: {}", ability_strs.join(", "));
     }
     println!("  Commands: equip <ability> <hero>, unequip <ability> <hero>, reroll-hero <hero> ({}g), position <hero> <x> <y>", HERO_REROLL_COST);
@@ -768,7 +813,7 @@ fn handle_equip(game: &mut GameState, player_id: usize, ability: &str, hero: &st
 }
 
 fn handle_draft(game: &mut GameState, drafts: &mut [Option<DraftState>], player_id: usize, index: usize, hero_defs: &HashMap<String, HeroDef>) {
-    if !game.draft_pending {
+    if !game.draft_pending || drafts[player_id].is_none() {
         println!("  No draft active this round");
         return;
     }
