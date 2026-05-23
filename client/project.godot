@@ -4,7 +4,7 @@
 [application]
 config/name="AA2"
 config/features=PackedStringArray("4.3", "Forward Plus")
-run/main_scene=""
+run/main_scene="res://main.tscn"
 
 [rendering]
 renderer/rendering_method="forward_plus"
