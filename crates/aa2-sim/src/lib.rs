@@ -49,7 +49,7 @@ pub fn clamp_to_arena(pos: Vec2) -> (Vec2, bool) {
 pub type Tick = u32;
 
 /// Combat event for logging/replay.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum CombatEvent {
     /// A unit attacked and dealt damage (melee instant hit).
     Attack { tick: u32, attacker_id: u32, target_id: u32, damage: f32 },

@@ -76,6 +76,14 @@ pub enum Action {
     SetPosition(String, f32, f32),
     /// Set paladin god buff target.
     SetGodBuff(String),
+    /// Select god during GodPick phase.
+    PickGod(God),
+    /// Pick hero by index (0-2) from draft choices.
+    DraftHero(usize),
+    /// Discard hero, get new draft choices.
+    RerollHero(String),
+    /// Signal player is done with current phase.
+    Ready,
 }
 
 /// An assertion checked after a specific round's combat.
@@ -285,6 +293,8 @@ fn execute_action(
         Action::SetGodBuff(hero) => {
             game.players[p_idx].god_buff_target = Some(hero.clone());
         }
+        // These are handled by GameState::apply_action in the game loop, not in scenarios.
+        Action::PickGod(_) | Action::DraftHero(_) | Action::RerollHero(_) | Action::Ready => {}
     }
 }
 

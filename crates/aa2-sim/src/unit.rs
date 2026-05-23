@@ -22,7 +22,7 @@ pub const ACQUISITION_RANGE: f32 = 800.0;
 pub const ACTION_THRESHOLD: f32 = 0.2007;
 
 /// Unit behavioral state.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub enum UnitState {
     /// Doing nothing.
     Idle,

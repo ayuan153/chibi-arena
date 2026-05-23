@@ -15,6 +15,7 @@ use aa2_game::draft::{DraftState, generate_draft_choices, tier_for_draft_round};
 use aa2_game::god::{self, all_gods};
 use aa2_game::economy::{BUY_COST, REROLL_COST, HERO_REROLL_COST};
 use aa2_game::player::MAX_HEROES;
+use aa2_game::scenario::Action;
 
 fn main() {
     if let Err(e) = run() {
@@ -465,16 +466,16 @@ fn god_pick_phase(game: &mut GameState, rng: &mut StdRng) -> Result<(), String> 
         if let Ok(idx) = line.trim().parse::<usize>()
             && idx >= 1 && idx <= gods.len()
         {
-            game.players[0].god = Some(gods[idx - 1].clone());
+            game.apply_action(0, Action::PickGod(gods[idx - 1].clone()), rng)?;
             println!("  You chose: {}\n", gods[idx - 1].name);
             break;
         }
         println!("  Invalid choice.");
     }
     // AI picks randomly
-    for i in 1..8 {
+    for i in 1..8u8 {
         let god = gods.choose(rng).expect("gods not empty").clone();
-        game.players[i].god = Some(god);
+        game.apply_action(i, Action::PickGod(god), rng)?;
     }
     Ok(())
 }
@@ -839,13 +840,20 @@ fn handle_draft(game: &mut GameState, drafts: &mut [Option<DraftState>], player_
     }
     match &draft.choices[index - 1] {
         Some(name) => {
+            let name = name.clone();
+            // Use apply_action for validation
+            let mut rng = rand::thread_rng();
+            if let Err(e) = game.apply_action(player_id as u8, Action::DraftHero(index - 1), &mut rng) {
+                println!("  Cannot draft: {e}");
+                return;
+            }
             game.players[player_id].heroes.push(name.clone());
             // Set default position: center of player's half
             game.players[player_id].hero_positions.insert(
                 name.clone(), (1000.0, 500.0)
             );
             println!("  Drafted {}!", name);
-            if let Some(h) = hero_defs.get(name) {
+            if let Some(h) = hero_defs.get(&name) {
                 println!("    {:?} | Tier {} | {} | Range {:.0}",
                     h.primary_attribute, h.tier,
                     if h.is_melee { "Melee" } else { "Ranged" },

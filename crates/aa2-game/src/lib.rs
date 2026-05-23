@@ -19,4 +19,5 @@ pub use game::{GameConfig, GameEvent, GamePhase, GameState, COMBAT_TIMEOUT, GOD_
 pub use matchup::Matchup;
 pub use player::PlayerState;
 pub use pool::AbilityPool;
+pub use scenario::Action;
 pub use shop::ShopState;

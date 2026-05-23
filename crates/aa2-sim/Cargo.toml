@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 aa2-data = { path = "../aa2-data" }
+serde = { workspace = true }
 
 [[bin]]
 name = "aa2-dev"

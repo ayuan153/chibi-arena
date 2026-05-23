@@ -320,6 +320,93 @@ impl GameState {
         self.players.iter().filter(|p| p.alive).count()
     }
 
+    /// Apply a player action, validating state and dispatching logic.
+    pub fn apply_action(&mut self, player_id: u8, action: crate::scenario::Action, rng: &mut impl rand::Rng) -> Result<(), String> {
+        let p_idx = player_id as usize;
+        if p_idx >= self.players.len() {
+            return Err("invalid player_id".to_string());
+        }
+        if !self.players[p_idx].alive {
+            return Err("player is dead".to_string());
+        }
+
+        use crate::scenario::Action;
+        match action {
+            Action::Buy(slot) => {
+                if let Some(Some(name)) = self.players[p_idx].shop.offerings.get(slot).cloned() {
+                    self.players[p_idx].buy_ability(&name, &mut self.pool)
+                        .map_err(|e| e.to_string())?;
+                    self.players[p_idx].shop.offerings[slot] = None;
+                } else {
+                    return Err("invalid or empty shop slot".to_string());
+                }
+                Ok(())
+            }
+            Action::Sell(ref name) => {
+                self.players[p_idx].sell_ability(name, &mut self.pool)
+                    .map_err(|e| e.to_string())
+            }
+            Action::Equip(ref ability, ref hero) => {
+                self.players[p_idx].equip_ability(ability, hero, &self.ultimates.clone(), &self.config.clone())
+                    .map_err(|e| e.to_string())
+            }
+            Action::Unequip(ref ability, ref hero) => {
+                self.players[p_idx].unequip_ability(ability, hero)
+                    .map_err(|e| e.to_string())
+            }
+            Action::RerollShop => {
+                let cost = self.config.reroll_cost_override.unwrap_or(economy::REROLL_COST);
+                let ult_level = self.config.ultimate_unlock_level;
+                let bonus = self.config.shop_size_bonus;
+                let ultimates = self.ultimates.clone();
+                self.players[p_idx].reroll_shop(&mut self.pool, &ultimates, ult_level, bonus, cost, rng)
+                    .map_err(|e| e.to_string())
+            }
+            Action::UpgradeShop => {
+                let mut gold = self.players[p_idx].gold;
+                if self.players[p_idx].shop.upgrade(&mut gold).is_some() {
+                    self.players[p_idx].gold = gold;
+                    Ok(())
+                } else {
+                    Err("cannot upgrade shop".to_string())
+                }
+            }
+            Action::LockShop => {
+                self.players[p_idx].shop.toggle_lock();
+                Ok(())
+            }
+            Action::SetPosition(ref hero, x, y) => {
+                self.players[p_idx].hero_positions.insert(hero.clone(), (x, y));
+                Ok(())
+            }
+            Action::SetGodBuff(ref hero) => {
+                self.players[p_idx].god_buff_target = Some(hero.clone());
+                Ok(())
+            }
+            Action::PickGod(god) => {
+                if self.phase != GamePhase::GodPick {
+                    return Err("not in god pick phase".to_string());
+                }
+                self.players[p_idx].god = Some(god);
+                Ok(())
+            }
+            Action::DraftHero(idx) => {
+                if !self.draft_pending {
+                    return Err("no draft active".to_string());
+                }
+                if idx > 2 {
+                    return Err("draft index must be 0-2".to_string());
+                }
+                Ok(())
+            }
+            Action::RerollHero(_) => {
+                // Actual reroll logic requires available heroes list from caller
+                Ok(())
+            }
+            Action::Ready => Ok(()),
+        }
+    }
+
     /// Get the hero level for the current round.
     pub fn hero_level(&self) -> u8 {
         (1 + self.round).min(255) as u8
