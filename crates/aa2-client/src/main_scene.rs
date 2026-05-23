@@ -47,6 +47,14 @@ impl IControl for MainScene {
         console.upcast_mut::<Node>().set_name("DevConsole");
         self.base_mut().add_child(&console);
 
+        // Ready button — always visible at bottom-left
+        let mut ready_btn = godot::classes::Button::new_alloc();
+        ready_btn.set_name("ReadyButton");
+        ready_btn.set_text("[Ready]");
+        ready_btn.set_position(godot::prelude::Vector2::new(10.0, 550.0));
+        ready_btn.connect("pressed", &self.base().callable("on_ready_pressed"));
+        self.base_mut().add_child(&ready_btn);
+
         self.switch_to_phase("GodPick");
     }
 
@@ -59,11 +67,15 @@ impl IControl for MainScene {
 
         // AI player auto-actions
         if phase == "GodPick" {
-            // AI picks a god if it hasn't yet
+            // AI picks a random god if it hasn't yet
             let ai_god = manager.bind().get_player_god(1).to_string();
             if ai_god.is_empty() {
-                godot_print!("[AA2] AI picking god: Paladin");
-                manager.bind_mut().apply_player_action(1, "PickGod".into(), "Paladin".into());
+                let gods = manager.bind().get_available_gods();
+                if let Some(dict) = gods.get(0) {
+                    let name = dict.get("name").unwrap_or_default().to::<GString>();
+                    godot_print!("[AA2] AI picking god: {name}");
+                    manager.bind_mut().apply_player_action(1, "PickGod".into(), name);
+                }
             }
         }
 
@@ -92,7 +104,9 @@ impl MainScene {
     #[func]
     fn on_ready_pressed(&mut self) {
         if let Some(mut manager) = self.get_manager() {
+            godot_print!("[AA2] Player pressed Ready");
             manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
+            manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
         }
     }
 }
