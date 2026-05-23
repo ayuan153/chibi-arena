@@ -1,6 +1,7 @@
 use godot::prelude::*;
 
 mod game_manager;
+mod main_scene;
 mod shop_ui;
 mod board_ui;
 mod bench_ui;
