@@ -73,23 +73,19 @@ cargo run --bin aa2-dev -- --loadout data/loadouts/sven_ravage.ron data/loadouts
 **Prerequisites:** [Godot 4.3+](https://godotengine.org/download) installed and in PATH.
 
 ```bash
-# 1. Build the GDExtension library
-cargo build -p aa2-client
+# First time setup (installs Godot via Homebrew)
+./dev setup
 
-# 2. Run Godot (from repo root)
-cd client && godot --path . 2>/dev/null
+# Build + launch (one command)
+./dev
+
+# Other modes:
+./dev client   # Rebuild aa2-client only + launch (fastest iteration)
+./dev run      # Skip build, just launch Godot (already built)
+./dev check    # cargo check + clippy + test (no Godot)
 ```
 
-**Iterate loop:**
-```bash
-# Terminal 1: rebuild on changes (or just re-run manually)
-cargo build -p aa2-client
-
-# Terminal 2: run Godot (reload picks up new .dylib automatically)
-cd client && godot --path .
-```
-
-Godot loads `libaa2_client.dylib` from `../target/debug/` via the `.gdextension` file. After rebuilding the Rust crate, restart Godot to pick up changes.
+Cargo handles incremental compilation automatically — only changed crates rebuild. Typical iteration: edit Rust → `./dev` → see changes in ~3s.
 
 **Dev Console:** Always visible on the right side. Type commands:
 - `state` — show gold, HP, phase, round

@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# AA2 local development script
+# Usage:
+#   ./dev          Build all + launch Godot
+#   ./dev client   Build aa2-client only + launch Godot
+#   ./dev run      Skip build, just launch Godot
+#   ./dev check    cargo check + clippy + test (no Godot)
+#   ./dev setup    Install Godot via Homebrew
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CLIENT_DIR="$SCRIPT_DIR/client"
+
+# Find Godot binary
+find_godot() {
+    if command -v godot &>/dev/null; then
+        echo "godot"
+    elif [ -f "/Applications/Godot.app/Contents/MacOS/Godot" ]; then
+        echo "/Applications/Godot.app/Contents/MacOS/Godot"
+    else
+        echo ""
+    fi
+}
+
+# Kill existing Godot process if running
+kill_godot() {
+    pkill -f "godot.*aa2" 2>/dev/null || true
+}
+
+# Build the client (and dependencies as needed — cargo handles incremental)
+build() {
+    echo "→ Building aa2-client..."
+    cargo build -p aa2-client
+    echo "✓ Build complete"
+}
+
+# Launch Godot
+launch() {
+    local godot_bin
+    godot_bin="$(find_godot)"
+    if [ -z "$godot_bin" ]; then
+        echo "✗ Godot not found. Run: ./dev setup"
+        exit 1
+    fi
+    kill_godot
+    echo "→ Launching Godot..."
+    cd "$CLIENT_DIR"
+    "$godot_bin" --path . 2>/dev/null &
+    echo "✓ Godot running (PID $!)"
+}
+
+case "${1:-all}" in
+    all)
+        build
+        launch
+        ;;
+    client)
+        build
+        launch
+        ;;
+    run)
+        launch
+        ;;
+    check)
+        echo "→ cargo check..."
+        cargo check
+        echo "→ cargo clippy..."
+        cargo clippy -- -D warnings
+        echo "→ cargo test..."
+        cargo test
+        echo "✓ All checks pass"
+        ;;
+    setup)
+        echo "→ Installing Godot via Homebrew..."
+        if ! command -v brew &>/dev/null; then
+            echo "✗ Homebrew not found. Install from https://brew.sh"
+            exit 1
+        fi
+        brew install --cask godot
+        echo "✓ Godot installed. Run: ./dev"
+        ;;
+    *)
+        echo "Usage: ./dev [all|client|run|check|setup]"
+        echo ""
+        echo "  all      Build all + launch Godot (default)"
+        echo "  client   Build aa2-client + launch Godot"
+        echo "  run      Skip build, just launch Godot"
+        echo "  check    cargo check + clippy + test"
+        echo "  setup    Install Godot via Homebrew"
+        exit 1
+        ;;
+esac
