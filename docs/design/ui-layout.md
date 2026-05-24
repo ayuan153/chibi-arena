@@ -58,23 +58,23 @@ Art style: flat top-down 2D, chibi-style characters.
 - **Always visible** across all phases
 
 ### Arena (Center)
-- **Anchors:** top=0.03, bottom=0.65, left=0.10, right=0.80
+- **Anchors:** top=0.03, bottom=0.65, left=0.10, right=0.85
 - **Contents:** Flat 2D grid. Top half = enemy units, bottom half = player units.
 - **Shop phase:** Player's units in position, draggable on bottom half
 - **Combat phase:** Animated fight playback
 - **Panning:** Click-drag empty space to view other players' arenas. Space = reset to home.
 
 ### Damage Meter (Right Sidebar)
-- **Anchors:** top=0.03, bottom=0.65, left=0.80, right=1.0
+- **Anchors:** top=0.30, bottom=0.65, left=0.85, right=1.0
 - **Contents:** Per-unit damage bars, color-coded (red=physical, blue=magical, yellow=pure). Header shows opponent name.
 - **Toggleable:** Damage dealt / damage taken / healing done
 - **Always visible** (shows 0 on round 1, last fight's data during shop)
 - **Priority:** Later deliverable
 
 ### Enemy God (Top-Right Corner)
-- **Position:** Top-right, overlapping arena slightly
+- **Anchors:** top=0.03, bottom=0.25, left=0.85, right=1.0
 - **Contents:** Enemy god portrait (ornate frame), username, HP
-- **Visibility:** During combat phase
+- **Visibility:** Always visible during combat; shows last opponent during shop
 
 ### My God (Bottom-Left)
 - **Anchors:** top=0.65, bottom=1.0, left=0, right=0.10
