@@ -1,15 +1,7 @@
 use godot::prelude::*;
 use godot::classes::{Control, IControl};
 
-use crate::bench_ui::BenchUI;
-use crate::board_ui::BoardUI;
-use crate::combat_viewer_ui::CombatViewerUI;
-use crate::dev_console::DevConsole;
-use crate::draft_ui::DraftUI;
 use crate::game_manager::GameManager;
-use crate::god_pick_ui::GodPickUI;
-use crate::scoreboard_ui::ScoreboardUI;
-use crate::shop_ui::ShopUI;
 
 #[derive(GodotClass)]
 #[class(init, base=Control)]
@@ -26,34 +18,17 @@ impl IControl for MainScene {
     fn ready(&mut self) {
         godot_print!("[AA2] MainScene ready - initializing game...");
 
-        // Add GameManager as our child (UIs find it via /root/MainScene/GameManager)
-        let mut manager = GameManager::new_alloc();
-        manager.set_name("GameManager");
-        self.base_mut().add_child(&manager);
-        manager.bind_mut().init_game(42, 2, "data".into());
-        godot_print!("[AA2] GameManager initialized");
+        // GameManager is already in the scene tree via main.tscn
+        if let Some(mut manager) = self.get_manager() {
+            manager.bind_mut().init_game(42, 2, "data".into());
+            godot_print!("[AA2] GameManager initialized");
+        }
 
-        // Create UI screens as children
-        self.add_control_child::<GodPickUI>(GodPickUI::new_alloc(), "GodPickUI");
-        self.add_control_child::<DraftUI>(DraftUI::new_alloc(), "DraftUI");
-        self.add_control_child::<ShopUI>(ShopUI::new_alloc(), "ShopUI");
-        self.add_control_child::<BoardUI>(BoardUI::new_alloc(), "BoardUI");
-        self.add_control_child::<BenchUI>(BenchUI::new_alloc(), "BenchUI");
-        self.add_control_child::<CombatViewerUI>(CombatViewerUI::new_alloc(), "CombatViewerUI");
-        self.add_control_child::<ScoreboardUI>(ScoreboardUI::new_alloc(), "ScoreboardUI");
-
-        // DevConsole — always visible, not affected by phase changes
-        let mut console = DevConsole::new_alloc();
-        console.upcast_mut::<Node>().set_name("DevConsole");
-        self.base_mut().add_child(&console);
-
-        // Ready button — always visible at bottom-left
-        let mut ready_btn = godot::classes::Button::new_alloc();
-        ready_btn.set_name("ReadyButton");
-        ready_btn.set_text("[Ready]");
-        ready_btn.set_position(godot::prelude::Vector2::new(10.0, 550.0));
-        ready_btn.connect("pressed", &self.base().callable("on_ready_pressed"));
-        self.base_mut().add_child(&ready_btn);
+        // Connect ready button signal
+        if let Some(btn) = self.base().get_node_or_null("ReadyButton") {
+            let mut button: Gd<godot::classes::Button> = btn.cast();
+            button.connect("pressed", &self.base().callable("on_ready_pressed"));
+        }
 
         self.switch_to_phase("GodPick");
     }
@@ -67,7 +42,6 @@ impl IControl for MainScene {
 
         // AI player auto-actions
         if phase == "GodPick" {
-            // AI picks a random god if it hasn't yet
             let ai_god = manager.bind().get_player_god(1).to_string();
             if ai_god.is_empty() {
                 let gods = manager.bind().get_available_gods();
@@ -112,13 +86,6 @@ impl MainScene {
 }
 
 impl MainScene {
-    fn add_control_child<T: Inherits<Control> + Inherits<Node> + GodotClass>(&mut self, mut node: Gd<T>, name: &str) {
-        node.upcast_mut::<Node>().set_name(name);
-        node.upcast_mut::<Control>().set_visible(false);
-        node.upcast_mut::<Control>().set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
-        self.base_mut().add_child(&node);
-    }
-
     fn switch_to_phase(&mut self, phase: &str) {
         let (god, draft, shop, board, bench, combat, score) = match phase {
             "GodPick" => (true, false, false, false, false, false, false),
@@ -129,15 +96,22 @@ impl MainScene {
         };
         self.set_screen_visible("GodPickUI", god);
         self.set_screen_visible("DraftUI", draft);
-        self.set_screen_visible("ShopUI", shop);
-        self.set_screen_visible("BoardUI", board);
-        self.set_screen_visible("BenchUI", bench);
+        self.set_screen_visible("BottomCenter/ShopUI", shop);
+        self.set_screen_visible("Arena/BoardUI", board);
+        self.set_screen_visible("BottomCenter/BenchUI", bench);
         self.set_screen_visible("CombatViewerUI", combat);
         self.set_screen_visible("ScoreboardUI", score);
+
+        // Show/hide layout regions based on phase
+        self.set_screen_visible("PlayerList", phase != "GodPick");
+        self.set_screen_visible("Arena", phase != "GodPick");
+        self.set_screen_visible("MyGod", phase != "GodPick");
+        self.set_screen_visible("BottomCenter", phase == "Shop" || phase == "GracePeriod");
+        self.set_screen_visible("UnitInfo", false); // placeholder, shown on select later
     }
 
-    fn set_screen_visible(&self, name: &str, visible: bool) {
-        if let Some(node) = self.base().get_node_or_null(name) {
+    fn set_screen_visible(&self, path: &str, visible: bool) {
+        if let Some(node) = self.base().get_node_or_null(path) {
             let mut ctrl: Gd<Control> = node.cast();
             ctrl.set_visible(visible);
         }
