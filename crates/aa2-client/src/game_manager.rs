@@ -21,6 +21,9 @@ pub struct GameManager {
     ability_defs: HashMap<String, AbilityDef>,
     rng: Option<StdRng>,
     last_combat_results: Vec<CombatResult>,
+    /// Draft choices per player: [STR, AGI, INT] hero names
+    draft_choices: HashMap<u8, [Option<String>; 3]>,
+    last_phase: String,
 }
 
 #[godot_api]
@@ -127,8 +130,23 @@ impl GameManager {
             _ => return GString::from(format!("unknown action: {action_str}").as_str()),
         };
 
-        match game.apply_action(player_id as u8, action, rng) {
-            Ok(()) => "ok".into(),
+        match game.apply_action(player_id as u8, action.clone(), rng) {
+            Ok(()) => {
+                // Post-action handling for DraftHero
+                if let Action::DraftHero(idx) = &action {
+                    if let Some(choices) = self.draft_choices.get(&(player_id as u8)) {
+                        if let Some(Some(hero_name)) = choices.get(*idx) {
+                            let name = hero_name.clone();
+                            if let Some(p) = game.players.get_mut(player_id as usize) {
+                                p.heroes.push(name.clone());
+                                p.hero_positions.insert(name, (1000.0, 500.0));
+                            }
+                            self.draft_choices.remove(&(player_id as u8));
+                        }
+                    }
+                }
+                "ok".into()
+            }
             Err(e) => GString::from(e.as_str()),
         }
     }
@@ -195,8 +213,42 @@ impl GameManager {
 
     #[func]
     pub fn tick(&mut self, dt: f32) {
+        let mut should_generate_draft = false;
+
         if let (Some(game), Some(rng)) = (&mut self.game, &mut self.rng) {
             game.tick(dt, rng);
+
+            let phase = format!("{:?}", game.phase);
+            if phase != self.last_phase {
+                self.last_phase = phase;
+                if game.phase == GamePhase::Shop && game.draft_pending && self.draft_choices.is_empty() {
+                    should_generate_draft = true;
+                }
+            }
+        }
+
+        if should_generate_draft {
+            self.do_generate_draft();
+        }
+    }
+
+    fn do_generate_draft(&mut self) {
+        use aa2_game::draft::{generate_draft_choices, tier_for_draft_round};
+        let Some(game) = &self.game else { return };
+        let Some(rng) = &mut self.rng else { return };
+
+        let tier = tier_for_draft_round(game.round).unwrap_or(0);
+        let all_heroes: Vec<&HeroDef> = self.hero_defs.values().collect();
+        for player in &game.players {
+            if player.alive {
+                let owned: Vec<&str> = player.heroes.iter().map(|s| s.as_str()).collect();
+                let available: Vec<&HeroDef> = all_heroes.iter()
+                    .filter(|h| !owned.contains(&h.name.as_str()))
+                    .copied()
+                    .collect();
+                let choices = generate_draft_choices(&available, tier, rng);
+                self.draft_choices.insert(player.id, choices);
+            }
         }
     }
 
@@ -337,10 +389,13 @@ impl GameManager {
 
     #[func]
     pub fn get_draft_choices(&self, player_id: i32) -> PackedStringArray {
-        let _ = player_id;
-        // Draft choices are managed externally in the dev binary;
-        // return empty for now (client will populate via signals)
-        PackedStringArray::new()
+        let mut arr = PackedStringArray::new();
+        if let Some(choices) = self.draft_choices.get(&(player_id as u8)) {
+            for choice in choices {
+                arr.push(&GString::from(choice.as_deref().unwrap_or("")));
+            }
+        }
+        arr
     }
 
     #[func]

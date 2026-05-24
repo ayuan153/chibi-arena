@@ -420,8 +420,22 @@ impl GameState {
                     self.config.auto_advance = true;
                     let events = self.tick(0.01, rng);
                     self.config.auto_advance = was;
-                    // Events are lost here but phase transition happened
                     let _ = events;
+
+                    // Roll shops for all alive players if entering Shop phase
+                    if self.phase == GamePhase::Shop {
+                        for i in 0..self.players.len() {
+                            if self.players[i].alive && !self.players[i].shop.locked {
+                                self.players[i].shop.roll(
+                                    &mut self.pool,
+                                    &self.ultimates,
+                                    self.config.ultimate_unlock_level,
+                                    self.config.shop_size_bonus,
+                                    rng,
+                                );
+                            }
+                        }
+                    }
                 }
                 Ok(())
             }
