@@ -1,6 +1,5 @@
 use godot::prelude::*;
 use godot::classes::{Control, IControl, LineEdit, RichTextLabel, VBoxContainer, PanelContainer};
-use godot::builtin::Side;
 
 use crate::game_manager::GameManager;
 
@@ -17,14 +16,7 @@ impl IControl for DevConsole {
     fn ready(&mut self) {
         let mut panel = PanelContainer::new_alloc();
         panel.set_name("Panel");
-        panel.set_anchor(Side::LEFT, 1.0);
-        panel.set_anchor(Side::RIGHT, 1.0);
-        panel.set_anchor(Side::TOP, 0.0);
-        panel.set_anchor(Side::BOTTOM, 1.0);
-        panel.set_offset(Side::LEFT, -300.0);
-        panel.set_offset(Side::RIGHT, 0.0);
-        panel.set_offset(Side::TOP, 0.0);
-        panel.set_offset(Side::BOTTOM, 0.0);
+        panel.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
 
         let mut vbox = VBoxContainer::new_alloc();
         vbox.set_name("VBox");

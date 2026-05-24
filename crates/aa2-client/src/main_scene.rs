@@ -89,8 +89,8 @@ impl MainScene {
     fn switch_to_phase(&mut self, phase: &str) {
         let (god, draft, shop, board, bench, combat, score) = match phase {
             "GodPick" => (true, false, false, false, false, false, false),
-            "Shop" | "GracePeriod" => (false, true, true, true, true, false, true),
-            "Combat" => (false, false, false, false, false, true, true),
+            "Shop" | "GracePeriod" => (false, true, true, true, true, false, false),
+            "Combat" => (false, false, false, false, false, true, false),
             "Finished" => (false, false, false, false, false, false, true),
             _ => return,
         };

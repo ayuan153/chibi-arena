@@ -97,12 +97,6 @@ text = "Unit Info"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="GodPickUI" type="GodPickUI" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-
 [node name="DraftUI" type="DraftUI" parent="."]
 visible = false
 layout_mode = 1
@@ -129,14 +123,21 @@ anchor_bottom = 0.65
 
 [node name="DevConsole" type="DevConsole" parent="."]
 layout_mode = 1
-anchors_preset = 15
+anchor_left = 0.82
 anchor_right = 1.0
 anchor_bottom = 1.0
+mouse_filter = 2
 
 [node name="ReadyButton" type="Button" parent="."]
 layout_mode = 1
 offset_left = 10.0
-offset_top = 550.0
+offset_top = 400.0
 offset_right = 110.0
-offset_bottom = 580.0
+offset_bottom = 430.0
 text = "[Ready]"
+
+[node name="GodPickUI" type="GodPickUI" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
