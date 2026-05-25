@@ -100,9 +100,11 @@ vertical_alignment = 1
 [node name="DraftUI" type="DraftUI" parent="."]
 visible = false
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
+anchor_left = 0.10
+anchor_right = 0.85
+anchor_top = 0.03
+anchor_bottom = 0.30
+mouse_filter = 2
 
 [node name="ScoreboardUI" type="ScoreboardUI" parent="."]
 visible = false
