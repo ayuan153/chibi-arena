@@ -143,7 +143,10 @@ impl GameState {
         for player in &mut self.players {
             if player.alive {
                 player.gold = base_gold;
-                player.shop.tick_decay();
+                // Only tick decay after round 1 (decay = rounds completed at level)
+                if self.round > 1 {
+                    player.shop.tick_decay();
+                }
             }
         }
     }
@@ -367,8 +370,20 @@ impl GameState {
             }
             Action::UpgradeShop => {
                 let mut gold = self.players[p_idx].gold;
+                let old_level = self.players[p_idx].shop.level;
                 if self.players[p_idx].shop.upgrade(&mut gold).is_some() {
                     self.players[p_idx].gold = gold;
+                    let new_level = self.players[p_idx].shop.level;
+                    // Reroll shop on upgrade (except L2→L3 which only enables ults)
+                    if new_level != 3 || old_level != 2 {
+                        self.players[p_idx].shop.roll(
+                            &mut self.pool,
+                            &self.ultimates,
+                            self.config.ultimate_unlock_level,
+                            self.config.shop_size_bonus,
+                            rng,
+                        );
+                    }
                     Ok(())
                 } else {
                     Err("cannot upgrade shop".to_string())
