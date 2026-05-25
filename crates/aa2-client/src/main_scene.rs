@@ -67,6 +67,14 @@ impl IControl for MainScene {
             }
         }
 
+        // AI auto-draft: pick first choice immediately
+        if phase == "Shop" {
+            let ai_choices = manager.bind().get_draft_choices(1);
+            if !ai_choices.is_empty() {
+                manager.bind_mut().apply_player_action(1, "DraftHero".into(), "0".into());
+            }
+        }
+
         if phase == self.current_phase {
             // Update top bar info even without phase change
             self.update_top_bar(&phase);
@@ -141,12 +149,26 @@ impl MainScene {
     }
 
     fn update_top_bar(&self, phase: &str) {
+        let Some(manager) = self.get_manager() else { return };
         if let Some(node) = self.base().get_node_or_null("PersistentChrome/TopBar/GameInfo") {
             let mut label: Gd<Label> = node.cast();
-            if let Some(manager) = self.get_manager() {
-                let round = manager.bind().get_round();
-                let text = format!("Round {round} \u{00b7} {phase}");
-                label.set_text(&text);
+            let round = manager.bind().get_round();
+            let text = format!("Round {round} \u{00b7} {phase}");
+            label.set_text(&text);
+        }
+        // Update god portrait HP
+        if let Some(node) = self.base().get_node_or_null("PersistentChrome/GodPortrait/HPLabel") {
+            let mut label: Gd<Label> = node.cast();
+            let hp = manager.bind().get_player_hp(0);
+            let text = format!("HP: {}", hp as i32);
+            label.set_text(&text);
+        }
+        // Update god portrait name
+        if let Some(node) = self.base().get_node_or_null("PersistentChrome/GodPortrait/NameLabel") {
+            let mut label: Gd<Label> = node.cast();
+            let god = manager.bind().get_player_god(0);
+            if !god.is_empty() {
+                label.set_text(&god.to_string());
             }
         }
     }

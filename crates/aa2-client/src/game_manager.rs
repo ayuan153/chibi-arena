@@ -126,6 +126,40 @@ impl GameManager {
                 let idx: usize = param_str.parse().unwrap_or(0);
                 Action::DraftHero(idx)
             }
+            "RerollHero" => {
+                // Handle directly — needs hero_defs from GameManager
+                let hero_idx: usize = param_str.parse().unwrap_or(0);
+                let p = &mut game.players[player_id as usize];
+                if p.gold < 2 {
+                    return "not enough gold".into();
+                }
+                if hero_idx >= p.heroes.len() {
+                    return "invalid hero index".into();
+                }
+                let old_hero = p.heroes[hero_idx].clone();
+                let owned: Vec<&str> = p.heroes.iter().map(|s| s.as_str()).collect();
+                let candidates: Vec<&str> = self.hero_defs.keys()
+                    .filter(|h| !owned.contains(&h.as_str()))
+                    .map(|s| s.as_str())
+                    .collect();
+                if candidates.is_empty() {
+                    return "no heroes available".into();
+                }
+                use rand::seq::SliceRandom;
+                let new_hero = candidates.choose(rng).unwrap().to_string();
+                p.gold -= 2;
+                p.heroes[hero_idx] = new_hero.clone();
+                // Move position from old to new
+                if let Some(pos) = p.hero_positions.remove(&old_hero) {
+                    p.hero_positions.insert(new_hero.clone(), pos);
+                }
+                // Unequip all abilities from old hero back to bench
+                if let Some(abilities) = p.equipped.remove(&old_hero) {
+                    p.bench.extend(abilities);
+                }
+                godot_print!("[AA2] Rerolled {old_hero} -> {new_hero}");
+                return "ok".into();
+            }
             "Ready" => Action::Ready,
             _ => return GString::from(format!("unknown action: {action_str}").as_str()),
         };
@@ -146,7 +180,7 @@ impl GameManager {
                 }
                 // Post-Ready: generate draft choices if we just entered a draft round
                 if matches!(action, Action::Ready) {
-                    if game.phase == GamePhase::Shop && game.draft_pending && self.draft_choices.is_empty() {
+                    if game.phase == GamePhase::Shop && game.draft_pending && !self.draft_choices.contains_key(&0) {
                         // Can't call self.do_generate_draft() here due to borrow — use inline logic
                         use aa2_game::draft::{generate_draft_choices, tier_for_draft_round};
                         let tier = tier_for_draft_round(game.round).unwrap_or(0);
@@ -250,7 +284,7 @@ impl GameManager {
             let phase = format!("{:?}", game.phase);
             if phase != self.last_phase {
                 self.last_phase = phase;
-                if game.phase == GamePhase::Shop && game.draft_pending && self.draft_choices.is_empty() {
+                if game.phase == GamePhase::Shop && game.draft_pending && !self.draft_choices.contains_key(&0) {
                     should_generate_draft = true;
                 }
             }

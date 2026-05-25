@@ -227,8 +227,12 @@ impl LoadoutUi {
     #[func] fn on_reroll_hero_3(&mut self) { self.reroll_hero(3); }
     #[func] fn on_reroll_hero_4(&mut self) { self.reroll_hero(4); }
 
-    fn reroll_hero(&mut self, _hero_idx: usize) {
-        // TODO: implement hero reroll when GameManager supports it
-        godot_print!("[AA2] Reroll hero {_hero_idx} (not yet implemented)");
+    fn reroll_hero(&mut self, hero_idx: usize) {
+        let param = format!("{hero_idx}");
+        godot_print!("[AA2] Reroll hero {hero_idx}");
+        if let Some(mut mgr) = self.get_manager() {
+            let result = mgr.bind_mut().apply_player_action(0, "RerollHero".into(), GString::from(param.as_str()));
+            godot_print!("[AA2] Reroll result: {result}");
+        }
     }
 }
