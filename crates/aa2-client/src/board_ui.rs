@@ -47,8 +47,8 @@ impl IControl for BoardUI {
             let pos = mb.get_position();
             let size = self.base().get_size();
             let gx = ((pos.x / size.x) * 2000.0).clamp(0.0, 2000.0);
-            // Constrain to bottom half of arena (y: 500-1000)
-            let gy = ((pos.y / size.y) * 1000.0).clamp(500.0, 1000.0);
+            // Constrain to bottom half of arena (y: 1000-2000)
+            let gy = ((pos.y / size.y) * 2000.0).clamp(1000.0, 2000.0);
             let param = format!("{hero},{gx},{gy}");
             if let Some(mut mgr) = self.get_manager() {
                 mgr.bind_mut().apply_player_action(0, "SetPosition".into(), GString::from(param.as_str()));
@@ -76,7 +76,7 @@ impl BoardUI {
                 btn.set_text(&name);
                 let pos = manager.bind().get_hero_position(0, GString::from(name.as_str()));
                 let px = (pos.x / 2000.0) * size.x;
-                let py = (pos.y / 1000.0) * size.y;
+                let py = (pos.y / 2000.0) * size.y;
                 btn.set_position(Vector2::new(px, py));
             } else {
                 btn.set_visible(false);

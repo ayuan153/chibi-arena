@@ -149,13 +149,13 @@ impl GameManager {
                 let new_hero = candidates.choose(rng).unwrap().to_string();
                 p.gold -= 2;
                 p.heroes[hero_idx] = new_hero.clone();
-                // Move position from old to new
+                // Transfer position from old to new
                 if let Some(pos) = p.hero_positions.remove(&old_hero) {
                     p.hero_positions.insert(new_hero.clone(), pos);
                 }
-                // Unequip all abilities from old hero back to bench
+                // Transfer equipped abilities from old to new (body changes, abilities stay)
                 if let Some(abilities) = p.equipped.remove(&old_hero) {
-                    p.bench.extend(abilities);
+                    p.equipped.insert(new_hero.clone(), abilities);
                 }
                 godot_print!("[AA2] Rerolled {old_hero} -> {new_hero}");
                 return "ok".into();
