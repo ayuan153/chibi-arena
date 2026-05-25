@@ -1,11 +1,9 @@
 use godot::prelude::*;
-use godot::classes::{Button, Control, IControl, InputEvent, InputEventMouseButton, Label, Panel};
+use godot::classes::{Button, Control, IControl, InputEvent, InputEventMouseButton, Label};
 use godot::global::MouseButton;
 
 use crate::game_manager::GameManager;
 
-const BOARD_W: f32 = 600.0;
-const BOARD_H: f32 = 300.0;
 const MAX_HEROES: usize = 5;
 
 #[derive(GodotClass)]
@@ -19,12 +17,6 @@ pub struct BoardUI {
 #[godot_api]
 impl IControl for BoardUI {
     fn ready(&mut self) {
-        let mut panel = Panel::new_alloc();
-        panel.set_name("BoardPanel");
-        panel.set_custom_minimum_size(Vector2::new(BOARD_W, BOARD_H));
-        panel.set_size(Vector2::new(BOARD_W, BOARD_H));
-        self.base_mut().add_child(&panel);
-
         // Create hero buttons
         for i in 0..MAX_HEROES {
             let mut btn = Button::new_alloc();
@@ -39,7 +31,6 @@ impl IControl for BoardUI {
 
         let mut status = Label::new_alloc();
         status.set_name("StatusLabel");
-        status.set_position(Vector2::new(0.0, BOARD_H + 5.0));
         status.set_text("");
         self.base_mut().add_child(&status);
     }
@@ -54,8 +45,10 @@ impl IControl for BoardUI {
             && let Some(hero) = self.selected_hero.take()
         {
             let pos = mb.get_position();
-            let gx = (pos.x / BOARD_W) * 2000.0;
-            let gy = (pos.y / BOARD_H) * 1000.0;
+            let size = self.base().get_size();
+            let gx = ((pos.x / size.x) * 2000.0).clamp(0.0, 2000.0);
+            // Constrain to bottom half of arena (y: 500-1000)
+            let gy = ((pos.y / size.y) * 1000.0).clamp(500.0, 1000.0);
             let param = format!("{hero},{gx},{gy}");
             if let Some(mut mgr) = self.get_manager() {
                 mgr.bind_mut().apply_player_action(0, "SetPosition".into(), GString::from(param.as_str()));
@@ -72,6 +65,7 @@ impl BoardUI {
     fn refresh(&mut self) {
         let Some(manager) = self.get_manager() else { return };
         let heroes = manager.bind().get_heroes(0);
+        let size = self.base().get_size();
 
         for i in 0..MAX_HEROES {
             let path = format!("Hero{i}");
@@ -81,8 +75,8 @@ impl BoardUI {
                 btn.set_visible(true);
                 btn.set_text(&name);
                 let pos = manager.bind().get_hero_position(0, GString::from(name.as_str()));
-                let px = (pos.x / 2000.0) * BOARD_W;
-                let py = (pos.y / 1000.0) * BOARD_H;
+                let px = (pos.x / 2000.0) * size.x;
+                let py = (pos.y / 1000.0) * size.y;
                 btn.set_position(Vector2::new(px, py));
             } else {
                 btn.set_visible(false);
