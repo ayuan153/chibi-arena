@@ -85,6 +85,9 @@ impl IControl for MainScene {
         if phase == "Combat" && !self.combat_started {
             manager.bind_mut().run_combat();
             self.combat_started = true;
+            // Auto-advance past combat (no animation yet)
+            manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
+            manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
         }
     }
 }
