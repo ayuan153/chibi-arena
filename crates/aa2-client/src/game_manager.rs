@@ -145,6 +145,36 @@ impl GameManager {
                         }
                     }
                 }
+                // Post-Ready: generate draft choices if we just entered a draft round
+                if matches!(action, Action::Ready) {
+                    if game.phase == GamePhase::Shop && game.draft_pending && self.draft_choices.is_empty() {
+                        // Can't call self.do_generate_draft() here due to borrow — use inline logic
+                        use aa2_game::draft::{generate_draft_choices, tier_for_draft_round};
+                        let tier = tier_for_draft_round(game.round).unwrap_or(0);
+                        let all_heroes: Vec<&HeroDef> = self.hero_defs.values().collect();
+                        for p in &game.players {
+                            if p.alive {
+                                let owned: Vec<&str> = p.heroes.iter().map(|s| s.as_str()).collect();
+                                let available: Vec<&HeroDef> = all_heroes.iter()
+                                    .filter(|h| !owned.contains(&h.name.as_str()))
+                                    .copied()
+                                    .collect();
+                                let choices = generate_draft_choices(&available, tier, rng);
+                                self.draft_choices.insert(p.id, choices);
+                            }
+                        }
+                    }
+                    // Log shop state for debugging
+                    if game.phase == GamePhase::Shop {
+                        let offerings: Vec<_> = game.players[0].shop.offerings.iter()
+                            .filter_map(|o| o.as_ref())
+                            .collect();
+                        godot_print!("[AA2] Shop offerings: {:?}", offerings);
+                        if let Some(choices) = self.draft_choices.get(&0) {
+                            godot_print!("[AA2] Draft choices: {:?}", choices);
+                        }
+                    }
+                }
                 "ok".into()
             }
             Err(e) => GString::from(e.as_str()),
