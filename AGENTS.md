@@ -9,6 +9,12 @@ When working on `aa2-client` or anything in `client/`, read `docs/design/godot-d
 - Common issues and fixes
 - Architecture and key patterns
 
+## Privacy
+
+- Never include usernames, machine names, or absolute paths in commits or committed files.
+- Use `~/` or relative paths in documentation.
+- "AA2" is a working codename — will be rebranded before launch.
+
 ## Commit Convention
 
 Use Conventional Commits: `type(scope): description`
