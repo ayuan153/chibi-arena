@@ -79,13 +79,21 @@ impl IControl for MainScene {
 
         if phase == "Shop" || phase == "GracePeriod" {
             self.combat_started = false;
-            manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
+            // AI auto-readies during shop
+            if phase == "Shop" {
+                manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
+            }
         }
 
         if phase == "Combat" && !self.combat_started {
             manager.bind_mut().run_combat();
             self.combat_started = true;
             // Auto-advance past combat (no animation yet)
+            manager.bind_mut().end_combat();
+        }
+
+        if phase == "GracePeriod" {
+            // Skip grace period for now (no animation)
             manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
             manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
         }

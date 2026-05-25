@@ -359,6 +359,13 @@ impl GameManager {
         !self.last_combat_results.is_empty()
     }
 
+    /// End combat phase, transitioning to GracePeriod then Shop.
+    #[func]
+    pub fn end_combat(&mut self) {
+        let Some(game) = &mut self.game else { return };
+        game.end_combat(false);
+    }
+
     #[func]
     pub fn get_combat_event_count(&self, matchup_index: i32) -> i32 {
         self.last_combat_results
