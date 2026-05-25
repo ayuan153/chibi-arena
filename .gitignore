@@ -9,3 +9,6 @@ client/bin/
 *.swp
 *.swo
 .DS_Store
+
+# Agent working files
+.yolo-sisyphus/
