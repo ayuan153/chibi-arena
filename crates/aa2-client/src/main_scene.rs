@@ -20,7 +20,7 @@ impl IControl for MainScene {
 
         // GameManager is already in the scene tree via main.tscn
         if let Some(mut manager) = self.get_manager() {
-            manager.bind_mut().init_game(42, 2, "data".into());
+            manager.bind_mut().init_game(42, 2, "../data".into());
             godot_print!("[AA2] GameManager initialized");
         }
 
