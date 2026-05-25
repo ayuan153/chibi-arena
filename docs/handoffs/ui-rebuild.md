@@ -2,7 +2,7 @@
 
 Project: AA2 — Ability Arena 2 standalone port
 Repo: https://github.com/ayuan153/aa2.git
-Working directory: /Users/alleyuan/projects/aa2/aa2
+Working directory: the repo root (aa2/)
 
 ## CONTEXT
 
