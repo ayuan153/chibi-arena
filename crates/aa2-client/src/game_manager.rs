@@ -24,6 +24,8 @@ pub struct GameManager {
     /// Draft choices per player: [STR, AGI, INT] hero names
     draft_choices: HashMap<u8, [Option<String>; 3]>,
     last_phase: String,
+    /// If set, the next DraftHero action replaces this hero index instead of adding
+    pending_reroll: Option<usize>,
 }
 
 #[godot_api]
@@ -127,37 +129,26 @@ impl GameManager {
                 Action::DraftHero(idx)
             }
             "RerollHero" => {
-                // Handle directly — needs hero_defs from GameManager
+                // Generate 3 draft choices (STR/AGI/INT) for hero reroll
                 let hero_idx: usize = param_str.parse().unwrap_or(0);
-                let p = &mut game.players[player_id as usize];
+                let p = &game.players[player_id as usize];
                 if p.gold < 2 {
                     return "not enough gold".into();
                 }
                 if hero_idx >= p.heroes.len() {
                     return "invalid hero index".into();
                 }
-                let old_hero = p.heroes[hero_idx].clone();
-                let owned: Vec<&str> = p.heroes.iter().map(|s| s.as_str()).collect();
-                let candidates: Vec<&str> = self.hero_defs.keys()
-                    .filter(|h| !owned.contains(&h.as_str()))
-                    .map(|s| s.as_str())
+                game.players[player_id as usize].gold -= 2;
+                // Generate choices across all tiers
+                use aa2_game::draft::generate_draft_choices;
+                let owned: Vec<&str> = game.players[player_id as usize].heroes.iter().map(|s| s.as_str()).collect();
+                let available: Vec<&HeroDef> = self.hero_defs.values()
+                    .filter(|h| !owned.contains(&h.name.as_str()))
                     .collect();
-                if candidates.is_empty() {
-                    return "no heroes available".into();
-                }
-                use rand::seq::SliceRandom;
-                let new_hero = candidates.choose(rng).unwrap().to_string();
-                p.gold -= 2;
-                p.heroes[hero_idx] = new_hero.clone();
-                // Transfer position from old to new
-                if let Some(pos) = p.hero_positions.remove(&old_hero) {
-                    p.hero_positions.insert(new_hero.clone(), pos);
-                }
-                // Transfer equipped abilities from old to new (body changes, abilities stay)
-                if let Some(abilities) = p.equipped.remove(&old_hero) {
-                    p.equipped.insert(new_hero.clone(), abilities);
-                }
-                godot_print!("[AA2] Rerolled {old_hero} -> {new_hero}");
+                let choices = generate_draft_choices(&available, 0, rng);
+                self.draft_choices.insert(player_id as u8, choices);
+                self.pending_reroll = Some(hero_idx);
+                godot_print!("[AA2] Hero reroll draft started for slot {hero_idx}");
                 return "ok".into();
             }
             "Ready" => Action::Ready,
@@ -173,8 +164,25 @@ impl GameManager {
                 {
                     let name = hero_name.clone();
                     if let Some(p) = game.players.get_mut(player_id as usize) {
-                        p.heroes.push(name.clone());
-                        p.hero_positions.insert(name, (1000.0, 500.0));
+                        if let Some(reroll_idx) = self.pending_reroll {
+                            // Reroll: replace existing hero, keep abilities
+                            if reroll_idx < p.heroes.len() {
+                                let old_hero = p.heroes[reroll_idx].clone();
+                                p.heroes[reroll_idx] = name.clone();
+                                if let Some(pos) = p.hero_positions.remove(&old_hero) {
+                                    p.hero_positions.insert(name.clone(), pos);
+                                }
+                                if let Some(abilities) = p.equipped.remove(&old_hero) {
+                                    p.equipped.insert(name.clone(), abilities);
+                                }
+                                godot_print!("[AA2] Rerolled {old_hero} -> {name}");
+                            }
+                            self.pending_reroll = None;
+                        } else {
+                            // Normal draft: add new hero
+                            p.heroes.push(name.clone());
+                            p.hero_positions.insert(name, (500.0, 1500.0));
+                        }
                     }
                     self.draft_choices.remove(&(player_id as u8));
                 }
@@ -338,7 +346,58 @@ impl GameManager {
                 return Vector2::new(x, y);
             }
         }
-        Vector2::new(1000.0, 500.0)
+        Vector2::new(500.0, 1500.0)
+    }
+
+    /// Get hero stats as a dictionary for the unit info panel.
+    #[func]
+    pub fn get_hero_info(&self, hero_name: GString) -> VarDictionary {
+        let mut dict = VarDictionary::new();
+        let name_str = hero_name.to_string();
+        let Some(hero) = self.hero_defs.get(&name_str) else { return dict };
+        let Some(game) = &self.game else { return dict };
+        let level = game.hero_level() as f32;
+
+        let attr_str = match hero.primary_attribute {
+            aa2_data::Attribute::Strength => "STR",
+            aa2_data::Attribute::Agility => "AGI",
+            aa2_data::Attribute::Intelligence => "INT",
+            aa2_data::Attribute::Universal => "UNI",
+        };
+
+        let str_total = hero.base_str + hero.str_gain * level;
+        let agi_total = hero.base_agi + hero.agi_gain * level;
+        let int_total = hero.base_int + hero.int_gain * level;
+
+        let hp = 120.0 + str_total * 22.0;
+        let mana = 75.0 + int_total * 12.0;
+        let armor = agi_total * 0.167;
+        let attack_speed = 100.0 + agi_total;
+
+        let primary_bonus = match hero.primary_attribute {
+            aa2_data::Attribute::Strength => str_total,
+            aa2_data::Attribute::Agility => agi_total,
+            aa2_data::Attribute::Intelligence => int_total,
+            aa2_data::Attribute::Universal => (str_total + agi_total + int_total) * 0.7 / 3.0,
+        };
+        let dmg_min = hero.base_damage_min + primary_bonus;
+        let dmg_max = hero.base_damage_max + primary_bonus;
+
+        dict.set("name", &Variant::from(hero_name.clone()));
+        dict.set("attribute", &Variant::from(GString::from(attr_str)));
+        dict.set("str", str_total as i32);
+        dict.set("agi", agi_total as i32);
+        dict.set("int", int_total as i32);
+        dict.set("hp", hp as i32);
+        dict.set("mana", mana as i32);
+        dict.set("armor", &Variant::from(GString::from(format!("{armor:.1}").as_str())));
+        dict.set("attack_speed", attack_speed as i32);
+        dict.set("damage", &Variant::from(GString::from(format!("{}-{}", dmg_min as i32, dmg_max as i32).as_str())));
+        dict.set("move_speed", hero.move_speed as i32);
+        dict.set("attack_range", hero.attack_range as i32);
+        dict.set("is_melee", hero.is_melee);
+        dict.set("bat", &Variant::from(GString::from(format!("{:.1}", hero.base_attack_time).as_str())));
+        dict
     }
 
     #[func]
