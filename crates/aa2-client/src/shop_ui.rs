@@ -139,9 +139,11 @@ impl ShopUI {
     }
 
     fn buy_slot(&mut self, slot: usize) {
+        godot_print!("[AA2] Buy slot {slot} clicked");
         if let Some(mut manager) = self.get_manager() {
             let param = format!("{slot}");
-            manager.bind_mut().apply_player_action(0, "Buy".into(), GString::from(param.as_str()));
+            let result = manager.bind_mut().apply_player_action(0, "Buy".into(), GString::from(param.as_str()));
+            godot_print!("[AA2] Buy result: {result}");
         }
     }
 
