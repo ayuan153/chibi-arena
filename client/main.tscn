@@ -6,104 +6,127 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
-[node name="TopBar" type="Control" parent="."]
+[node name="PersistentChrome" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="TopBar" type="HBoxContainer" parent="PersistentChrome"]
 layout_mode = 1
 anchor_right = 1.0
 offset_bottom = 32.0
 
-[node name="Label" type="Label" parent="TopBar"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-text = "Round 1 - Shop"
+[node name="GameInfo" type="Label" parent="PersistentChrome/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Round 1 · Shop"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="PlayerList" type="Control" parent="."]
+[node name="SummaryButton" type="Button" parent="PersistentChrome/TopBar"]
+layout_mode = 2
+text = "Summary"
+
+[node name="PlayerList" type="PlayerListUi" parent="PersistentChrome"]
 layout_mode = 1
-anchor_right = 0.10
+anchor_right = 0.1
 anchor_top = 0.03
 anchor_bottom = 0.65
+offset_top = 32.0
+mouse_filter = 2
 
-[node name="Label" type="Label" parent="PlayerList"]
+[node name="GodPortrait" type="Control" parent="PersistentChrome"]
+layout_mode = 1
+anchor_right = 0.1
+anchor_top = 0.65
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="PortraitRect" type="ColorRect" parent="PersistentChrome/GodPortrait"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-text = "Players"
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -60.0
+color = Color(0.4, 0.2, 0.6, 1)
+
+[node name="NameLabel" type="Label" parent="PersistentChrome/GodPortrait"]
+layout_mode = 1
+anchor_top = 0.7
+anchor_right = 1.0
+anchor_bottom = 0.85
+text = "God"
 horizontal_alignment = 1
 
-[node name="Arena" type="Control" parent="."]
+[node name="HPLabel" type="Label" parent="PersistentChrome/GodPortrait"]
 layout_mode = 1
-anchor_left = 0.10
+anchor_top = 0.85
+anchor_right = 1.0
+anchor_bottom = 0.95
+text = "HP: 100"
+horizontal_alignment = 1
+
+[node name="SellBin" type="Button" parent="PersistentChrome/GodPortrait"]
+layout_mode = 1
+anchor_left = 0.2
+anchor_top = 0.92
+anchor_right = 0.8
+anchor_bottom = 1.0
+text = "Sell"
+
+[node name="ArenaRegion" type="Control" parent="."]
+layout_mode = 1
+anchor_left = 0.1
 anchor_right = 0.85
 anchor_top = 0.03
 anchor_bottom = 0.65
+mouse_filter = 2
 
-[node name="BoardUI" type="BoardUI" parent="Arena"]
+[node name="BoardUI" type="BoardUI" parent="ArenaRegion"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
-[node name="MyGod" type="Control" parent="."]
+[node name="BottomPanel" type="Control" parent="."]
 layout_mode = 1
-anchor_top = 0.65
-anchor_right = 0.10
-anchor_bottom = 1.0
-
-[node name="Label" type="Label" parent="MyGod"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-text = "God"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="BottomCenter" type="Control" parent="."]
-layout_mode = 1
-anchor_left = 0.10
-anchor_top = 0.65
+anchor_left = 0.1
 anchor_right = 0.75
-anchor_bottom = 1.0
-
-[node name="ShopUI" type="ShopUI" parent="BottomCenter"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 0.5
-
-[node name="BenchUI" type="BenchUI" parent="BottomCenter"]
-layout_mode = 1
-anchor_top = 0.5
-anchor_right = 1.0
-anchor_bottom = 1.0
-
-[node name="UnitInfo" type="Control" parent="."]
-layout_mode = 1
-anchor_left = 0.75
 anchor_top = 0.65
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="ShopRow" type="ShopUi" parent="BottomPanel"]
+layout_mode = 1
+anchor_right = 1.0
+offset_bottom = 70.0
+
+[node name="LoadoutGrid" type="LoadoutUi" parent="BottomPanel"]
+layout_mode = 1
+anchor_top = 0.2
 anchor_right = 1.0
 anchor_bottom = 1.0
 
-[node name="Label" type="Label" parent="UnitInfo"]
+[node name="ReadyButton" type="Button" parent="."]
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-text = "Unit Info"
-horizontal_alignment = 1
-vertical_alignment = 1
+anchor_left = 0.35
+anchor_top = 0.93
+anchor_right = 0.55
+anchor_bottom = 0.99
+text = "READY"
 
 [node name="DraftUI" type="DraftUI" parent="."]
 visible = false
 layout_mode = 1
-anchor_left = 0.10
+anchor_left = 0.1
 anchor_right = 0.85
 anchor_top = 0.03
-anchor_bottom = 0.30
+anchor_bottom = 0.3
 mouse_filter = 2
 
 [node name="ScoreboardUI" type="ScoreboardUI" parent="."]
@@ -116,12 +139,16 @@ anchor_bottom = 1.0
 [node name="CombatViewerUI" type="CombatViewerUI" parent="."]
 visible = false
 layout_mode = 1
-anchor_left = 0.10
+anchor_left = 0.1
 anchor_right = 0.85
 anchor_top = 0.03
 anchor_bottom = 0.65
 
-[node name="GameManager" type="GameManager" parent="."]
+[node name="GodPickUI" type="GodPickUI" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 
 [node name="DevConsole" type="DevConsole" parent="."]
 layout_mode = 1
@@ -130,16 +157,4 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 2
 
-[node name="GodPickUI" type="GodPickUI" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-
-[node name="ReadyButton" type="Button" parent="."]
-layout_mode = 1
-offset_left = 10.0
-offset_top = 400.0
-offset_right = 110.0
-offset_bottom = 430.0
-text = "[Ready]"
+[node name="GameManager" type="GameManager" parent="."]

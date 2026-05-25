@@ -10,6 +10,8 @@ mod god_pick_ui;
 mod draft_ui;
 mod scoreboard_ui;
 mod dev_console;
+mod loadout_ui;
+mod player_list_ui;
 
 struct Aa2Extension;
 
