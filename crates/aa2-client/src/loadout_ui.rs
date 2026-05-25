@@ -108,7 +108,9 @@ impl LoadoutUi {
                         let mut btn: Gd<Button> = node.cast();
                         if s < equipped.len() {
                             let aname = equipped.get(s).map(|g| g.to_string()).unwrap_or_default();
-                            btn.set_text(&aname);
+                            let level = manager.bind().get_ability_level(0, GString::from(aname.as_str()));
+                            let display = if level > 0 { format!("{aname} Lv{level}") } else { aname };
+                            btn.set_text(&display);
                             btn.set_visible(true);
                         } else {
                             btn.set_text("[+]");
@@ -128,7 +130,9 @@ impl LoadoutUi {
                 let mut btn: Gd<Button> = node.cast();
                 if i < bench.len() {
                     let name = bench.get(i).map(|g| g.to_string()).unwrap_or_default();
-                    btn.set_text(&name);
+                    let level = manager.bind().get_ability_level(0, GString::from(name.as_str()));
+                    let display = if level > 0 { format!("{name} Lv{level}") } else { name };
+                    btn.set_text(&display);
                     btn.set_visible(true);
                 } else {
                     btn.set_visible(false);
