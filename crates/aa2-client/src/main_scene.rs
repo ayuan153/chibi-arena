@@ -1,5 +1,5 @@
 use godot::prelude::*;
-use godot::classes::{Control, IControl};
+use godot::classes::{Control, IControl, Label};
 
 use crate::game_manager::GameManager;
 
@@ -30,6 +30,12 @@ impl IControl for MainScene {
             button.connect("pressed", &self.base().callable("on_ready_pressed"));
         }
 
+        // Connect sell bin button
+        if let Some(btn) = self.base().get_node_or_null("PersistentChrome/GodPortrait/SellBin") {
+            let mut button: Gd<godot::classes::Button> = btn.cast();
+            button.connect("pressed", &self.base().callable("on_sell_pressed"));
+        }
+
         self.switch_to_phase("GodPick");
     }
 
@@ -51,9 +57,19 @@ impl IControl for MainScene {
                     manager.bind_mut().apply_player_action(1, "PickGod".into(), name);
                 }
             }
+            // Auto-ready both players once both have picked gods
+            let p0_god = manager.bind().get_player_god(0).to_string();
+            let p1_god = manager.bind().get_player_god(1).to_string();
+            if !p0_god.is_empty() && !p1_god.is_empty() {
+                godot_print!("[AA2] All gods picked, advancing...");
+                manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
+                manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
+            }
         }
 
         if phase == self.current_phase {
+            // Update top bar info even without phase change
+            self.update_top_bar(&phase);
             return;
         }
 
@@ -83,31 +99,45 @@ impl MainScene {
             manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
         }
     }
+
+    #[func]
+    fn on_sell_pressed(&mut self) {
+        godot_print!("[AA2] Sell bin clicked (not yet implemented)");
+    }
 }
 
 impl MainScene {
     fn switch_to_phase(&mut self, phase: &str) {
-        let (god, draft, shop, board, bench, combat, score) = match phase {
-            "GodPick" => (true, false, false, false, false, false, false),
-            "Shop" | "GracePeriod" => (false, true, true, true, true, false, false),
-            "Combat" => (false, false, false, false, false, true, false),
-            "Finished" => (false, false, false, false, false, false, true),
-            _ => return,
-        };
-        self.set_screen_visible("GodPickUI", god);
-        self.set_screen_visible("DraftUI", draft);
-        self.set_screen_visible("BottomCenter/ShopUI", shop);
-        self.set_screen_visible("Arena/BoardUI", board);
-        self.set_screen_visible("BottomCenter/BenchUI", bench);
-        self.set_screen_visible("CombatViewerUI", combat);
-        self.set_screen_visible("ScoreboardUI", score);
+        godot_print!("[AA2] Switching to phase: {phase}");
 
-        // Show/hide layout regions based on phase
-        self.set_screen_visible("PlayerList", phase != "GodPick");
-        self.set_screen_visible("Arena", phase != "GodPick");
-        self.set_screen_visible("MyGod", phase != "GodPick");
-        self.set_screen_visible("BottomCenter", phase == "Shop" || phase == "GracePeriod");
-        self.set_screen_visible("UnitInfo", false); // placeholder, shown on select later
+        // Phase visibility matrix
+        let show_god_pick = phase == "GodPick";
+        let show_bottom = phase == "Shop" || phase == "GracePeriod";
+        let show_combat = phase == "Combat";
+        let show_scoreboard = phase == "Finished";
+
+        self.set_screen_visible("GodPickUI", show_god_pick);
+        self.set_screen_visible("DraftUI", show_bottom); // draft overlay during shop
+        self.set_screen_visible("BottomPanel", show_bottom);
+        self.set_screen_visible("ArenaRegion", !show_god_pick);
+        self.set_screen_visible("PersistentChrome/PlayerList", !show_god_pick);
+        self.set_screen_visible("PersistentChrome/GodPortrait", !show_god_pick);
+        self.set_screen_visible("CombatViewerUI", show_combat);
+        self.set_screen_visible("ScoreboardUI", show_scoreboard);
+        self.set_screen_visible("ReadyButton", show_bottom);
+
+        self.update_top_bar(phase);
+    }
+
+    fn update_top_bar(&self, phase: &str) {
+        if let Some(node) = self.base().get_node_or_null("PersistentChrome/TopBar/GameInfo") {
+            let mut label: Gd<Label> = node.cast();
+            if let Some(manager) = self.get_manager() {
+                let round = manager.bind().get_round();
+                let text = format!("Round {round} \u{00b7} {phase}");
+                label.set_text(&text);
+            }
+        }
     }
 
     fn set_screen_visible(&self, path: &str, visible: bool) {

@@ -133,17 +133,16 @@ impl GameManager {
         match game.apply_action(player_id as u8, action.clone(), rng) {
             Ok(()) => {
                 // Post-action handling for DraftHero
-                if let Action::DraftHero(idx) = &action {
-                    if let Some(choices) = self.draft_choices.get(&(player_id as u8)) {
-                        if let Some(Some(hero_name)) = choices.get(*idx) {
-                            let name = hero_name.clone();
-                            if let Some(p) = game.players.get_mut(player_id as usize) {
-                                p.heroes.push(name.clone());
-                                p.hero_positions.insert(name, (1000.0, 500.0));
-                            }
-                            self.draft_choices.remove(&(player_id as u8));
-                        }
+                if let Action::DraftHero(idx) = &action
+                    && let Some(choices) = self.draft_choices.get(&(player_id as u8))
+                    && let Some(Some(hero_name)) = choices.get(*idx)
+                {
+                    let name = hero_name.clone();
+                    if let Some(p) = game.players.get_mut(player_id as usize) {
+                        p.heroes.push(name.clone());
+                        p.hero_positions.insert(name, (1000.0, 500.0));
                     }
+                    self.draft_choices.remove(&(player_id as u8));
                 }
                 // Post-Ready: generate draft choices if we just entered a draft round
                 if matches!(action, Action::Ready) {
