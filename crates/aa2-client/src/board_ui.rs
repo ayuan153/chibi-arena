@@ -1,5 +1,5 @@
 use godot::prelude::*;
-use godot::classes::{Button, Control, IControl, InputEvent, InputEventMouseButton, Label};
+use godot::classes::{Button, ColorRect, Control, IControl, InputEvent, InputEventMouseButton, Label};
 use godot::global::MouseButton;
 
 use crate::game_manager::GameManager;
@@ -17,6 +17,21 @@ pub struct BoardUI {
 #[godot_api]
 impl IControl for BoardUI {
     fn ready(&mut self) {
+        // Arena background
+        let mut bg = ColorRect::new_alloc();
+        bg.set_name("ArenaBg");
+        bg.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
+        bg.set_color(Color::from_rgba(0.06, 0.08, 0.15, 1.0)); // dark navy
+        bg.set_mouse_filter(godot::classes::control::MouseFilter::IGNORE);
+        self.base_mut().add_child(&bg);
+
+        // Center dividing line (drawn in process based on actual size)
+        let mut line = ColorRect::new_alloc();
+        line.set_name("CenterLine");
+        line.set_color(Color::from_rgba(0.3, 0.3, 0.5, 0.6));
+        line.set_mouse_filter(godot::classes::control::MouseFilter::IGNORE);
+        self.base_mut().add_child(&line);
+
         // Create hero buttons
         for i in 0..MAX_HEROES {
             let mut btn = Button::new_alloc();
@@ -56,6 +71,11 @@ impl IControl for BoardUI {
             if let Some(mut lbl) = self.try_get_node::<Label>("StatusLabel") {
                 lbl.set_text("");
             }
+            // Hide unit info panel
+            if let Some(node) = self.base().get_node_or_null("/root/MainScene/UnitInfo") {
+                let mut ctrl: Gd<Control> = node.cast();
+                ctrl.set_visible(false);
+            }
         }
     }
 }
@@ -66,6 +86,12 @@ impl BoardUI {
         let Some(manager) = self.get_manager() else { return };
         let heroes = manager.bind().get_heroes(0);
         let size = self.base().get_size();
+
+        // Position center dividing line
+        if let Some(mut line) = self.try_get_node::<ColorRect>("CenterLine") {
+            line.set_position(Vector2::new(0.0, size.y * 0.5 - 1.0));
+            line.set_size(Vector2::new(size.x, 2.0));
+        }
 
         for i in 0..MAX_HEROES {
             let path = format!("Hero{i}");
@@ -93,6 +119,44 @@ impl BoardUI {
                 let text = format!("Selected: {name} — click board to move");
                 lbl.set_text(&text);
             }
+            // Show unit info panel
+            let info = manager.bind().get_hero_info(GString::from(name.as_str()));
+            self.update_unit_info(&info);
+        }
+    }
+
+    fn update_unit_info(&self, info: &VarDictionary) {
+        let Some(panel) = self.base().get_node_or_null("/root/MainScene/UnitInfo") else { return };
+        let mut ctrl: Gd<Control> = panel.cast();
+        ctrl.set_visible(true);
+
+        let name = info.get("name").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        let attr = info.get("attribute").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        let hp = info.get("hp").map(|v| v.to::<i32>()).unwrap_or(0);
+        let mana = info.get("mana").map(|v| v.to::<i32>()).unwrap_or(0);
+        let str_val = info.get("str").map(|v| v.to::<i32>()).unwrap_or(0);
+        let agi_val = info.get("agi").map(|v| v.to::<i32>()).unwrap_or(0);
+        let int_val = info.get("int").map(|v| v.to::<i32>()).unwrap_or(0);
+        let armor = info.get("armor").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        let as_val = info.get("attack_speed").map(|v| v.to::<i32>()).unwrap_or(0);
+        let dmg = info.get("damage").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        let ms = info.get("move_speed").map(|v| v.to::<i32>()).unwrap_or(0);
+        let range = info.get("attack_range").map(|v| v.to::<i32>()).unwrap_or(0);
+
+        let text = format!(
+            "{name} [{attr}]\nHP: {hp}  Mana: {mana}\nSTR: {str_val}  AGI: {agi_val}  INT: {int_val}\nArmor: {armor}  AS: {as_val}\nDmg: {dmg}  MS: {ms}  Range: {range}"
+        );
+
+        if let Some(node) = ctrl.get_node_or_null("InfoLabel") {
+            let mut label: Gd<Label> = node.cast();
+            label.set_text(&text);
+        } else {
+            // Create label on first use
+            let mut label = Label::new_alloc();
+            label.set_name("InfoLabel");
+            label.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
+            label.set_text(&text);
+            ctrl.add_child(&label);
         }
     }
 
