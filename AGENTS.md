@@ -129,6 +129,35 @@ fn test_specific_interaction() {
 - Tests MUST have a doc comment explaining what interaction they verify
 - Never verify by "eyeballing" output — if it's worth checking, it's worth asserting
 
+### GDScript Integration Tests (client/tests/)
+
+Game behavior and bug fixes MUST be locked in with integration tests. Work is not complete until `./dev test` passes.
+
+**When to write an integration test:**
+- New game action or mechanic → test it works via GameManager API
+- Bug fix → regression test proving the bug is fixed
+- New UI wiring → test that the node path exists and signal is connected
+
+**Running:**
+```bash
+./dev test    # Build + run 29 integration tests (requires display)
+cargo test    # Run 234 Rust unit/integration tests
+```
+
+**Test structure:**
+- Fixed seed (42) for determinism — same input always produces same output
+- Each test gets fresh `init_game(42, 2, "../data")`
+- Tests return `true` on pass or error string on fail
+- No visual/pixel assertions — immune to layout changes
+- Node path tests verify stable paths (the "div tagging" equivalent)
+
+**Adding a test:**
+1. Find the appropriate file in `client/tests/test_*.gd`
+2. Add a `func test_your_thing():` method
+3. Use `gm.apply_player_action()` to drive state
+4. Assert with `return assert_eq(actual, expected, "message")`
+5. Run `./dev test` to verify
+
 ## Documentation Updates
 
 When making changes that affect architecture or project plan:
