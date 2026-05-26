@@ -170,7 +170,14 @@ impl GameManager {
                 godot_print!("[AA2] Hero reroll draft started for slot {hero_idx}");
                 return "ok".into();
             }
-            "Ready" => Action::Ready,
+            "Ready" => {
+                // Clear any pending hero reroll (player chose not to pick)
+                if self.pending_reroll.is_some() {
+                    self.pending_reroll = None;
+                    self.draft_choices.remove(&(player_id as u8));
+                }
+                Action::Ready
+            }
             _ => return GString::from(format!("unknown action: {action_str}").as_str()),
         };
 
@@ -548,7 +555,8 @@ impl GameManager {
 
     #[func]
     pub fn is_draft_active(&self) -> bool {
-        self.game.as_ref().map(|g| g.draft_pending).unwrap_or(false)
+        // Show draft UI when player 0 has pending choices (round draft OR hero reroll)
+        self.draft_choices.contains_key(&0)
     }
 
     #[func]
