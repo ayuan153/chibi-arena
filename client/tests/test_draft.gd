@@ -85,3 +85,39 @@ func test_hero_reroll_keeps_abilities():
 			var equipped_after = gm.get_equipped_abilities(0, new_hero)
 			return assert_eq(equipped_after.size(), equipped_before.size(), "abilities preserved")
 	return true
+
+func test_hero_reroll_shows_draft_active():
+	setup_shop()
+	gm.apply_player_action(0, "DraftHero", "0")
+	gm.apply_player_action(1, "DraftHero", "0")
+	gm.set_gold(0, 10)
+	gm.apply_player_action(0, "RerollHero", "0")
+	if not gm.is_draft_active():
+		return "is_draft_active should be true after reroll"
+	return true
+
+func test_hero_reroll_cleared_on_ready():
+	setup_shop()
+	gm.apply_player_action(0, "DraftHero", "0")
+	gm.apply_player_action(1, "DraftHero", "0")
+	gm.set_gold(0, 10)
+	gm.apply_player_action(0, "RerollHero", "0")
+	# Ready without picking — should auto-pick and clear choices
+	gm.apply_player_action(0, "Ready", "")
+	var choices = gm.get_draft_choices(0)
+	if choices.size() > 0:
+		return "draft choices should be cleared after Ready"
+	return true
+
+func test_hero_reroll_auto_picks_on_ready():
+	setup_shop()
+	gm.apply_player_action(0, "DraftHero", "0")
+	gm.apply_player_action(1, "DraftHero", "0")
+	var old_hero = gm.get_heroes(0)[0]
+	gm.set_gold(0, 10)
+	gm.apply_player_action(0, "RerollHero", "0")
+	gm.apply_player_action(0, "Ready", "")
+	var new_hero = gm.get_heroes(0)[0]
+	if new_hero == old_hero:
+		return "hero should have changed after reroll auto-pick, still: " + old_hero
+	return true

@@ -192,3 +192,13 @@ func test_upgrade_rerolls_shop():
 	if before == after:
 		return "offerings unchanged after upgrade"
 	return true
+
+func test_lock_blocks_reroll():
+	setup_shop()
+	gm.apply_player_action(0, "LockShop", "")
+	var gold_before = gm.get_gold(0)
+	var result = gm.apply_player_action(0, "RerollShop", "")
+	if result == "ok":
+		return "reroll should fail when shop is locked"
+	var gold_after = gm.get_gold(0)
+	return assert_eq(gold_after, gold_before, "gold should not change when reroll blocked")

@@ -240,6 +240,10 @@ impl GameManager {
                         }
                     }
                     self.draft_choices.remove(&(player_id as u8));
+                    // Clear draft_pending if no more players need to draft
+                    if !self.draft_choices.values().any(|_| true) {
+                        game.draft_pending = false;
+                    }
                 }
                 // Post-Ready: generate draft choices if we just entered a draft round
                 if matches!(action, Action::Ready) {
