@@ -54,7 +54,7 @@ func run_tests(obj, script_path: String):
 			obj.gm.init_game(42, 2, "../data")
 			var test_name = script_path.get_file() + "::" + m["name"]
 			var result = obj.call(m["name"])
-			if result == null or result == true:
+			if result == null or result is bool and result == true:
 				passed += 1
 				print("  PASS: ", test_name)
 			else:
