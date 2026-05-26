@@ -711,7 +711,36 @@ fn combat_event_to_dict(event: &aa2_sim::CombatEvent) -> VarDictionary {
             d.set("speed", *speed);
         }
         _ => {
-            d.set("type", "Other");
+            // Map remaining events
+            match event {
+                CombatEvent::BuffApplied { tick, target_id, name } => {
+                    d.set("type", "BuffApplied");
+                    d.set("tick", *tick as i32);
+                    d.set("target_id", *target_id as i32);
+                    d.set("name", name.as_str());
+                }
+                CombatEvent::BuffExpired { tick, target_id, name } => {
+                    d.set("type", "BuffExpired");
+                    d.set("tick", *tick as i32);
+                    d.set("target_id", *target_id as i32);
+                    d.set("name", name.as_str());
+                }
+                CombatEvent::DarkPactPulse { tick, caster_id, enemies_hit, self_damage } => {
+                    d.set("type", "DarkPactPulse");
+                    d.set("tick", *tick as i32);
+                    d.set("caster_id", *caster_id as i32);
+                    d.set("enemies_hit", *enemies_hit as i32);
+                    d.set("self_damage", *self_damage);
+                }
+                CombatEvent::WaveHit { tick, target_id, damage, stun_duration } => {
+                    d.set("type", "WaveHit");
+                    d.set("tick", *tick as i32);
+                    d.set("target_id", *target_id as i32);
+                    d.set("damage", *damage);
+                    d.set("stun_duration", *stun_duration);
+                }
+                _ => { d.set("type", "Other"); }
+            }
         }
     }
     d
