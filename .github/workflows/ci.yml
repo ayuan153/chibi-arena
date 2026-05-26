@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
+
+  integration:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Godot
+        run: brew install --cask godot
+      - name: Build client
+        run: |
+          cargo build -p aa2-client
+          mkdir -p client/bin
+          cp target/debug/libaa2_client.dylib client/bin/
+      - name: Run integration tests
+        run: godot --path client/ --script tests/test_runner.gd
