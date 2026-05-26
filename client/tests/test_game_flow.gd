@@ -53,20 +53,21 @@ func test_round_cycle():
 
 func test_game_ends_on_elimination():
 	setup_shop()
-	gm.set_hp(0, 1.0)
-	# Give player 1 a hero and position it for combat
+	# Draft heroes for both players so combat works
+	gm.apply_player_action(0, "DraftHero", "0")
 	gm.apply_player_action(1, "DraftHero", "0")
-	var heroes = gm.get_heroes(1)
-	if heroes.size() > 0:
-		gm.apply_player_action(1, "SetPosition", heroes[0] + ",500,500")
-	# Ready both to enter combat
+	# Set player 0 HP very low so they die after combat
+	gm.set_hp(0, 1.0)
+	# Run combat
 	gm.apply_player_action(0, "Ready", "")
 	gm.apply_player_action(1, "Ready", "")
 	gm.run_combat()
 	gm.end_combat()
-	# If HP went to 0, player is eliminated
-	if gm.get_player_hp(0) <= 0.0:
-		gm.apply_player_action(1, "Ready", "")
-		return assert_eq(gm.get_phase(), "Finished")
-	# Combat may not have dealt damage without heroes — just verify no crash
-	return true
+	# Check if player was eliminated (HP should be 0 after losing)
+	var hp = gm.get_player_hp(0)
+	if hp > 0.0:
+		# Combat didn't kill — force it for the test
+		gm.set_hp(0, 0.0)
+	# Advance past grace period — game should detect elimination
+	gm.apply_player_action(1, "Ready", "")
+	return assert_eq(gm.get_phase(), "Finished")

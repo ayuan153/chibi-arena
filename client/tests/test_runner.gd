@@ -30,6 +30,11 @@ func run_all_tests():
 		failed += 1
 		return
 
+	# Disable MainScene processing so it doesn't interfere with tests
+	var main_scene = root.get_node("MainScene")
+	if main_scene:
+		main_scene.set_process(false)
+
 	var test_scripts := [
 		"res://tests/test_game_flow.gd",
 		"res://tests/test_shop_mechanics.gd",

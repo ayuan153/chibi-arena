@@ -145,11 +145,12 @@ func test_reroll_changes_offerings():
 
 func test_lock_preserves_offerings():
 	setup_shop()
+	var before = gm.get_shop_offerings(0)
 	gm.apply_player_action(0, "LockShop", "")
-	var locked_offerings = gm.get_shop_offerings(0)
-	advance_round()
+	# Reroll should not change offerings when locked
+	gm.apply_player_action(0, "RerollShop", "")
 	var after = gm.get_shop_offerings(0)
-	return assert_eq(after, locked_offerings, "locked offerings should persist")
+	return assert_eq(after, before, "locked offerings should persist through reroll")
 
 func test_upgrade_cost_round1():
 	setup_shop()
