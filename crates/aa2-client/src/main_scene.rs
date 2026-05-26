@@ -76,6 +76,16 @@ impl IControl for MainScene {
         }
 
         if phase == self.current_phase {
+            // Check if combat viewer finished playing
+            if phase == "Combat" && self.combat_started
+                && let Some(viewer) = self.base().get_node_or_null("CombatViewerUI")
+            {
+                let viewer: Gd<crate::combat_viewer_ui::CombatViewerUI> = viewer.cast();
+                if !viewer.bind().is_playing() {
+                    godot_print!("[AA2] Combat playback finished, advancing...");
+                    manager.bind_mut().end_combat();
+                }
+            }
             // Update top bar info even without phase change
             self.update_top_bar(&phase);
             return;
@@ -96,8 +106,11 @@ impl IControl for MainScene {
         if phase == "Combat" && !self.combat_started {
             manager.bind_mut().run_combat();
             self.combat_started = true;
-            // Auto-advance past combat (no animation yet)
-            manager.bind_mut().end_combat();
+            // Start combat viewer playback
+            if let Some(viewer) = self.base().get_node_or_null("CombatViewerUI") {
+                let mut viewer: Gd<crate::combat_viewer_ui::CombatViewerUI> = viewer.cast();
+                viewer.bind_mut().start_playback(0);
+            }
         }
 
         if phase == "GracePeriod" {
