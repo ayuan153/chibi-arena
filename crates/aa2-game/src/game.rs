@@ -40,6 +40,8 @@ pub struct GameConfig {
     /// When true, timer reaching 0 auto-triggers phase transitions.
     /// When false (dev mode), transitions require manual trigger.
     pub auto_advance: bool,
+    /// Maximum bench capacity.
+    pub bench_capacity: u32,
 }
 
 impl Default for GameConfig {
@@ -51,6 +53,7 @@ impl Default for GameConfig {
             reroll_cost_override: None,
             ultimate_unlock_level: 3,
             auto_advance: true,
+            bench_capacity: 5,
         }
     }
 }
@@ -340,7 +343,8 @@ impl GameState {
         match action {
             Action::Buy(slot) => {
                 if let Some(Some(name)) = self.players[p_idx].shop.offerings.get(slot).cloned() {
-                    self.players[p_idx].buy_ability(&name, &mut self.pool)
+                    let bench_cap = self.config.bench_capacity as usize;
+                    self.players[p_idx].buy_ability(&name, &mut self.pool, bench_cap)
                         .map_err(|e| e.to_string())?;
                     self.players[p_idx].shop.offerings[slot] = None;
                 } else {

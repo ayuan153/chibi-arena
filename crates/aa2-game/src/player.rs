@@ -78,7 +78,7 @@ impl PlayerState {
     }
 
     /// Buy an ability. If new, goes to bench. If duplicate, levels up (no bench slot).
-    pub fn buy_ability(&mut self, name: &str, pool: &mut AbilityPool) -> Result<(), &'static str> {
+    pub fn buy_ability(&mut self, name: &str, pool: &mut AbilityPool, bench_cap: usize) -> Result<(), &'static str> {
         if self.gold < BUY_COST {
             return Err("not enough gold");
         }
@@ -88,7 +88,7 @@ impl PlayerState {
             if level >= MAX_ABILITY_LEVEL {
                 return Err("ability at max level");
             }
-        } else if self.bench.len() >= MAX_BENCH {
+        } else if self.bench.len() >= bench_cap {
             return Err("bench is full");
         }
         if !pool.take(name) {
@@ -257,7 +257,7 @@ mod tests {
         p.gold = 10;
         let mut pool = test_pool();
 
-        assert!(p.buy_ability("fireball", &mut pool).is_ok());
+        assert!(p.buy_ability("fireball", &mut pool, MAX_BENCH).is_ok());
         assert_eq!(p.gold, 7);
         assert_eq!(p.abilities["fireball"], 1);
         assert_eq!(p.bench, vec!["fireball".to_string()]);
@@ -270,8 +270,8 @@ mod tests {
         p.gold = 10;
         let mut pool = test_pool();
 
-        p.buy_ability("fireball", &mut pool).unwrap();
-        p.buy_ability("fireball", &mut pool).unwrap();
+        p.buy_ability("fireball", &mut pool, MAX_BENCH).unwrap();
+        p.buy_ability("fireball", &mut pool, MAX_BENCH).unwrap();
         assert_eq!(p.abilities["fireball"], 2);
         // Bench should still only have one entry
         assert_eq!(p.bench.len(), 1);
@@ -287,11 +287,11 @@ mod tests {
         for i in 0..5 {
             let name = format!("ability_{i}");
             pool.counts.insert(name.clone(), 10);
-            p.buy_ability(&name, &mut pool).unwrap();
+            p.buy_ability(&name, &mut pool, MAX_BENCH).unwrap();
         }
         assert_eq!(p.bench.len(), 5);
         // New ability should be rejected
-        let result = p.buy_ability("fireball", &mut pool);
+        let result = p.buy_ability("fireball", &mut pool, MAX_BENCH);
         assert_eq!(result, Err("bench is full"));
     }
 
@@ -303,7 +303,7 @@ mod tests {
         p.bench.push("fireball".to_string());
         let mut pool = test_pool();
 
-        let result = p.buy_ability("fireball", &mut pool);
+        let result = p.buy_ability("fireball", &mut pool, MAX_BENCH);
         assert_eq!(result, Err("ability at max level"));
     }
 
