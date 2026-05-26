@@ -53,23 +53,30 @@ func test_buy_fails_when_broke():
 func test_buy_fails_bench_full():
 	setup_shop()
 	gm.set_gold(0, 99)
-	# Buy 5 abilities across multiple rerolls to fill bench
-	var bought := 0
-	for _attempt in range(20):
-		if bought >= 5:
+	# Buy abilities until bench is full (5 unique)
+	for _attempt in range(30):
+		if gm.get_bench(0).size() >= 5:
 			break
 		var offerings = gm.get_shop_offerings(0)
+		var bought_one := false
 		for i in range(offerings.size()):
-			if bought >= 5:
+			if offerings[i] == "":
+				continue
+			# Only buy if it won't be a duplicate (would level up, not fill bench)
+			var bench = gm.get_bench(0)
+			var is_dup := false
+			for b in bench:
+				if b == offerings[i]:
+					is_dup = true
+					break
+			if not is_dup:
+				gm.apply_player_action(0, "Buy", str(i))
+				bought_one = true
 				break
-			if offerings[i] != "":
-				var r = gm.apply_player_action(0, "Buy", str(i))
-				if r == "ok":
-					bought += 1
-		if bought < 5:
+		if not bought_one:
 			gm.apply_player_action(0, "RerollShop", "")
-	if bought < 5:
-		return "could not fill bench, only bought %d" % bought
+	if gm.get_bench(0).size() < 5:
+		return "could not fill bench to 5, got %d" % gm.get_bench(0).size()
 	# Now try to buy a 6th (should fail)
 	gm.apply_player_action(0, "RerollShop", "")
 	var offerings = gm.get_shop_offerings(0)
