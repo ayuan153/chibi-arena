@@ -56,6 +56,29 @@ When fixing a bug:
 
 **No fix ships without a test.** If the fix is game logic, use a GameScenario or unit test. If the fix is purely CLI/presentation (no state mutation), a test is optional but the fix must not break existing tests.
 
+## Definition of Done (GATE)
+
+A change is NOT complete until ALL of the following are true:
+
+1. `cargo check && cargo clippy -- -D warnings && cargo test` passes
+2. Every bug fix has a regression test that FAILS without the fix and PASSES with it
+3. Every new behavior has a test proving it works
+4. `./dev test` passes (all GDScript integration tests green)
+
+**Write the test BEFORE declaring the work done.** Do not wait to be asked.
+
+## Test Failure Protocol (MANDATORY)
+
+When a test fails, follow this decision tree:
+
+1. **Is the test asserting correct expected behavior?** (Check the game design, ask the user if unclear)
+2. If YES → **the code is wrong.** Fix the code, not the test.
+3. If NO → **the test is wrong.** Fix the test assertion to match correct behavior.
+
+**NEVER** make a test pass by weakening its assertion, testing on a different round, or adding workarounds that avoid the buggy code path. If the test exposed a real behavior issue, fix the behavior.
+
+**NEVER** change a test to assert on what the code currently does when what the code does is wrong. The test's job is to define correct behavior — the code's job is to implement it.
+
 ## Integration Tests (MANDATORY)
 
 **Every manual verification MUST become an automated test.** If you ran the dev binary and checked the output to verify something works, that verification must be encoded as a test before the work is considered done.
