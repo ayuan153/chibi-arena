@@ -771,7 +771,7 @@ fn handle_buy(game: &mut GameState, player_id: usize, index: usize, ultimates: &
         println!("  Ultimates require shop level {}", game.config.ultimate_unlock_level);
         return;
     }
-    match game.players[player_id].buy_ability(&name, &mut game.pool) {
+    match game.players[player_id].buy_ability(&name, &mut game.pool, game.config.bench_capacity as usize) {
         Ok(()) => {
             // Mark slot as sold
             game.players[player_id].shop.offerings[index - 1] = None;
@@ -914,7 +914,7 @@ fn ai_take_actions(
                 break;
             }
 
-            if game.players[i].buy_ability(&name, &mut game.pool).is_ok() {
+            if game.players[i].buy_ability(&name, &mut game.pool, game.config.bench_capacity as usize).is_ok() {
                 game.players[i].shop.offerings[idx] = None;
             }
         }

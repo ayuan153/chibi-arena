@@ -253,7 +253,8 @@ fn execute_action(
     match action {
         Action::Buy(slot) => {
             if let Some(Some(name)) = game.players[p_idx].shop.offerings.get(*slot).cloned() {
-                let _ = game.players[p_idx].buy_ability(&name, &mut game.pool);
+                let bench_cap = game.config.bench_capacity as usize;
+                let _ = game.players[p_idx].buy_ability(&name, &mut game.pool, bench_cap);
                 game.players[p_idx].shop.offerings[*slot] = None;
             }
         }
@@ -314,7 +315,8 @@ fn ai_actions(game: &mut GameState, player_idx: usize, ultimates: &HashSet<Strin
         }
         let slot = offerings[rng.gen_range(0..offerings.len())];
         if let Some(Some(name)) = game.players[player_idx].shop.offerings.get(slot).cloned() {
-            let _ = game.players[player_idx].buy_ability(&name, &mut game.pool);
+            let bench_cap = game.config.bench_capacity as usize;
+            let _ = game.players[player_idx].buy_ability(&name, &mut game.pool, bench_cap);
             game.players[player_idx].shop.offerings[slot] = None;
         }
         buys += 1;

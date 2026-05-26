@@ -273,7 +273,7 @@ fn test_grace_period_gold_spending_then_reset() {
     // Player buys an ability during grace period (costs BUY_COST=3)
     game.pool.counts.insert("test_ability".to_string(), 10);
     game.players[0]
-        .buy_ability("test_ability", &mut game.pool)
+        .buy_ability("test_ability", &mut game.pool, game.config.bench_capacity as usize)
         .unwrap();
     assert_eq!(game.players[0].gold, 2); // 5 - 3
 
@@ -605,7 +605,7 @@ fn test_full_equip_flow_multiword_names() {
 
     // Buy it
     player.gold = 10;
-    let buy_result = player.buy_ability(&ability_name, &mut game.pool);
+    let buy_result = player.buy_ability(&ability_name, &mut game.pool, game.config.bench_capacity as usize);
     assert!(buy_result.is_ok(), "buy_ability failed: {buy_result:?}");
 
     // Verify it's on bench with exact name (spaces, proper case preserved)

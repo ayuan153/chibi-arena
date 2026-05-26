@@ -83,6 +83,18 @@ case "${1:-all}" in
         cargo test
         echo "✓ All checks pass"
         ;;
+    test)
+        build
+        godot_bin="$(find_godot)"
+        if [ -z "$godot_bin" ]; then
+            echo "✗ Godot not found. Run: ./dev setup"
+            exit 1
+        fi
+        echo "→ Running integration tests..."
+        cd "$CLIENT_DIR"
+        "$godot_bin" --path . --script tests/test_runner.gd
+        echo "✓ Integration tests complete"
+        ;;
     setup)
         echo "→ Installing Godot via Homebrew..."
         if ! command -v brew &>/dev/null; then
@@ -93,13 +105,14 @@ case "${1:-all}" in
         echo "✓ Godot installed. Run: ./dev"
         ;;
     *)
-        echo "Usage: ./dev [all|client|editor|run|check|setup]"
+        echo "Usage: ./dev [all|client|editor|run|check|test|setup]"
         echo ""
         echo "  all      Build all + launch Godot (default)"
         echo "  client   Build aa2-client + launch Godot"
         echo "  editor   Build + open Godot editor (inspect/debug)"
         echo "  run      Skip build, just launch Godot"
         echo "  check    cargo check + clippy + test"
+        echo "  test     Build + run integration tests (requires display)"
         echo "  setup    Install Godot via Homebrew"
         exit 1
         ;;
