@@ -213,6 +213,9 @@ impl PlayerState {
         reroll_cost: u32,
         rng: &mut impl rand::Rng,
     ) -> Result<(), &'static str> {
+        if self.shop.locked {
+            return Err("shop is locked");
+        }
         if self.gold < reroll_cost {
             return Err("not enough gold");
         }

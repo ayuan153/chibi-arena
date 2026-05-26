@@ -73,6 +73,9 @@ impl GameManager {
         };
         self.game = Some(GameState::new(pool, ultimates, config));
         self.rng = Some(StdRng::seed_from_u64(seed as u64));
+        self.draft_choices.clear();
+        self.pending_reroll = None;
+        self.last_phase.clear();
 
         // Mark extra players as dead
         if let Some(ref mut game) = self.game {

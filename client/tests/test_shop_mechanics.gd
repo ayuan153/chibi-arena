@@ -147,8 +147,10 @@ func test_lock_preserves_offerings():
 	setup_shop()
 	var before = gm.get_shop_offerings(0)
 	gm.apply_player_action(0, "LockShop", "")
-	# Reroll should not change offerings when locked
-	gm.apply_player_action(0, "RerollShop", "")
+	# Reroll should fail when locked
+	var result = gm.apply_player_action(0, "RerollShop", "")
+	if result == "ok":
+		return "reroll should fail when shop is locked"
 	var after = gm.get_shop_offerings(0)
 	return assert_eq(after, before, "locked offerings should persist through reroll")
 
