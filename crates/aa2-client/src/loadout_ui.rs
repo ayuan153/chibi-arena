@@ -16,6 +16,9 @@ pub struct LoadoutUi {
     /// Currently selected bench ability for equip flow
     #[init(val = String::new())]
     selected_ability: String,
+    /// Source slot for ability swap: (hero_idx, slot_idx)
+    #[init(val = None)]
+    swap_source: Option<(usize, usize)>,
 }
 
 #[godot_api]
@@ -151,22 +154,53 @@ impl LoadoutUi {
     }
 
     fn equip_to_slot(&mut self, hero_idx: usize, slot_idx: usize) {
-        if self.selected_ability.is_empty() {
-            // If no ability selected, unequip from this slot
-            self.unequip_slot(hero_idx, slot_idx);
+        if !self.selected_ability.is_empty() {
+            // Equip from bench
+            let Some(manager) = self.get_manager() else { return };
+            let heroes = manager.bind().get_heroes(0);
+            let hero = heroes.get(hero_idx).map(|g| g.to_string()).unwrap_or_default();
+            if hero.is_empty() { return; }
+            let param = format!("{},{}", self.selected_ability, hero);
+            godot_print!("[AA2] Equip: {param}");
+            if let Some(mut mgr) = self.get_manager() {
+                mgr.bind_mut().apply_player_action(0, "Equip".into(), GString::from(param.as_str()));
+            }
+            self.selected_ability.clear();
+            self.swap_source = None;
             return;
         }
+
+        // No bench ability selected — handle swap or unequip
+        if let Some((src_hero, src_slot)) = self.swap_source
+            && src_hero == hero_idx && src_slot != slot_idx
+        {
+                // Swap abilities within same hero
+                let Some(manager) = self.get_manager() else { return };
+                let heroes = manager.bind().get_heroes(0);
+                let hero = heroes.get(hero_idx).map(|g| g.to_string()).unwrap_or_default();
+                let param = format!("{hero},{src_slot},{slot_idx}");
+                godot_print!("[AA2] Swap: {param}");
+                if let Some(mut mgr) = self.get_manager() {
+                    mgr.bind_mut().apply_player_action(0, "SwapAbilities".into(), GString::from(param.as_str()));
+                }
+                self.swap_source = None;
+                return;
+        }
+
+        // First click on an equipped slot — check if it has an ability to start swap
         let Some(manager) = self.get_manager() else { return };
         let heroes = manager.bind().get_heroes(0);
         let hero = heroes.get(hero_idx).map(|g| g.to_string()).unwrap_or_default();
-        if hero.is_empty() { return; }
-
-        let param = format!("{},{}", self.selected_ability, hero);
-        godot_print!("[AA2] Equip: {param}");
-        if let Some(mut mgr) = self.get_manager() {
-            mgr.bind_mut().apply_player_action(0, "Equip".into(), GString::from(param.as_str()));
+        let equipped = manager.bind().get_equipped_abilities(0, GString::from(hero.as_str()));
+        if slot_idx < equipped.len() && !equipped.get(slot_idx).map(|g| g.to_string()).unwrap_or_default().is_empty() {
+            // Start swap — select this slot as source
+            self.swap_source = Some((hero_idx, slot_idx));
+            godot_print!("[AA2] Swap source: hero {hero_idx} slot {slot_idx}");
+        } else {
+            // Empty slot or out of range — unequip (legacy behavior)
+            self.swap_source = None;
+            self.unequip_slot(hero_idx, slot_idx);
         }
-        self.selected_ability.clear();
     }
 
     fn unequip_slot(&mut self, hero_idx: usize, slot_idx: usize) {

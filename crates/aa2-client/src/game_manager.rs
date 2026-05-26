@@ -124,6 +124,22 @@ impl GameManager {
                     None => return GString::from("unknown god"),
                 }
             }
+            "SwapAbilities" => {
+                // param: "hero_name,slot_a,slot_b"
+                let parts: Vec<&str> = param_str.splitn(3, ',').collect();
+                if parts.len() != 3 { return "invalid params".into(); }
+                let hero_name = parts[0];
+                let slot_a: usize = parts[1].parse().unwrap_or(0);
+                let slot_b: usize = parts[2].parse().unwrap_or(0);
+                let p = &mut game.players[player_id as usize];
+                if let Some(abilities) = p.equipped.get_mut(hero_name)
+                    && slot_a < abilities.len() && slot_b < abilities.len()
+                {
+                    abilities.swap(slot_a, slot_b);
+                    return "ok".into();
+                }
+                return "invalid slot".into();
+            }
             "DraftHero" => {
                 let idx: usize = param_str.parse().unwrap_or(0);
                 Action::DraftHero(idx)
@@ -140,12 +156,12 @@ impl GameManager {
                 }
                 game.players[player_id as usize].gold -= 2;
                 // Generate choices across all tiers
-                use aa2_game::draft::generate_draft_choices;
+                use aa2_game::draft::generate_reroll_choices;
                 let owned: Vec<&str> = game.players[player_id as usize].heroes.iter().map(|s| s.as_str()).collect();
                 let available: Vec<&HeroDef> = self.hero_defs.values()
                     .filter(|h| !owned.contains(&h.name.as_str()))
                     .collect();
-                let choices = generate_draft_choices(&available, 0, rng);
+                let choices = generate_reroll_choices(&available, rng);
                 self.draft_choices.insert(player_id as u8, choices);
                 self.pending_reroll = Some(hero_idx);
                 godot_print!("[AA2] Hero reroll draft started for slot {hero_idx}");
