@@ -171,10 +171,39 @@ impl GameManager {
                 return "ok".into();
             }
             "Ready" => {
-                // Clear any pending hero reroll (player chose not to pick)
-                if self.pending_reroll.is_some() {
-                    self.pending_reroll = None;
+                // Auto-pick random draft choice if pending (reroll or round draft)
+                if let Some(choices) = self.draft_choices.get(&(player_id as u8)).cloned() {
+                    let valid: Vec<usize> = choices.iter().enumerate()
+                        .filter(|(_, c)| c.is_some())
+                        .map(|(i, _)| i)
+                        .collect();
+                    let pick_idx = if valid.is_empty() { 0 } else {
+                        use rand::seq::SliceRandom;
+                        *valid.choose(rng).unwrap()
+                    };
+                    let hero_name = choices[pick_idx].clone().unwrap_or_default();
+                    if !hero_name.is_empty()
+                        && let Some(p) = game.players.get_mut(player_id as usize)
+                    {
+                        if let Some(reroll_idx) = self.pending_reroll {
+                            if reroll_idx < p.heroes.len() {
+                                let old = p.heroes[reroll_idx].clone();
+                                p.heroes[reroll_idx] = hero_name.clone();
+                                if let Some(pos) = p.hero_positions.remove(&old) {
+                                    p.hero_positions.insert(hero_name.clone(), pos);
+                                }
+                                if let Some(abilities) = p.equipped.remove(&old) {
+                                    p.equipped.insert(hero_name.clone(), abilities);
+                                }
+                                godot_print!("[AA2] Auto-rerolled {old} -> {hero_name}");
+                            }
+                        } else {
+                            p.heroes.push(hero_name.clone());
+                            p.hero_positions.insert(hero_name, (500.0, 1500.0));
+                        }
+                    }
                     self.draft_choices.remove(&(player_id as u8));
+                    self.pending_reroll = None;
                 }
                 Action::Ready
             }
