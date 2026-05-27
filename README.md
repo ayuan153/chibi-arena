@@ -1,6 +1,19 @@
-# AA2 — Ability Arena 2
+# Chibi Arena
 
-A standalone cross-platform autobattler inspired by the Dota 2 mod Ability Arena. Eight players compete in a free-for-all, picking gods, drafting hero bodies, and equipping abilities to outlast their opponents.
+A cross-platform autobattler built in Rust with Godot 4.3 via GDExtension. Deterministic combat simulation, multi-crate architecture, WebSocket networking with 10 Hz state sync, and 263 tests across Rust and GDScript.
+
+Eight players compete in free-for-all matches — picking gods, drafting hero bodies, and equipping abilities to outlast their opponents.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Simulation | Rust — deterministic combat engine with fixed-seed reproducibility |
+| Game Logic | Rust — state machine, economy, draft system |
+| Client | Godot 4.3 + GDExtension via gdext (Rust → GDScript FFI) |
+| Server | Rust — authoritative game server (Phase 4) |
+| Networking | WebSocket, state-sync at 10 Hz |
+| Data | RON files (dev) / PostgreSQL JSONB (production) |
 
 ## Status
 
@@ -35,10 +48,10 @@ cargo clippy -- -D warnings  # Lint
 
 All tests use fixed seeds for determinism. Integration tests require a display server (macOS works natively, Linux needs Xvfb).
 
-## Project Structure
+## Architecture
 
 ```
-aa2/
+chibi-arena/
 ├── crates/
 │   ├── aa2-sim/        # Deterministic combat simulation
 │   ├── aa2-data/       # Shared types, schemas, RON loaders
@@ -53,16 +66,11 @@ aa2/
 └── README.md
 ```
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Simulation | Rust (`aa2-sim`, `aa2-data` crates) |
-| Game Logic | Rust (`aa2-game` crate) |
-| Client | Godot 4.3 + gdext (`aa2-client` crate) |
-| Server | Rust (`aa2-server`, Phase 4) |
-| Networking | WebSocket, state-sync at 10 Hz |
-| Data | RON files (dev) / PostgreSQL JSONB (production) |
+Key design decisions:
+- **Multi-crate workspace** — sim, data, game, client, and server are independent crates with clean dependency boundaries
+- **Deterministic simulation** — fixed-seed combat enables reproducible tests, replays, and server-authoritative validation
+- **Rust → Godot FFI via gdext** — game logic lives in Rust; Godot handles rendering and input through GDExtension bindings
+- **Data-driven design** — game content (gods, abilities, heroes) defined in RON files, loaded at runtime
 
 ## Game Overview
 
