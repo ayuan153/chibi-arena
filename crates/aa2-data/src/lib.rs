@@ -229,12 +229,7 @@ pub fn value_at_level(values: &[f32], level: u8) -> f32 {
     values[idx]
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GodDef {
-    pub name: String,
-    pub passive_description: String,
-    pub active_description: String,
-}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StatBonuses {
@@ -253,6 +248,54 @@ pub struct ItemDef {
     pub tier: u8,
     pub effects: Vec<Effect>,
     pub stat_bonuses: StatBonuses,
+}
+
+/// God passive types.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GodPassive {
+    /// Archmage: chance to +1 level a random ability at shop start.
+    Sorcery {
+        /// Chance to trigger at shop phase start (0.0 to 1.0).
+        trigger_chance: f32,
+    },
+    /// Paladin: Buff selected unit with bonus HP and damage reflection.
+    RadiantShield {
+        /// Bonus HP = multiplier * round_number.
+        hp_per_round: f32,
+        /// Damage reflection percentage (0.0 to 1.0).
+        reflection_pct: f32,
+    },
+}
+
+/// God definition for the game.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct God {
+    /// Display name.
+    pub name: String,
+    /// Human-readable description.
+    pub description: String,
+    /// Passive effect.
+    pub passive: GodPassive,
+}
+
+/// Loads a single `God` from a `.ron` file at the given path.
+pub fn load_god_def(path: &std::path::Path) -> Result<God, String> {
+    let contents = std::fs::read_to_string(path).map_err(|e| format!("{path:?}: {e}"))?;
+    ron::from_str(&contents).map_err(|e| format!("{path:?}: {e}"))
+}
+
+/// Loads all `God`s from `.ron` files in the given directory.
+pub fn load_all_gods(dir: &std::path::Path) -> Result<Vec<God>, String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("{dir:?}: {e}"))?;
+    let mut gods = Vec::new();
+    for entry in entries {
+        let path = entry.map_err(|e| format!("{dir:?}: {e}"))?.path();
+        if path.extension().is_some_and(|ext| ext == "ron") {
+            gods.push(load_god_def(&path)?);
+        }
+    }
+    gods.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(gods)
 }
 
 /// A fully-configured unit ready for combat.

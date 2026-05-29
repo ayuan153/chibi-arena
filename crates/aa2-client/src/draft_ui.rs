@@ -2,6 +2,7 @@ use godot::prelude::*;
 use godot::classes::{Button, Control, IControl, Label, VBoxContainer};
 
 use crate::game_manager::GameManager;
+use crate::ui_helpers::attribute_stylebox;
 
 #[derive(GodotClass)]
 #[class(init, base=Control)]
@@ -52,9 +53,13 @@ impl IControl for DraftUI {
                 if text.is_empty() {
                     btn.set_text("—");
                     btn.set_disabled(true);
+                    btn.remove_theme_stylebox_override("normal");
                 } else {
                     btn.set_text(&text);
                     btn.set_disabled(false);
+                    let info = manager.bind().get_hero_info(GString::from(text.as_str()));
+                    let attr = info.get("attribute").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+                    btn.add_theme_stylebox_override("normal", &attribute_stylebox(&attr));
                 }
             }
         }

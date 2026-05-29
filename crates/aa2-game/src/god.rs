@@ -1,41 +1,12 @@
 //! God system — passive abilities that modify gameplay.
 
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+
+pub use aa2_data::{God, GodPassive};
 
 use crate::player::PlayerState;
 
-/// God passive types.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GodPassive {
-    /// Archmage: 40% chance to +1 level a random ability at shop start.
-    /// Also triggers guaranteed on every shop upgrade.
-    Sorcery {
-        /// Chance to trigger at shop phase start (0.0 to 1.0).
-        trigger_chance: f32,
-    },
-    /// Paladin: Buff selected unit with bonus HP and damage reflection.
-    /// Applied at combat start. One unit at a time.
-    RadiantShield {
-        /// Bonus HP = multiplier * round_number.
-        hp_per_round: f32,
-        /// Damage reflection percentage (0.0 to 1.0).
-        reflection_pct: f32,
-    },
-}
-
-/// God definition for the game.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct God {
-    /// Display name.
-    pub name: String,
-    /// Passive effect.
-    pub passive: GodPassive,
-    /// Human-readable description.
-    pub description: String,
-}
-
-/// Create the Archmage god.
+/// Create the Archmage god (for tests/convenience).
 pub fn archmage() -> God {
     God {
         name: "Archmage".to_string(),
@@ -44,7 +15,7 @@ pub fn archmage() -> God {
     }
 }
 
-/// Create the Paladin god.
+/// Create the Paladin god (for tests/convenience).
 pub fn paladin() -> God {
     God {
         name: "Paladin".to_string(),
@@ -56,7 +27,7 @@ pub fn paladin() -> God {
     }
 }
 
-/// Returns all available gods.
+/// Returns all available gods (hardcoded fallback for tests).
 pub fn all_gods() -> Vec<God> {
     vec![archmage(), paladin()]
 }

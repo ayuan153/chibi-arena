@@ -17,10 +17,11 @@ Eight players compete in free-for-all matches — picking gods, drafting hero bo
 
 ## Status
 
-Sprint 1 complete — core game loop playable:
-- God pick → Shop (buy/reroll/lock/upgrade) → Draft heroes → Equip abilities → Combat → repeat
-- 2-player local dev mode, 6 heroes, 11 abilities
-- 29 integration tests, 234 unit tests
+Sprint 4 in progress — polished UI with endgame:
+- God pick (grid overlay) → Shop → Draft → Equip → Combat (animated) → Endgame
+- 2-player local dev mode, 6 heroes, 11 abilities, 2 gods (data-driven)
+- Attribute-colored heroes, ability tooltips, summary overlay, endgame screen
+- 38 integration tests, 234 unit tests
 
 ## Quick Start
 
@@ -42,7 +43,7 @@ Sprint 1 complete — core game loop playable:
 
 ```bash
 cargo test              # 234 Rust tests (game logic, sim, data)
-./dev test              # 29 GDScript integration tests (full Godot + FFI)
+./dev test              # 38 GDScript integration tests (full Godot + FFI)
 cargo clippy -- -D warnings  # Lint
 ```
 

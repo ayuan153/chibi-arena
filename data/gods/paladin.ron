@@ -1,0 +1,5 @@
+God(
+    name: "Paladin",
+    description: "Gain 70 HP per round. Reflect 35% of damage taken",
+    passive: RadiantShield(hp_per_round: 70.0, reflection_pct: 0.35),
+)

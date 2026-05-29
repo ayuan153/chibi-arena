@@ -7,10 +7,10 @@ use rand::SeedableRng;
 
 use aa2_game::{GameConfig, GamePhase, GameState};
 use aa2_game::combat::CombatResult;
-use aa2_game::god::all_gods;
+use aa2_game::god;
 use aa2_game::scenario::Action;
 use aa2_game::pool::AbilityPool;
-use aa2_data::{AbilityDef, HeroDef};
+use aa2_data::{AbilityDef, God, HeroDef};
 
 #[derive(GodotClass)]
 #[class(init, base=Node)]
@@ -19,6 +19,7 @@ pub struct GameManager {
     game: Option<GameState>,
     hero_defs: HashMap<String, HeroDef>,
     ability_defs: HashMap<String, AbilityDef>,
+    gods: Vec<God>,
     rng: Option<StdRng>,
     last_combat_results: Vec<CombatResult>,
     /// Draft choices per player: [STR, AGI, INT] hero names
@@ -67,11 +68,16 @@ impl GameManager {
             .collect();
         let pool = AbilityPool::from_counts(pool_counts);
 
+        // Load gods
+        self.gods = aa2_data::load_all_gods(&data_dir.join("gods")).unwrap_or_else(|_| god::all_gods());
+
         let config = GameConfig {
             auto_advance: false,
             ..GameConfig::default()
         };
-        self.game = Some(GameState::new(pool, ultimates, config));
+        let mut game = GameState::new(pool, ultimates, config);
+        game.gods = self.gods.clone();
+        self.game = Some(game);
         self.rng = Some(StdRng::seed_from_u64(seed as u64));
         self.draft_choices.clear();
         self.pending_reroll = None;
@@ -121,8 +127,8 @@ impl GameManager {
                 Action::Unequip(parts[0].to_string(), parts[1].to_string())
             }
             "PickGod" => {
-                let gods = all_gods();
-                match gods.into_iter().find(|g| g.name == param_str) {
+                let gods = &self.gods;
+                match gods.iter().find(|g| g.name == param_str).cloned() {
                     Some(god) => Action::PickGod(god),
                     None => return GString::from("unknown god"),
                 }
@@ -460,6 +466,37 @@ impl GameManager {
     }
 
     #[func]
+    pub fn get_ability_info(&self, name: GString) -> VarDictionary {
+        let mut dict = VarDictionary::new();
+        let Some(def) = self.ability_defs.get(&name.to_string()) else { return dict };
+
+        let mana_str = def.mana_cost.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" / ");
+        let cd_str = def.cooldown.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" / ");
+        let targeting_str = match &def.targeting {
+            aa2_data::TargetType::SingleEnemy => "Single Enemy",
+            aa2_data::TargetType::SingleAlly => "Single Ally",
+            aa2_data::TargetType::SingleAllyHG => "Single Ally (HG)",
+            aa2_data::TargetType::PointAoE => "Point AoE",
+            aa2_data::TargetType::NoTarget => "No Target",
+            aa2_data::TargetType::Passive => "Passive",
+        };
+
+        dict.set("name", &Variant::from(GString::from(def.name.as_str())));
+        dict.set("description", &Variant::from(GString::from(def.description.as_str())));
+        dict.set("mana_cost", &Variant::from(GString::from(mana_str.as_str())));
+        dict.set("cooldown", &Variant::from(GString::from(cd_str.as_str())));
+        dict.set("cast_range", def.cast_range);
+        dict.set("is_ultimate", def.is_ultimate);
+        dict.set("targeting", &Variant::from(GString::from(targeting_str)));
+        dict
+    }
+
+    #[func]
+    pub fn get_ability_is_ultimate(&self, name: GString) -> bool {
+        self.ability_defs.get(&name.to_string()).is_some_and(|a| a.is_ultimate)
+    }
+
+    #[func]
     pub fn get_bench(&self, player_id: i32) -> PackedStringArray {
         let mut arr = PackedStringArray::new();
         if let Some(game) = &self.game
@@ -557,7 +594,7 @@ impl GameManager {
     #[func]
     pub fn get_available_gods(&self) -> Array<VarDictionary> {
         let mut arr = Array::new();
-        for god in all_gods() {
+        for god in &self.gods {
             let mut d = VarDictionary::new();
             d.set("name", &GString::from(god.name.as_str()));
             d.set("description", &GString::from(god.description.as_str()));
@@ -624,6 +661,19 @@ impl GameManager {
             && let Some(p) = game.players.get_mut(player_id as usize)
         {
             p.gold = gold as u32;
+        }
+    }
+
+    #[func]
+    pub fn get_player_placement(&self, player_id: i32) -> i32 {
+        let Some(game) = &self.game else { return 0 };
+        let Some(player) = game.players.get(player_id as usize) else { return 0 };
+        if player.alive {
+            // Alive = winner (or game still going). In 2-player: 1st place.
+            1
+        } else {
+            // Dead player: placement = alive_count + 1 at time of query
+            (game.alive_count() + 1) as i32
         }
     }
 

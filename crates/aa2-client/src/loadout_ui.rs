@@ -2,6 +2,7 @@ use godot::prelude::*;
 use godot::classes::{Button, HBoxContainer, IVBoxContainer, Label, VBoxContainer};
 
 use crate::game_manager::GameManager;
+use crate::ui_helpers::{attribute_stylebox, format_ability_tooltip, ultimate_stylebox};
 
 const MAX_HEROES: usize = 5;
 const MAX_SLOTS: usize = 4;
@@ -102,6 +103,10 @@ impl LoadoutUi {
                 if let Some(node) = self.base().get_node_or_null(&format!("{row_path}/HeroPortrait")) {
                     let mut btn: Gd<Button> = node.cast();
                     btn.set_text(&hero_name);
+                    let info = manager.bind().get_hero_info(GString::from(hero_name.as_str()));
+                    let attr = info.get("attribute").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+                    let style = attribute_stylebox(&attr);
+                    btn.add_theme_stylebox_override("normal", &style);
                 }
 
                 let equipped = manager.bind().get_equipped_abilities(0, GString::from(hero_name.as_str()));
@@ -112,12 +117,24 @@ impl LoadoutUi {
                         if s < equipped.len() {
                             let aname = equipped.get(s).map(|g| g.to_string()).unwrap_or_default();
                             let level = manager.bind().get_ability_level(0, GString::from(aname.as_str()));
-                            let display = if level > 0 { format!("{aname} Lv{level}") } else { aname };
+                            let display = if level > 0 { format!("{aname} Lv{level}") } else { aname.clone() };
                             btn.set_text(&display);
                             btn.set_visible(true);
+                            // Set tooltip
+                            let info = manager.bind().get_ability_info(GString::from(aname.as_str()));
+                            if !info.is_empty() {
+                                btn.set_tooltip_text(&format_ability_tooltip(&info));
+                            }
+                            if manager.bind().get_ability_is_ultimate(GString::from(aname.as_str())) {
+                                btn.add_theme_stylebox_override("normal", &ultimate_stylebox());
+                            } else {
+                                btn.remove_theme_stylebox_override("normal");
+                            }
                         } else {
                             btn.set_text("[+]");
                             btn.set_visible(true);
+                            btn.set_tooltip_text("");
+                            btn.remove_theme_stylebox_override("normal");
                         }
                     }
                 }
@@ -134,11 +151,17 @@ impl LoadoutUi {
                 if i < bench.len() {
                     let name = bench.get(i).map(|g| g.to_string()).unwrap_or_default();
                     let level = manager.bind().get_ability_level(0, GString::from(name.as_str()));
-                    let display = if level > 0 { format!("{name} Lv{level}") } else { name };
+                    let display = if level > 0 { format!("{name} Lv{level}") } else { name.clone() };
                     btn.set_text(&display);
                     btn.set_visible(true);
+                    // Set tooltip
+                    let info = manager.bind().get_ability_info(GString::from(name.as_str()));
+                    if !info.is_empty() {
+                        btn.set_tooltip_text(&format_ability_tooltip(&info));
+                    }
                 } else {
                     btn.set_visible(false);
+                    btn.set_tooltip_text("");
                 }
             }
         }

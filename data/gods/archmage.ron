@@ -1,0 +1,5 @@
+God(
+    name: "Archmage",
+    description: "40% chance to double-cast abilities",
+    passive: Sorcery(trigger_chance: 0.4),
+)

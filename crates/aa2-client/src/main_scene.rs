@@ -36,6 +36,12 @@ impl IControl for MainScene {
             button.connect("pressed", &self.base().callable("on_sell_pressed"));
         }
 
+        // Connect Summary button to toggle ScoreboardUI
+        if let Some(btn) = self.base().get_node_or_null("PersistentChrome/TopBar/SummaryButton") {
+            let mut button: Gd<godot::classes::Button> = btn.cast();
+            button.connect("pressed", &self.base().callable("toggle_summary"));
+        }
+
         self.switch_to_phase("GodPick");
     }
 
@@ -136,6 +142,15 @@ impl MainScene {
     fn on_sell_pressed(&mut self) {
         godot_print!("[AA2] Sell bin clicked (not yet implemented)");
     }
+
+    #[func]
+    fn toggle_summary(&mut self) {
+        if let Some(node) = self.base().get_node_or_null("ScoreboardUI") {
+            let mut ctrl: Gd<Control> = node.cast();
+            let visible = ctrl.is_visible();
+            ctrl.set_visible(!visible);
+        }
+    }
 }
 
 impl MainScene {
@@ -146,7 +161,6 @@ impl MainScene {
         let show_god_pick = phase == "GodPick";
         let show_bottom = phase == "Shop" || phase == "GracePeriod";
         let show_combat = phase == "Combat";
-        let show_scoreboard = phase == "Finished";
 
         self.set_screen_visible("GodPickUI", show_god_pick);
         self.set_screen_visible("DraftUI", show_bottom); // draft overlay during shop
@@ -155,8 +169,17 @@ impl MainScene {
         self.set_screen_visible("PersistentChrome/PlayerList", !show_god_pick);
         self.set_screen_visible("PersistentChrome/GodPortrait", !show_god_pick);
         self.set_screen_visible("CombatViewerUI", show_combat);
-        self.set_screen_visible("ScoreboardUI", show_scoreboard);
         self.set_screen_visible("ReadyButton", show_bottom);
+
+        // ScoreboardUI: force-hide on GodPick, force-show on Finished, otherwise user-controlled
+        if phase == "GodPick" {
+            self.set_screen_visible("ScoreboardUI", false);
+        } else if phase == "Finished" {
+            self.set_screen_visible("ScoreboardUI", true);
+        }
+
+        // EndgameUI: show only on Finished
+        self.set_screen_visible("EndgameUI", phase == "Finished");
 
         self.update_top_bar(phase);
     }

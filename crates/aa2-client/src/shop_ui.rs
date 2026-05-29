@@ -2,6 +2,7 @@ use godot::prelude::*;
 use godot::classes::{Button, HBoxContainer, IHBoxContainer, Label};
 
 use crate::game_manager::GameManager;
+use crate::ui_helpers::format_ability_tooltip;
 
 const MAX_SHOP_SLOTS: usize = 10;
 
@@ -103,9 +104,14 @@ impl ShopUi {
                     if name_str.is_empty() {
                         btn.set_text("(sold)");
                         btn.set_disabled(true);
+                        btn.set_tooltip_text("");
                     } else {
                         btn.set_text(&name_str);
                         btn.set_disabled(false);
+                        let info = manager.bind().get_ability_info(GString::from(name_str.as_str()));
+                        if !info.is_empty() {
+                            btn.set_tooltip_text(&format_ability_tooltip(&info));
+                        }
                     }
                 } else {
                     btn.set_visible(false);

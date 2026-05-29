@@ -9,10 +9,10 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-use aa2_data::{AbilityDef, HeroDef, load_ability_def, load_all_heroes};
+use aa2_data::{AbilityDef, HeroDef, load_ability_def, load_all_heroes, load_all_gods};
 use aa2_game::*;
 use aa2_game::draft::{DraftState, generate_draft_choices, tier_for_draft_round};
-use aa2_game::god::{self, all_gods};
+use aa2_game::god;
 use aa2_game::economy::{BUY_COST, REROLL_COST, HERO_REROLL_COST};
 use aa2_game::player::MAX_HEROES;
 use aa2_game::scenario::Action;
@@ -28,6 +28,7 @@ fn run() -> Result<(), String> {
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
     let heroes = load_all_heroes(&data_dir.join("heroes"))?;
     let abilities = load_all_abilities(&data_dir.join("abilities"))?;
+    let gods = load_all_gods(&data_dir.join("gods"))?;
 
     let hero_defs: HashMap<String, HeroDef> = heroes.iter().map(|h| (h.name.clone(), h.clone())).collect();
     let ability_defs: HashMap<String, AbilityDef> = abilities.iter().map(|a| (a.name.clone(), a.clone())).collect();
@@ -46,6 +47,7 @@ fn run() -> Result<(), String> {
 
     let config = GameConfig { auto_advance: false, ..GameConfig::default() };
     let mut game = GameState::new(pool, ultimates.clone(), config);
+    game.gods = gods.clone();
 
     // God pick phase
     god_pick_phase(&mut game, &mut rng)?;
@@ -449,7 +451,7 @@ fn available_heroes_for_player<'a>(all_heroes: &'a [HeroDef], player: &PlayerSta
 // --- God Pick Phase ---
 
 fn god_pick_phase(game: &mut GameState, rng: &mut StdRng) -> Result<(), String> {
-    let gods = all_gods();
+    let gods = game.gods.clone();
     println!("\n=== GOD PICK ===\n");
     for (i, god) in gods.iter().enumerate() {
         println!("  {}. {} - {}", i + 1, god.name, god.description);

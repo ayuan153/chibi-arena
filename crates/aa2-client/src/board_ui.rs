@@ -3,6 +3,7 @@ use godot::classes::{Button, ColorRect, Control, IControl, InputEvent, InputEven
 use godot::global::MouseButton;
 
 use crate::game_manager::GameManager;
+use crate::ui_helpers::attribute_stylebox;
 
 const MAX_HEROES: usize = 5;
 
@@ -100,6 +101,9 @@ impl BoardUI {
                 let name = heroes.get(i).map(|g| g.to_string()).unwrap_or_default();
                 btn.set_visible(true);
                 btn.set_text(&name);
+                let info = manager.bind().get_hero_info(GString::from(name.as_str()));
+                let attr = info.get("attribute").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+                btn.add_theme_stylebox_override("normal", &attribute_stylebox(&attr));
                 let pos = manager.bind().get_hero_position(0, GString::from(name.as_str()));
                 let px = (pos.x / 2000.0) * size.x;
                 let py = (pos.y / 2000.0) * size.y;

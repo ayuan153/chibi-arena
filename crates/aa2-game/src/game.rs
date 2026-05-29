@@ -118,6 +118,9 @@ pub struct GameState {
     pub cycle_round: usize,
     /// Players who have signaled ready this phase.
     pub ready_players: HashSet<u8>,
+    /// Available gods for this game.
+    #[serde(default)]
+    pub gods: Vec<god::God>,
 }
 
 impl GameState {
@@ -137,6 +140,7 @@ impl GameState {
             matchup_rotation: Vec::new(),
             cycle_round: 0,
             ready_players: HashSet::new(),
+            gods: god::all_gods(),
         }
     }
 
@@ -164,8 +168,15 @@ impl GameState {
     }
 
     /// Called when combat resolves (winner determined or timeout).
-    /// Transitions to GracePeriod.
+    /// Transitions to GracePeriod, or Finished if ≤1 player alive.
     pub fn end_combat(&mut self, _timed_out: bool) {
+        // Check if game is over (≤1 alive)
+        if self.alive_count() <= 1 {
+            self.phase = GamePhase::Finished;
+            self.timer = 0.0;
+            return;
+        }
+
         self.phase = GamePhase::GracePeriod;
         self.timer = GRACE_PERIOD;
         for player in &mut self.players {
@@ -496,7 +507,7 @@ impl GameState {
 
     /// Auto-end god pick: assign random gods to players who haven't picked.
     fn auto_end_god_pick(&mut self, rng: &mut impl rand::Rng, events: &mut Vec<GameEvent>) {
-        let gods = god::all_gods();
+        let gods = self.gods.clone();
         for player in &mut self.players {
             if player.alive && player.god.is_none() {
                 let god = gods[rng.gen_range(0..gods.len())].clone();

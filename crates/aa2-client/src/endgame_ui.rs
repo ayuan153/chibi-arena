@@ -3,41 +3,38 @@ use godot::classes::{Button, ColorRect, Control, HBoxContainer, IControl, Label,
 
 use crate::game_manager::GameManager;
 
-/// Full-screen scoreboard overlay showing player standings.
-/// Visibility is controlled externally by main_scene.rs via set_visible().
 #[derive(GodotClass)]
 #[class(init, base=Control)]
-pub struct ScoreboardUI {
+pub struct EndgameUI {
     base: Base<Control>,
 }
 
 #[godot_api]
-impl IControl for ScoreboardUI {
+impl IControl for EndgameUI {
     fn ready(&mut self) {
-        // Full-screen overlay, starts hidden
         self.base_mut().set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
         self.base_mut().set_visible(false);
 
-        // Semi-transparent dark background
+        // Dark background
         let mut bg = ColorRect::new_alloc();
         bg.set_name("Background");
         bg.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
-        bg.set_color(Color::from_rgba(0.05, 0.05, 0.1, 0.85));
+        bg.set_color(Color::from_rgba(0.02, 0.02, 0.08, 0.9));
         self.base_mut().add_child(&bg);
 
-        // Main vertical layout
+        // Main layout
         let mut root_vbox = VBoxContainer::new_alloc();
         root_vbox.set_name("RootVBox");
         root_vbox.set_anchors_preset(godot::classes::control::LayoutPreset::FULL_RECT);
 
-        // Title
+        // Placement title
         let mut title = Label::new_alloc();
-        title.set_name("Title");
-        title.set_text("Player Standings");
+        title.set_name("PlacementTitle");
+        title.set_text("Game Over");
         title.set_horizontal_alignment(godot::global::HorizontalAlignment::CENTER);
         root_vbox.add_child(&title);
 
-        // Player rows container
+        // Player rows
         let mut rows_vbox = VBoxContainer::new_alloc();
         rows_vbox.set_name("PlayerRows");
         rows_vbox.set_v_size_flags(godot::classes::control::SizeFlags::EXPAND_FILL);
@@ -46,10 +43,10 @@ impl IControl for ScoreboardUI {
             let mut row = HBoxContainer::new_alloc();
             row.set_name(&format!("Row{i}"));
 
-            let mut hp_label = Label::new_alloc();
-            hp_label.set_name("HP");
-            hp_label.set_custom_minimum_size(Vector2::new(60.0, 0.0));
-            row.add_child(&hp_label);
+            let mut rank_label = Label::new_alloc();
+            rank_label.set_name("Rank");
+            rank_label.set_custom_minimum_size(Vector2::new(40.0, 0.0));
+            row.add_child(&rank_label);
 
             let mut name_label = Label::new_alloc();
             name_label.set_name("Name");
@@ -61,11 +58,6 @@ impl IControl for ScoreboardUI {
             god_label.set_custom_minimum_size(Vector2::new(120.0, 0.0));
             row.add_child(&god_label);
 
-            let mut status_label = Label::new_alloc();
-            status_label.set_name("Status");
-            status_label.set_custom_minimum_size(Vector2::new(130.0, 0.0));
-            row.add_child(&status_label);
-
             let mut heroes_label = Label::new_alloc();
             heroes_label.set_name("Heroes");
             heroes_label.set_h_size_flags(godot::classes::control::SizeFlags::EXPAND_FILL);
@@ -76,13 +68,23 @@ impl IControl for ScoreboardUI {
 
         root_vbox.add_child(&rows_vbox);
 
-        // Back button
-        let mut back_btn = Button::new_alloc();
-        back_btn.set_name("BackBtn");
-        back_btn.set_text("BACK TO GAME");
-        back_btn.connect("pressed", &Callable::from_object_method(&self.base(), "on_back_pressed"));
-        root_vbox.add_child(&back_btn);
+        // Buttons
+        let mut btn_row = HBoxContainer::new_alloc();
+        btn_row.set_name("Buttons");
+        btn_row.set_alignment(godot::classes::box_container::AlignmentMode::CENTER);
 
+        let mut spectate_btn = Button::new_alloc();
+        spectate_btn.set_name("SpectateBtn");
+        spectate_btn.set_text("SPECTATE MATCH");
+        spectate_btn.connect("pressed", &Callable::from_object_method(&self.base(), "on_spectate_pressed"));
+        btn_row.add_child(&spectate_btn);
+
+        let mut disconnect_btn = Button::new_alloc();
+        disconnect_btn.set_name("DisconnectBtn");
+        disconnect_btn.set_text("DISCONNECT");
+        btn_row.add_child(&disconnect_btn);
+
+        root_vbox.add_child(&btn_row);
         self.base_mut().add_child(&root_vbox);
     }
 
@@ -92,8 +94,22 @@ impl IControl for ScoreboardUI {
         }
 
         let Some(manager) = self.get_manager() else { return };
-        let count = manager.bind().get_player_count();
 
+        // Update placement title
+        let placement = manager.bind().get_player_placement(0);
+        let suffix = match placement {
+            1 => "st",
+            2 => "nd",
+            3 => "rd",
+            _ => "th",
+        };
+        let title_text = format!("You placed {placement}{suffix}!");
+        if let Some(mut title) = self.try_get_node::<Label>("RootVBox/PlacementTitle") {
+            title.set_text(&title_text);
+        }
+
+        // Update player rows
+        let count = manager.bind().get_player_count();
         for i in 0..8 {
             let path = format!("RootVBox/PlayerRows/Row{i}");
             let Some(mut row) = self.try_get_node::<HBoxContainer>(&path) else { continue };
@@ -104,29 +120,26 @@ impl IControl for ScoreboardUI {
             }
             row.set_visible(true);
 
-            let hp = manager.bind().get_player_hp(i);
-            let god = manager.bind().get_player_god(i);
             let alive = manager.bind().get_player_alive(i);
+            let god = manager.bind().get_player_god(i);
             let heroes = manager.bind().get_heroes(i);
-
             let hero_list: Vec<String> = (0..heroes.len())
                 .filter_map(|idx| heroes.get(idx).map(|g| g.to_string()))
                 .collect();
 
-            let status = if alive { "STILL PLAYING" } else { "ELIMINATED" };
-            let god_str = if god.is_empty() { "—".to_string() } else { god.to_string() };
+            let rank = if alive { "—".to_string() } else {
+                let p = manager.bind().get_player_placement(i);
+                format!("#{p}")
+            };
 
-            if let Some(mut l) = self.try_get_node::<Label>(&format!("{path}/HP")) {
-                l.set_text(&format!("{:.0}", hp));
+            if let Some(mut l) = self.try_get_node::<Label>(&format!("{path}/Rank")) {
+                l.set_text(&rank);
             }
             if let Some(mut l) = self.try_get_node::<Label>(&format!("{path}/Name")) {
                 l.set_text(&format!("Player {}", i + 1));
             }
             if let Some(mut l) = self.try_get_node::<Label>(&format!("{path}/God")) {
-                l.set_text(&god_str);
-            }
-            if let Some(mut l) = self.try_get_node::<Label>(&format!("{path}/Status")) {
-                l.set_text(status);
+                l.set_text(&if god.is_empty() { "—".into() } else { god.to_string() });
             }
             if let Some(mut l) = self.try_get_node::<Label>(&format!("{path}/Heroes")) {
                 l.set_text(&hero_list.join(", "));
@@ -136,9 +149,9 @@ impl IControl for ScoreboardUI {
 }
 
 #[godot_api]
-impl ScoreboardUI {
+impl EndgameUI {
     #[func]
-    fn on_back_pressed(&mut self) {
+    fn on_spectate_pressed(&mut self) {
         self.base_mut().set_visible(false);
     }
 
