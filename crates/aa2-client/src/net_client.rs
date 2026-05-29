@@ -1,4 +1,5 @@
 use aa2_net::{ClientMsg, Phase, ServerMsg, StateSnapshot};
+use aa2_sim::CombatEvent;
 
 /// Pure-Rust networked game state derived from server snapshots.
 /// No gdext dependency — fully unit-testable.
@@ -8,6 +9,7 @@ pub struct NetState {
     pub snapshot: Option<StateSnapshot>,
     pub lobby: Vec<Option<String>>,
     pub placements: Option<Vec<u8>>,
+    pub combat: Option<Vec<CombatEvent>>,
 }
 
 impl NetState {
@@ -29,9 +31,11 @@ impl NetState {
             ServerMsg::GameOver { placements } => {
                 self.placements = Some(placements.clone());
             }
+            ServerMsg::CombatStart { event_log, .. } => {
+                self.combat = Some(event_log.clone());
+            }
             ServerMsg::PhaseChange { .. }
-            | ServerMsg::ActionResult { .. }
-            | ServerMsg::CombatStart { .. } => {}
+            | ServerMsg::ActionResult { .. } => {}
         }
     }
 
@@ -153,6 +157,22 @@ impl NetState {
         self.snapshot.as_ref()
             .and_then(|s| s.players.get(seat))
             .and_then(|p| p.god.clone())
+    }
+
+    pub fn has_combat(&self) -> bool {
+        self.combat.is_some()
+    }
+
+    pub fn combat_event_count(&self) -> usize {
+        self.combat.as_ref().map_or(0, |v| v.len())
+    }
+
+    pub fn combat_event(&self, i: usize) -> Option<&CombatEvent> {
+        self.combat.as_ref().and_then(|v| v.get(i))
+    }
+
+    pub fn placements(&self) -> Option<&Vec<u8>> {
+        self.placements.as_ref()
     }
 }
 
@@ -313,5 +333,20 @@ mod tests {
         let placements = vec![2, 0, 1, 3, 4, 5, 6, 7];
         state.apply(&ServerMsg::GameOver { placements: placements.clone() });
         assert_eq!(state.placements, Some(placements));
+    }
+
+    #[test]
+    fn combat_start_sets_event_log() {
+        let mut state = NetState::default();
+        assert!(!state.has_combat());
+        let log = vec![
+            CombatEvent::Attack { tick: 1, attacker_id: 0, target_id: 1, damage: 12.0 },
+            CombatEvent::Death { tick: 5, unit_id: 1 },
+        ];
+        state.apply(&ServerMsg::CombatStart { matchup_index: 0, event_log: log });
+        assert!(state.has_combat());
+        assert_eq!(state.combat_event_count(), 2);
+        assert!(state.combat_event(0).is_some());
+        assert!(state.combat_event(2).is_none());
     }
 }

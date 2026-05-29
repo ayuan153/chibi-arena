@@ -128,6 +128,14 @@ impl IControl for MainScene {
                 manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
                 manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
             }
+        } else if phase == "Combat" && !self.combat_started
+            && manager.bind().get_combat_matchup_count() > 0
+        {
+            if let Some(viewer) = self.base().get_node_or_null("CombatViewerUI") {
+                let mut viewer: Gd<crate::combat_viewer_ui::CombatViewerUI> = viewer.cast();
+                viewer.bind_mut().start_playback(0);
+            }
+            self.combat_started = true;
         }
     }
 }

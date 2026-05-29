@@ -490,7 +490,9 @@ impl GameManager {
 
     #[func]
     pub fn get_combat_event_count(&self, matchup_index: i32) -> i32 {
-        if self.networked() { return 0; }
+        if self.networked() {
+            return self.net_state.combat_event_count() as i32;
+        }
         self.last_combat_results
             .get(matchup_index as usize)
             .map(|r| r.combat_log.len() as i32)
@@ -499,7 +501,11 @@ impl GameManager {
 
     #[func]
     pub fn get_combat_event(&self, matchup_index: i32, event_index: i32) -> VarDictionary {
-        if self.networked() { return VarDictionary::new(); }
+        if self.networked() {
+            return self.net_state.combat_event(event_index as usize)
+                .map(combat_event_to_dict)
+                .unwrap_or_default();
+        }
         let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
             return VarDictionary::new();
         };
@@ -511,7 +517,14 @@ impl GameManager {
 
     #[func]
     pub fn get_combat_result(&self, matchup_index: i32) -> VarDictionary {
-        if self.networked() { return VarDictionary::new(); }
+        if self.networked() {
+            // Wire protocol (CombatStart) does not carry winner/survivors yet.
+            let mut d = VarDictionary::new();
+            d.set("winner", -1i32);
+            d.set("survivors_a", 0i32);
+            d.set("survivors_b", 0i32);
+            return d;
+        }
         let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
             return VarDictionary::new();
         };
@@ -524,7 +537,9 @@ impl GameManager {
 
     #[func]
     pub fn get_combat_matchup_count(&self) -> i32 {
-        if self.networked() { return 0; }
+        if self.networked() {
+            return if self.net_state.has_combat() { 1 } else { 0 };
+        }
         self.last_combat_results.len() as i32
     }
 
@@ -532,19 +547,18 @@ impl GameManager {
     /// Each dict: { unit_id: i32, team: i32, name: GString, damage: i32 }.
     #[func]
     pub fn get_damage_summary(&self, matchup_index: i32) -> Array<VarDictionary> {
-        if self.networked() { return Array::new(); }
         let mut arr = Array::new();
-        let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
-            return arr;
+        let log: Option<&[aa2_sim::CombatEvent]> = if self.networked() {
+            self.net_state.combat.as_deref()
+        } else {
+            self.last_combat_results
+                .get(matchup_index as usize)
+                .map(|r| r.combat_log.as_slice())
         };
-        let summary = aa2_sim::summarize_damage(&result.combat_log);
-        for ud in &summary {
-            let mut d = VarDictionary::new();
-            d.set("unit_id", ud.unit_id as i32);
-            d.set("team", ud.team as i32);
-            d.set("name", &GString::from(ud.name.as_str()));
-            d.set("damage", ud.damage.round() as i32);
-            arr.push(&d);
+        if let Some(log) = log {
+            for ud in &aa2_sim::summarize_damage(log) {
+                arr.push(&unit_damage_to_dict(ud));
+            }
         }
         arr
     }
@@ -654,7 +668,7 @@ impl GameManager {
     #[func]
     pub fn get_player_placement(&self, player_id: i32) -> i32 {
         if self.networked() {
-            if let Some(ref placements) = self.net_state.placements {
+            if let Some(placements) = self.net_state.placements() {
                 return placements.iter().position(|&id| id == player_id as u8)
                     .map(|i| (i + 1) as i32)
                     .unwrap_or(0);
@@ -686,6 +700,16 @@ impl GameManager {
             p.hp = hp;
         }
     }
+}
+
+/// Convert a per-unit damage summary entry to a Godot dictionary.
+fn unit_damage_to_dict(ud: &aa2_sim::UnitDamage) -> VarDictionary {
+    let mut d = VarDictionary::new();
+    d.set("unit_id", ud.unit_id as i32);
+    d.set("team", ud.team as i32);
+    d.set("name", &GString::from(ud.name.as_str()));
+    d.set("damage", ud.damage.round() as i32);
+    d
 }
 
 fn combat_event_to_dict(event: &aa2_sim::CombatEvent) -> VarDictionary {
