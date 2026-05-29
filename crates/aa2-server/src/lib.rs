@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use aa2_game::{GameConfig, GamePhase, GameState};
 use aa2_data::{AbilityDef, God, HeroDef};
 use aa2_game::pool::AbilityPool;
-use aa2_net::{ClientMsg, Phase, ServerMsg};
+use aa2_game::scenario::Action;
+use aa2_net::{ClientMsg, HeroView, OwnView, Phase, PlayerView, ServerMsg, ShopView, StateSnapshot};
 use futures_util::{SinkExt, StreamExt};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -27,14 +28,11 @@ struct Central {
     conn_seat: HashMap<u64, u8>,
     seats: Vec<Option<String>>,
     started: bool,
-    #[allow(dead_code)]
     bots: HashSet<u8>,
     game: Option<GameState>,
-    #[allow(dead_code)]
     hero_defs: HashMap<String, HeroDef>,
     ability_defs: HashMap<String, AbilityDef>,
     gods: Vec<God>,
-    #[allow(dead_code)]
     rng: StdRng,
 }
 
@@ -110,19 +108,127 @@ impl Central {
                     let human_count = self.human_count();
                     self.bots = (human_count..8).collect();
                     self.create_game();
-                    let game = self.game.as_ref().unwrap();
-                    let phase = map_phase(&game.phase);
+                    let phase = map_phase(&self.game.as_ref().unwrap().phase);
                     self.broadcast(&ServerMsg::PhaseChange {
                         phase,
-                        round: game.round,
-                        timer_secs: game.timer,
+                        round: self.game.as_ref().unwrap().round,
+                        timer_secs: self.game.as_ref().unwrap().timer,
                     });
+                    self.step_bots();
+                    // Send initial snapshots to all seated humans
+                    for (&cid, &seat) in &self.conn_seat {
+                        let snap = project_snapshot(self.game.as_ref().unwrap(), seat);
+                        if let Some(tx) = self.conns.get(&cid) {
+                            tx.send(ServerMsg::Snapshot(Box::new(snap))).ok();
+                        }
+                    }
                 }
-                ClientMsg::Action { .. } => { /* no-op for commit A */ }
+                ClientMsg::Action { action_type, param } => {
+                    if !self.started || self.game.is_none() { return; }
+                    let seat = match self.conn_seat.get(&conn_id) {
+                        Some(&s) => s,
+                        None => {
+                            if let Some(tx) = self.conns.get(&conn_id) {
+                                tx.send(ServerMsg::ActionResult { ok: false, reason: "not seated".into() }).ok();
+                            }
+                            return;
+                        }
+                    };
+                    let action = match aa2_game::scenario::parse_action(&action_type, &param, &self.gods) {
+                        Ok(a) => a,
+                        Err(e) => {
+                            if let Some(tx) = self.conns.get(&conn_id) {
+                                tx.send(ServerMsg::ActionResult { ok: false, reason: e }).ok();
+                            }
+                            return;
+                        }
+                    };
+                    let game = self.game.as_mut().unwrap();
+                    let prev_phase = game.phase.clone();
+                    let res = game.apply_action(seat, action, &self.hero_defs, &mut self.rng);
+                    if let Some(tx) = self.conns.get(&conn_id) {
+                        tx.send(ServerMsg::ActionResult {
+                            ok: res.is_ok(),
+                            reason: res.as_ref().err().cloned().unwrap_or_default(),
+                        }).ok();
+                    }
+                    if res.is_ok() {
+                        self.step_bots();
+                        self.broadcast_state(prev_phase);
+                    }
+                }
             },
             Inbound::Disconnected { conn_id } => {
                 self.conns.remove(&conn_id);
                 self.conn_seat.remove(&conn_id);
+            }
+        }
+    }
+
+    fn step_bots(&mut self) {
+        let mut sorted_bots: Vec<u8> = self.bots.iter().copied().collect();
+        sorted_bots.sort();
+
+        for _ in 0..32 {
+            let game = self.game.as_ref().unwrap();
+            let phase = game.phase.clone();
+            if matches!(phase, GamePhase::Combat | GamePhase::Finished) { break; }
+
+            let mut acted = false;
+            for &seat in &sorted_bots {
+                let game = self.game.as_ref().unwrap();
+                if !game.players[seat as usize].alive { continue; }
+
+                let action = match &game.phase {
+                    GamePhase::GodPick => {
+                        if game.players[seat as usize].god.is_none() {
+                            Some(Action::PickGod(self.gods[0].clone()))
+                        } else if !game.ready_players.contains(&seat) {
+                            Some(Action::Ready)
+                        } else { None }
+                    }
+                    GamePhase::Shop => {
+                        if game.draft_choices.get(&seat).is_some_and(|c| c.iter().any(|x| x.is_some())) {
+                            Some(Action::DraftHero(0))
+                        } else if !game.ready_players.contains(&seat) {
+                            Some(Action::Ready)
+                        } else { None }
+                    }
+                    GamePhase::GracePeriod => {
+                        if !game.ready_players.contains(&seat) {
+                            Some(Action::Ready)
+                        } else { None }
+                    }
+                    _ => None,
+                };
+
+                if let Some(action) = action {
+                    let game = self.game.as_mut().unwrap();
+                    let _ = game.apply_action(seat, action, &self.hero_defs, &mut self.rng);
+                    acted = true;
+                    // Re-check phase after apply (Ready can cascade transitions)
+                    if self.game.as_ref().unwrap().phase != phase {
+                        break; // restart outer loop in new phase
+                    }
+                }
+            }
+            if !acted { break; }
+        }
+    }
+
+    fn broadcast_state(&self, prev_phase: GamePhase) {
+        let game = self.game.as_ref().unwrap();
+        if game.phase != prev_phase {
+            self.broadcast(&ServerMsg::PhaseChange {
+                phase: map_phase(&game.phase),
+                round: game.round,
+                timer_secs: game.timer,
+            });
+        }
+        for (&cid, &seat) in &self.conn_seat {
+            let snap = project_snapshot(game, seat);
+            if let Some(tx) = self.conns.get(&cid) {
+                tx.send(ServerMsg::Snapshot(Box::new(snap))).ok();
             }
         }
     }
@@ -137,16 +243,57 @@ impl Central {
             .collect();
         let pool = AbilityPool::from_counts(pool_counts);
 
-        // Server drives the phase clock, so timers auto-advance (unlike the
-        // client's manual dev mode, which uses auto_advance: false).
         let config = GameConfig {
             auto_advance: true,
             ..GameConfig::default()
         };
         let mut game = GameState::new(pool, ultimates, config);
         game.gods = self.gods.clone();
-        // Server keeps all 8 players alive (humans + bots).
         self.game = Some(game);
+    }
+}
+
+fn project_snapshot(game: &GameState, viewer: u8) -> StateSnapshot {
+    let p = &game.players[viewer as usize];
+
+    let heroes: Vec<HeroView> = p.heroes.iter().map(|name| HeroView {
+        name: name.clone(),
+        position: p.hero_positions.get(name).copied().unwrap_or((0.0, 0.0)),
+        equipped: p.equipped.get(name).cloned().unwrap_or_default(),
+    }).collect();
+
+    let mut abilities: Vec<(String, u32)> = p.abilities.iter().map(|(k, v)| (k.clone(), *v)).collect();
+    abilities.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let own = OwnView {
+        gold: p.gold,
+        heroes,
+        abilities,
+        bench: p.bench.clone(),
+        shop: ShopView {
+            level: p.shop.level,
+            offerings: p.shop.offerings.clone(),
+            locked: p.shop.locked,
+            upgrade_cost: p.shop.upgrade_cost(),
+        },
+        draft_choices: game.draft_choices.get(&viewer).cloned().unwrap_or([None, None, None]),
+    };
+
+    let players: Vec<PlayerView> = game.players.iter().map(|pl| PlayerView {
+        id: pl.id,
+        hp: pl.hp,
+        alive: pl.alive,
+        god: pl.god.as_ref().map(|g| g.name.clone()),
+        hero_count: pl.heroes.len(),
+    }).collect();
+
+    StateSnapshot {
+        your_player_id: viewer,
+        phase: map_phase(&game.phase),
+        round: game.round,
+        timer_secs: game.timer,
+        own,
+        players,
     }
 }
 
