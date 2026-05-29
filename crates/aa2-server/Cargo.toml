@@ -1,0 +1,17 @@
+[package]
+name = "aa2-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+aa2-game = { path = "../aa2-game" }
+aa2-net = { path = "../aa2-net" }
+aa2-data = { path = "../aa2-data" }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

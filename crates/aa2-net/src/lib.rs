@@ -103,6 +103,8 @@ pub enum ClientMsg {
     /// payload (some actions pack multiple args, e.g. SetPosition as "hero,x,y").
     /// The server parses and validates this pair into a typed action.
     Action { action_type: String, param: String },
+    /// Request to begin the game (any client can send).
+    Start,
 }
 
 /// Message sent from server to client.
@@ -110,6 +112,8 @@ pub enum ClientMsg {
 pub enum ServerMsg {
     /// Sent after successful join.
     Welcome { your_player_id: u8, player_count: u8 },
+    /// Current lobby roster; index = seat id, Some(name) = occupied, None = empty.
+    Lobby { seats: Vec<Option<String>> },
     /// Periodic state snapshot.
     Snapshot(Box<StateSnapshot>),
     /// Result of a client action.
@@ -140,12 +144,14 @@ mod tests {
     fn client_msg_round_trip() {
         round_trip(&ClientMsg::Join { name: "Alice".into() });
         round_trip(&ClientMsg::Action { action_type: "buy".into(), param: "3".into() });
+        round_trip(&ClientMsg::Start);
     }
 
     /// ServerMsg variants must survive a JSON round trip (all variants).
     #[test]
     fn server_msg_round_trip() {
         round_trip(&ServerMsg::Welcome { your_player_id: 0, player_count: 8 });
+        round_trip(&ServerMsg::Lobby { seats: vec![Some("Alice".into()), None, Some("Bob".into()), None, None, None, None, None] });
         round_trip(&ServerMsg::ActionResult { ok: true, reason: String::new() });
         round_trip(&ServerMsg::CombatStart {
             matchup_index: 1,
