@@ -16,7 +16,7 @@ async fn recv_until<F>(read: &mut futures_util::stream::SplitStream<tokio_tungst
 where
     F: Fn(&ServerMsg) -> bool,
 {
-    let deadline = Duration::from_secs(3);
+    let deadline = Duration::from_secs(120);
     timeout(deadline, async {
         loop {
             let m = read.next().await.unwrap().unwrap();
@@ -101,5 +101,51 @@ async fn two_humans_reach_shop() {
         }
     } else {
         panic!("expected Snapshot");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn combat_runs_and_advances() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(aa2_server::serve(listener, PathBuf::from("../../data"), 99));
+
+    let gods = aa2_data::load_all_gods(&PathBuf::from("../../data/gods")).unwrap();
+    let god_name = gods[0].name.clone();
+
+    let (ws0, _) = tokio_tungstenite::connect_async(format!("ws://{addr}")).await.unwrap();
+    let (mut w0, mut r0) = ws0.split();
+    let (ws1, _) = tokio_tungstenite::connect_async(format!("ws://{addr}")).await.unwrap();
+    let (mut w1, mut r1) = ws1.split();
+
+    // Both join
+    send(&mut w0, &ClientMsg::Join { name: "A".into() }).await;
+    recv_until(&mut r0, |m| matches!(m, ServerMsg::Welcome { .. })).await;
+    send(&mut w1, &ClientMsg::Join { name: "B".into() }).await;
+    recv_until(&mut r1, |m| matches!(m, ServerMsg::Welcome { .. })).await;
+
+    // Start game
+    send(&mut w0, &ClientMsg::Start).await;
+    recv_until(&mut r0, |m| matches!(m, ServerMsg::PhaseChange { phase: Phase::GodPick, .. })).await;
+
+    // Both pick god + ready
+    send(&mut w0, &ClientMsg::Action { action_type: "PickGod".into(), param: god_name.clone() }).await;
+    send(&mut w0, &ClientMsg::Action { action_type: "Ready".into(), param: String::new() }).await;
+    send(&mut w1, &ClientMsg::Action { action_type: "PickGod".into(), param: god_name.clone() }).await;
+    send(&mut w1, &ClientMsg::Action { action_type: "Ready".into(), param: String::new() }).await;
+
+    // (a) Both humans receive CombatStart — proves server-run combat + per-viewer streaming
+    let cs0 = recv_until(&mut r0, |m| matches!(m, ServerMsg::CombatStart { .. })).await;
+    assert!(matches!(cs0, ServerMsg::CombatStart { .. }));
+    let cs1 = recv_until(&mut r1, |m| matches!(m, ServerMsg::CombatStart { .. })).await;
+    assert!(matches!(cs1, ServerMsg::CombatStart { .. }));
+
+    // (b) Game advances past combat — combat window elapsed and clock resumed
+    let advanced = recv_until(&mut r0, |m| matches!(m, ServerMsg::PhaseChange { phase, .. } if *phase != Phase::Combat)).await;
+    match advanced {
+        ServerMsg::PhaseChange { phase, .. } => {
+            assert!(phase == Phase::GracePeriod || phase == Phase::Shop || phase == Phase::Finished);
+        }
+        _ => panic!("expected PhaseChange"),
     }
 }

@@ -47,6 +47,7 @@ dependencies = [
  "aa2-data",
  "aa2-game",
  "aa2-net",
+ "aa2-sim",
  "futures-util",
  "rand 0.8.6",
  "serde_json",

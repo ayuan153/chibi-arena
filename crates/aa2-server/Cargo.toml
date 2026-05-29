@@ -7,6 +7,7 @@ edition.workspace = true
 aa2-game = { path = "../aa2-game" }
 aa2-net = { path = "../aa2-net" }
 aa2-data = { path = "../aa2-data" }
+aa2-sim = { path = "../aa2-sim" }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }

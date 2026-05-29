@@ -83,6 +83,29 @@ pub enum CombatEvent {
     MoveTo { tick: u32, unit_id: u32, x: f32, y: f32, speed: f32 },
 }
 
+impl CombatEvent {
+    /// Returns the tick at which this event occurred.
+    pub fn tick(&self) -> u32 {
+        match self {
+            Self::Attack { tick, .. }
+            | Self::ProjectileSpawn { tick, .. }
+            | Self::ProjectileHit { tick, .. }
+            | Self::Death { tick, .. }
+            | Self::RoundEnd { tick, .. }
+            | Self::BuffApplied { tick, .. }
+            | Self::BuffExpired { tick, .. }
+            | Self::CastStart { tick, .. }
+            | Self::CastComplete { tick, .. }
+            | Self::AbilityDamage { tick, .. }
+            | Self::Heal { tick, .. }
+            | Self::DarkPactPulse { tick, .. }
+            | Self::WaveHit { tick, .. }
+            | Self::UnitSpawn { tick, .. }
+            | Self::MoveTo { tick, .. } => *tick,
+        }
+    }
+}
+
 /// Total damage dealt by a single unit during a combat, with team + display name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnitDamage {
@@ -2484,5 +2507,14 @@ mod tests {
         let json = serde_json::to_string(&log).unwrap();
         let back: Vec<CombatEvent> = serde_json::from_str(&json).unwrap();
         assert_eq!(log, back);
+    }
+
+    #[test]
+    fn combat_event_tick_accessor() {
+        use crate::CombatEvent;
+
+        assert_eq!(CombatEvent::Attack { tick: 7, attacker_id: 0, target_id: 1, damage: 1.0 }.tick(), 7);
+        assert_eq!(CombatEvent::Death { tick: 42, unit_id: 3 }.tick(), 42);
+        assert_eq!(CombatEvent::UnitSpawn { tick: 0, unit_id: 0, team: 0, name: "A".into(), x: 0.0, y: 0.0, max_hp: 100.0 }.tick(), 0);
     }
 }

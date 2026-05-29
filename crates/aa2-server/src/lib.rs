@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use aa2_game::{GameConfig, GamePhase, GameState};
 use aa2_data::{AbilityDef, God, HeroDef};
@@ -12,7 +13,7 @@ use aa2_game::scenario::Action;
 use aa2_net::{ClientMsg, HeroView, OwnView, Phase, PlayerView, ServerMsg, ShopView, StateSnapshot};
 use futures_util::{SinkExt, StreamExt};
 use rand::rngs::StdRng;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
@@ -34,6 +35,9 @@ struct Central {
     ability_defs: HashMap<String, AbilityDef>,
     gods: Vec<God>,
     rng: StdRng,
+    combat_window: Option<f32>,
+    elim_order: Vec<u8>,
+    finished_announced: bool,
 }
 
 impl Central {
@@ -71,6 +75,9 @@ impl Central {
             ability_defs,
             gods,
             rng: StdRng::seed_from_u64(seed),
+            combat_window: None,
+            elim_order: Vec::new(),
+            finished_announced: false,
         }
     }
 
@@ -153,8 +160,7 @@ impl Central {
                         }).ok();
                     }
                     if res.is_ok() {
-                        self.step_bots();
-                        self.broadcast_state(prev_phase);
+                        self.reconcile(prev_phase);
                     }
                 }
             },
@@ -216,23 +222,6 @@ impl Central {
         }
     }
 
-    fn broadcast_state(&self, prev_phase: GamePhase) {
-        let game = self.game.as_ref().unwrap();
-        if game.phase != prev_phase {
-            self.broadcast(&ServerMsg::PhaseChange {
-                phase: map_phase(&game.phase),
-                round: game.round,
-                timer_secs: game.timer,
-            });
-        }
-        for (&cid, &seat) in &self.conn_seat {
-            let snap = project_snapshot(game, seat);
-            if let Some(tx) = self.conns.get(&cid) {
-                tx.send(ServerMsg::Snapshot(Box::new(snap))).ok();
-            }
-        }
-    }
-
     fn create_game(&mut self) {
         let ultimates: HashSet<String> = self.ability_defs.iter()
             .filter(|(_, d)| d.is_ultimate)
@@ -251,6 +240,122 @@ impl Central {
         game.gods = self.gods.clone();
         self.game = Some(game);
     }
+
+    fn on_tick(&mut self, dt: f32) {
+        if !self.started || self.game.is_none() {
+            return;
+        }
+        // Game over: stop ticking (no more transitions or snapshots).
+        if self.finished_announced {
+            return;
+        }
+        if let Some(rem) = self.combat_window {
+            let new_rem = rem - dt;
+            if new_rem <= 0.0 {
+                self.combat_window = None;
+                let game = self.game.as_mut().unwrap();
+                let prev = game.phase.clone();
+                game.end_combat(false);
+                self.reconcile(prev);
+            } else {
+                self.combat_window = Some(new_rem);
+            }
+            return;
+        }
+        let game = self.game.as_mut().unwrap();
+        let prev = game.phase.clone();
+        game.tick(dt, &mut self.rng);
+        self.reconcile(prev);
+    }
+
+    fn reconcile(&mut self, prev_phase: GamePhase) {
+        self.step_bots();
+        let game = self.game.as_ref().unwrap();
+        let now = game.phase.clone();
+        if now == GamePhase::Combat && self.combat_window.is_none() {
+            self.resolve_combat();
+        }
+        if now == GamePhase::Finished && !self.finished_announced {
+            self.announce_gameover();
+        }
+        let game = self.game.as_ref().unwrap();
+        if game.phase != prev_phase {
+            self.broadcast(&ServerMsg::PhaseChange {
+                phase: map_phase(&game.phase),
+                round: game.round,
+                timer_secs: game.timer,
+            });
+        }
+        for (&cid, &seat) in &self.conn_seat {
+            let snap = project_snapshot(self.game.as_ref().unwrap(), seat);
+            if let Some(tx) = self.conns.get(&cid) {
+                tx.send(ServerMsg::Snapshot(Box::new(snap))).ok();
+            }
+        }
+    }
+
+    fn resolve_combat(&mut self) {
+        let game = self.game.as_ref().unwrap();
+        let alive_before: Vec<u8> = game.players.iter()
+            .filter(|p| p.alive)
+            .map(|p| p.id)
+            .collect();
+
+        let seed: u32 = self.rng.r#gen();
+        let game = self.game.as_mut().unwrap();
+        let results = game.run_combat_round(&self.hero_defs, &self.ability_defs, seed, &mut self.rng);
+
+        // Determine newly dead
+        let game = self.game.as_ref().unwrap();
+        let mut newly_dead: Vec<u8> = alive_before.iter()
+            .filter(|&&id| !game.players[id as usize].alive)
+            .copied()
+            .collect();
+        newly_dead.sort();
+        self.elim_order.extend(newly_dead);
+
+        // Stream CombatStart per-viewer
+        for (idx, res) in results.iter().enumerate() {
+            for (&cid, &seat) in &self.conn_seat {
+                if (seat == res.matchup.player_a || seat == res.matchup.player_b)
+                    && let Some(tx) = self.conns.get(&cid)
+                {
+                    tx.send(ServerMsg::CombatStart {
+                        matchup_index: idx as u32,
+                        event_log: res.combat_log.clone(),
+                    }).ok();
+                }
+            }
+        }
+
+        // Set combat window based on max event tick
+        let max_tick = results.iter()
+            .filter_map(|r| r.combat_log.iter().map(|e| e.tick()).max())
+            .max()
+            .unwrap_or(0);
+        self.combat_window = Some(
+            ((max_tick as f32) / aa2_sim::TICK_RATE).min(aa2_game::COMBAT_TIMEOUT)
+        );
+    }
+
+    fn announce_gameover(&mut self) {
+        self.finished_announced = true;
+        let game = self.game.as_ref().unwrap();
+        let mut alive_sorted: Vec<u8> = game.players.iter()
+            .filter(|p| p.alive)
+            .map(|p| p.id)
+            .collect();
+        alive_sorted.sort();
+        let placements = compute_placements(&self.elim_order, &alive_sorted);
+        self.broadcast(&ServerMsg::GameOver { placements });
+    }
+}
+
+/// Compute final placements: winners first, then eliminated in reverse order.
+fn compute_placements(elim_order: &[u8], alive_sorted: &[u8]) -> Vec<u8> {
+    let mut result: Vec<u8> = alive_sorted.to_vec();
+    result.extend(elim_order.iter().rev());
+    result
 }
 
 fn project_snapshot(game: &GameState, viewer: u8) -> StateSnapshot {
@@ -316,8 +421,15 @@ pub async fn serve(listener: TcpListener, data_dir: PathBuf, seed: u64) {
     // Central game task
     tokio::spawn(async move {
         let mut central = Central::new(&data_dir, seed);
-        while let Some(inb) = inbound_rx.recv().await {
-            central.handle(inb);
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
+        loop {
+            tokio::select! {
+                maybe = inbound_rx.recv() => match maybe {
+                    Some(inb) => central.handle(inb),
+                    None => break,
+                },
+                _ = interval.tick() => central.on_tick(0.1),
+            }
         }
     });
 
@@ -358,5 +470,20 @@ pub async fn serve(listener: TcpListener, data_dir: PathBuf, seed: u64) {
             }
             inbound_tx.send(Inbound::Disconnected { conn_id }).ok();
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_placements() {
+        // elim_order=[3,5,2], alive=[7] -> winner 7, then last-eliminated-first: 2,5,3
+        assert_eq!(compute_placements(&[3, 5, 2], &[7]), vec![7, 2, 5, 3]);
+        // Multiple alive (tie for 1st)
+        assert_eq!(compute_placements(&[1, 4], &[0, 2]), vec![0, 2, 4, 1]);
+        // Empty elim
+        assert_eq!(compute_placements(&[], &[5]), vec![5]);
     }
 }
