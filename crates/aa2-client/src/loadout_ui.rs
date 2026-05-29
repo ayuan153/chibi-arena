@@ -76,6 +76,12 @@ impl IVBoxContainer for LoadoutUi {
             bench_row.add_child(&btn);
         }
         self.base_mut().add_child(&bench_row);
+
+        // Connect sell bin button
+        if let Some(node) = self.base().get_node_or_null("/root/MainScene/PersistentChrome/GodPortrait/SellBin") {
+            let mut btn: Gd<Button> = node.cast();
+            btn.connect("pressed", &self.base().callable("on_sell_pressed"));
+        }
     }
 
     fn process(&mut self, _delta: f64) {
@@ -287,6 +293,34 @@ impl LoadoutUi {
     #[func] fn on_reroll_hero_2(&mut self) { self.reroll_hero(2); }
     #[func] fn on_reroll_hero_3(&mut self) { self.reroll_hero(3); }
     #[func] fn on_reroll_hero_4(&mut self) { self.reroll_hero(4); }
+
+    /// Sells the currently-selected ability (bench or equipped slot), refunding gold.
+    #[func]
+    fn on_sell_pressed(&mut self) {
+        let name = if !self.selected_ability.is_empty() {
+            self.selected_ability.clone()
+        } else if let Some((hero_idx, slot_idx)) = self.swap_source {
+            let Some(manager) = self.get_manager() else { return };
+            let heroes = manager.bind().get_heroes(0);
+            let hero = heroes.get(hero_idx).map(|g| g.to_string()).unwrap_or_default();
+            let equipped = manager.bind().get_equipped_abilities(0, GString::from(hero.as_str()));
+            let ability = equipped.get(slot_idx).map(|g| g.to_string()).unwrap_or_default();
+            if ability.is_empty() {
+                godot_print!("[AA2] Sell: no ability selected");
+                return;
+            }
+            ability
+        } else {
+            godot_print!("[AA2] Sell: no ability selected");
+            return;
+        };
+        if let Some(mut mgr) = self.get_manager() {
+            mgr.bind_mut().apply_player_action(0, "Sell".into(), GString::from(name.as_str()));
+        }
+        godot_print!("[AA2] Sold: {name}");
+        self.selected_ability.clear();
+        self.swap_source = None;
+    }
 
     fn reroll_hero(&mut self, hero_idx: usize) {
         let param = format!("{hero_idx}");

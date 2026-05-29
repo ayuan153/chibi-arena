@@ -30,12 +30,6 @@ impl IControl for MainScene {
             button.connect("pressed", &self.base().callable("on_ready_pressed"));
         }
 
-        // Connect sell bin button
-        if let Some(btn) = self.base().get_node_or_null("PersistentChrome/GodPortrait/SellBin") {
-            let mut button: Gd<godot::classes::Button> = btn.cast();
-            button.connect("pressed", &self.base().callable("on_sell_pressed"));
-        }
-
         // Connect Summary button to toggle ScoreboardUI
         if let Some(btn) = self.base().get_node_or_null("PersistentChrome/TopBar/SummaryButton") {
             let mut button: Gd<godot::classes::Button> = btn.cast();
@@ -136,11 +130,6 @@ impl MainScene {
             manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
             manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
         }
-    }
-
-    #[func]
-    fn on_sell_pressed(&mut self) {
-        godot_print!("[AA2] Sell bin clicked (not yet implemented)");
     }
 
     #[func]
