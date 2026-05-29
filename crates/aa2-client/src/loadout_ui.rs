@@ -82,6 +82,47 @@ impl IVBoxContainer for LoadoutUi {
             let mut btn: Gd<Button> = node.cast();
             btn.connect("pressed", &self.base().callable("on_sell_pressed"));
         }
+
+        // Wire drag-and-drop forwarding for bench slots
+        for i in 0..MAX_BENCH {
+            let path = format!("BenchRow/BenchSlot{i}");
+            if let Some(node) = self.base().get_node_or_null(&path) {
+                let mut btn: Gd<Button> = node.cast();
+                let iv = (i as i64).to_variant();
+                btn.set_drag_forwarding(
+                    &self.base().callable("forward_bench_drag").bind(std::slice::from_ref(&iv)),
+                    &self.base().callable("forward_bench_can_drop").bind(std::slice::from_ref(&iv)),
+                    &self.base().callable("forward_bench_drop").bind(std::slice::from_ref(&iv)),
+                );
+            }
+        }
+
+        // Wire drag-and-drop forwarding for ability slots
+        for h in 0..MAX_HEROES {
+            for s in 0..MAX_SLOTS {
+                let path = format!("HeroRow{h}/AbilitySlot{s}");
+                if let Some(node) = self.base().get_node_or_null(&path) {
+                    let mut btn: Gd<Button> = node.cast();
+                    let hv = (h as i64).to_variant();
+                    let sv = (s as i64).to_variant();
+                    btn.set_drag_forwarding(
+                        &self.base().callable("forward_slot_drag").bind(&[hv.clone(), sv.clone()]),
+                        &self.base().callable("forward_slot_can_drop").bind(&[hv.clone(), sv.clone()]),
+                        &self.base().callable("forward_slot_drop").bind(&[hv, sv]),
+                    );
+                }
+            }
+        }
+
+        // Wire drag-and-drop forwarding for sell bin (drop-only)
+        if let Some(node) = self.base().get_node_or_null("/root/MainScene/PersistentChrome/GodPortrait/SellBin") {
+            let mut btn: Gd<Button> = node.cast();
+            btn.set_drag_forwarding(
+                &self.base().callable("forward_no_drag"),
+                &self.base().callable("forward_sell_can_drop"),
+                &self.base().callable("forward_sell_drop"),
+            );
+        }
     }
 
     fn process(&mut self, _delta: f64) {
@@ -329,5 +370,153 @@ impl LoadoutUi {
             let result = mgr.bind_mut().apply_player_action(0, "RerollHero".into(), GString::from(param.as_str()));
             godot_print!("[AA2] Reroll result: {result}");
         }
+    }
+
+    // === Drag-and-drop glue methods ===
+
+    /// Build drag payload for a bench ability at `idx`. Returns empty Dictionary if invalid.
+    #[func]
+    fn make_bench_payload(&self, idx: i32) -> VarDictionary {
+        let mut dict = VarDictionary::new();
+        let Some(manager) = self.get_manager() else { return dict };
+        let bench = manager.bind().get_bench(0);
+        if idx < 0 || (idx as usize) >= bench.len() { return dict; }
+        let name = bench.get(idx as usize).map(|g| g.to_string()).unwrap_or_default();
+        if name.is_empty() { return dict; }
+        dict.set("kind", "ability");
+        dict.set("ability", &Variant::from(GString::from(name.as_str())));
+        dict.set("src", "bench");
+        dict
+    }
+
+    /// Build drag payload for an equipped ability at `hero_idx`/`slot_idx`. Returns empty Dictionary if invalid.
+    #[func]
+    fn make_slot_payload(&self, hero_idx: i32, slot_idx: i32) -> VarDictionary {
+        let mut dict = VarDictionary::new();
+        let Some(manager) = self.get_manager() else { return dict };
+        let heroes = manager.bind().get_heroes(0);
+        if hero_idx < 0 || (hero_idx as usize) >= heroes.len() { return dict; }
+        let hero = heroes.get(hero_idx as usize).map(|g| g.to_string()).unwrap_or_default();
+        let equipped = manager.bind().get_equipped_abilities(0, GString::from(hero.as_str()));
+        if slot_idx < 0 || (slot_idx as usize) >= equipped.len() { return dict; }
+        let ability = equipped.get(slot_idx as usize).map(|g| g.to_string()).unwrap_or_default();
+        if ability.is_empty() { return dict; }
+        dict.set("kind", "ability");
+        dict.set("ability", &Variant::from(GString::from(ability.as_str())));
+        dict.set("src", "equipped");
+        dict.set("hero", &Variant::from(GString::from(hero.as_str())));
+        dict
+    }
+
+    /// Equip a bench ability to the hero at `hero_idx`. Returns true on success.
+    #[func]
+    fn drop_equip(&mut self, ability: GString, hero_idx: i32) -> bool {
+        let Some(manager) = self.get_manager() else { return false };
+        let heroes = manager.bind().get_heroes(0);
+        if hero_idx < 0 || (hero_idx as usize) >= heroes.len() { return false; }
+        let hero = heroes.get(hero_idx as usize).map(|g| g.to_string()).unwrap_or_default();
+        if hero.is_empty() { return false; }
+        let param = format!("{ability},{hero}");
+        godot_print!("[AA2] DnD Equip: {param}");
+        if let Some(mut mgr) = self.get_manager() {
+            mgr.bind_mut().apply_player_action(0, "Equip".into(), GString::from(param.as_str()));
+        }
+        true
+    }
+
+    /// Sell an ability via drag-and-drop. Returns true.
+    #[func]
+    fn drop_sell(&mut self, ability: GString) -> bool {
+        godot_print!("[AA2] DnD Sell: {ability}");
+        if let Some(mut mgr) = self.get_manager() {
+            mgr.bind_mut().apply_player_action(0, "Sell".into(), ability);
+        }
+        true
+    }
+
+    /// Unequip an ability from a hero via drag-and-drop. Returns true.
+    #[func]
+    fn drop_unequip(&mut self, ability: GString, hero: GString) -> bool {
+        let param = format!("{ability},{hero}");
+        godot_print!("[AA2] DnD Unequip: {param}");
+        if let Some(mut mgr) = self.get_manager() {
+            mgr.bind_mut().apply_player_action(0, "Unequip".into(), GString::from(param.as_str()));
+        }
+        true
+    }
+
+    // === Drag forwarding handlers ===
+
+    /// Forwarding: start drag from bench slot (bound arg: idx).
+    #[func]
+    fn forward_bench_drag(&mut self, _pos: Vector2, idx: i64) -> Variant {
+        let dict = self.make_bench_payload(idx as i32);
+        if dict.is_empty() { return Variant::nil(); }
+        dict.to_variant()
+    }
+
+    /// Forwarding: start drag from equipped ability slot (bound args: hero_idx, slot_idx).
+    #[func]
+    fn forward_slot_drag(&mut self, _pos: Vector2, hero_idx: i64, slot_idx: i64) -> Variant {
+        let dict = self.make_slot_payload(hero_idx as i32, slot_idx as i32);
+        if dict.is_empty() { return Variant::nil(); }
+        dict.to_variant()
+    }
+
+    /// Forwarding: can drop onto ability slot? Only bench abilities.
+    #[func]
+    fn forward_slot_can_drop(&self, _pos: Vector2, data: Variant, _h: i64, _s: i64) -> bool {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return false };
+        let kind = dict.get("kind").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        let src = dict.get("src").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        kind == "ability" && src == "bench"
+    }
+
+    /// Forwarding: drop onto ability slot — equip from bench.
+    #[func]
+    fn forward_slot_drop(&mut self, _pos: Vector2, data: Variant, hero_idx: i64, _slot_idx: i64) {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return };
+        let ability = dict.get("ability").map(|v| v.to::<GString>()).unwrap_or_default();
+        self.drop_equip(ability, hero_idx as i32);
+    }
+
+    /// Forwarding: can drop onto bench slot? Only equipped abilities (unequip).
+    #[func]
+    fn forward_bench_can_drop(&self, _pos: Vector2, data: Variant, _idx: i64) -> bool {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return false };
+        let kind = dict.get("kind").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        let src = dict.get("src").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        kind == "ability" && src == "equipped"
+    }
+
+    /// Forwarding: drop onto bench slot — unequip.
+    #[func]
+    fn forward_bench_drop(&mut self, _pos: Vector2, data: Variant, _idx: i64) {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return };
+        let ability = dict.get("ability").map(|v| v.to::<GString>()).unwrap_or_default();
+        let hero = dict.get("hero").map(|v| v.to::<GString>()).unwrap_or_default();
+        self.drop_unequip(ability, hero);
+    }
+
+    /// Forwarding: can drop onto sell bin? Any ability.
+    #[func]
+    fn forward_sell_can_drop(&self, _pos: Vector2, data: Variant) -> bool {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return false };
+        let kind = dict.get("kind").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        kind == "ability"
+    }
+
+    /// Forwarding: drop onto sell bin — sell ability.
+    #[func]
+    fn forward_sell_drop(&mut self, _pos: Vector2, data: Variant) {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return };
+        let ability = dict.get("ability").map(|v| v.to::<GString>()).unwrap_or_default();
+        self.drop_sell(ability);
+    }
+
+    /// Forwarding: no-drag for sell bin (drop-only target).
+    #[func]
+    fn forward_no_drag(&mut self, _pos: Vector2) -> Variant {
+        Variant::nil()
     }
 }

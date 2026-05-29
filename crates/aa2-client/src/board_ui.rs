@@ -49,6 +49,20 @@ impl IControl for BoardUI {
         status.set_name("StatusLabel");
         status.set_text("");
         self.base_mut().add_child(&status);
+
+        // Wire drag-and-drop forwarding for hero buttons
+        for i in 0..MAX_HEROES {
+            let path = format!("Hero{i}");
+            if let Some(node) = self.base().get_node_or_null(&path) {
+                let mut btn: Gd<Button> = node.cast();
+                let iv = (i as i64).to_variant();
+                btn.set_drag_forwarding(
+                    &self.base().callable("forward_hero_drag").bind(std::slice::from_ref(&iv)),
+                    &self.base().callable("forward_hero_can_drop").bind(std::slice::from_ref(&iv)),
+                    &self.base().callable("forward_hero_drop").bind(std::slice::from_ref(&iv)),
+                );
+            }
+        }
     }
 
     fn process(&mut self, _delta: f64) {
@@ -78,6 +92,22 @@ impl IControl for BoardUI {
                 ctrl.set_visible(false);
             }
         }
+    }
+
+    fn can_drop_data(&self, _at_position: Vector2, data: Variant) -> bool {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return false };
+        let kind = dict.get("kind").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        kind == "hero"
+    }
+
+    fn drop_data(&mut self, _at_position: Vector2, data: Variant) {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return };
+        let hero = dict.get("hero").map(|v| v.to::<GString>()).unwrap_or_default();
+        let local = self.base().get_local_mouse_position();
+        let size = self.base().get_size();
+        let gx = ((local.x / size.x) * 2000.0).clamp(0.0, 2000.0);
+        let gy = ((local.y / size.y) * 2000.0).clamp(1000.0, 2000.0);
+        self.reposition_hero(hero, gx, gy);
     }
 }
 
@@ -178,4 +208,61 @@ impl BoardUI {
     #[func] fn on_hero_2(&mut self) { self.select_hero(2); }
     #[func] fn on_hero_3(&mut self) { self.select_hero(3); }
     #[func] fn on_hero_4(&mut self) { self.select_hero(4); }
+
+    // === Drag-and-drop glue methods ===
+
+    /// Reposition a hero to grid coordinates via drag-and-drop. Returns true.
+    #[func]
+    fn reposition_hero(&mut self, hero: GString, gx: f32, gy: f32) -> bool {
+        let param = format!("{hero},{gx},{gy}");
+        godot_print!("[AA2] DnD Reposition: {param}");
+        if let Some(mut mgr) = self.get_manager() {
+            mgr.bind_mut().apply_player_action(0, "SetPosition".into(), GString::from(param.as_str()));
+        }
+        true
+    }
+
+    /// Build drag payload for a hero at `idx`. Returns empty Dictionary if invalid.
+    #[func]
+    fn make_hero_payload(&self, idx: i32) -> VarDictionary {
+        let mut dict = VarDictionary::new();
+        let Some(manager) = self.get_manager() else { return dict };
+        let heroes = manager.bind().get_heroes(0);
+        if idx < 0 || (idx as usize) >= heroes.len() { return dict; }
+        let name = heroes.get(idx as usize).map(|g| g.to_string()).unwrap_or_default();
+        if name.is_empty() { return dict; }
+        dict.set("kind", "hero");
+        dict.set("hero", &Variant::from(GString::from(name.as_str())));
+        dict
+    }
+
+    // === Drag forwarding handlers ===
+
+    /// Forwarding: start drag from hero button (bound arg: idx).
+    #[func]
+    fn forward_hero_drag(&mut self, _pos: Vector2, idx: i64) -> Variant {
+        let dict = self.make_hero_payload(idx as i32);
+        if dict.is_empty() { return Variant::nil(); }
+        dict.to_variant()
+    }
+
+    /// Forwarding: can drop onto hero button? Only heroes (reposition).
+    #[func]
+    fn forward_hero_can_drop(&self, _pos: Vector2, data: Variant, _idx: i64) -> bool {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return false };
+        let kind = dict.get("kind").map(|v| v.to::<GString>().to_string()).unwrap_or_default();
+        kind == "hero"
+    }
+
+    /// Forwarding: drop onto hero button — reposition using local mouse position.
+    #[func]
+    fn forward_hero_drop(&mut self, _pos: Vector2, data: Variant, _idx: i64) {
+        let Ok(dict) = data.try_to::<VarDictionary>() else { return };
+        let hero = dict.get("hero").map(|v| v.to::<GString>()).unwrap_or_default();
+        let local = self.base().get_local_mouse_position();
+        let size = self.base().get_size();
+        let gx = ((local.x / size.x) * 2000.0).clamp(0.0, 2000.0);
+        let gy = ((local.y / size.y) * 2000.0).clamp(1000.0, 2000.0);
+        self.reposition_hero(hero, gx, gy);
+    }
 }
