@@ -22,6 +22,11 @@ impl IControl for MainScene {
         if let Some(mut manager) = self.get_manager() {
             manager.bind_mut().init_game(42, 2, "../data".into());
             godot_print!("[AA2] GameManager initialized");
+
+            // If AA2_SERVER is set, connect to the remote server (networked mode).
+            if let Ok(url) = std::env::var("AA2_SERVER") {
+                manager.bind_mut().connect_to_server(GString::from(&url));
+            }
         }
 
         // Connect ready button signal
@@ -46,38 +51,40 @@ impl IControl for MainScene {
 
         let phase = manager.bind().get_phase().to_string();
 
-        // AI player auto-actions
-        if phase == "GodPick" {
-            let ai_god = manager.bind().get_player_god(1).to_string();
-            if ai_god.is_empty() {
-                let gods = manager.bind().get_available_gods();
-                if let Some(dict) = gods.get(0) {
-                    let name = dict.get("name").unwrap_or_default().to::<GString>();
-                    godot_print!("[AA2] AI picking god: {name}");
-                    manager.bind_mut().apply_player_action(1, "PickGod".into(), name);
+        if !manager.bind().is_networked() {
+            // AI player auto-actions
+            if phase == "GodPick" {
+                let ai_god = manager.bind().get_player_god(1).to_string();
+                if ai_god.is_empty() {
+                    let gods = manager.bind().get_available_gods();
+                    if let Some(dict) = gods.get(0) {
+                        let name = dict.get("name").unwrap_or_default().to::<GString>();
+                        godot_print!("[AA2] AI picking god: {name}");
+                        manager.bind_mut().apply_player_action(1, "PickGod".into(), name);
+                    }
+                }
+                // Auto-ready both players once both have picked gods
+                let p0_god = manager.bind().get_player_god(0).to_string();
+                let p1_god = manager.bind().get_player_god(1).to_string();
+                if !p0_god.is_empty() && !p1_god.is_empty() {
+                    godot_print!("[AA2] All gods picked, advancing...");
+                    manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
+                    manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
                 }
             }
-            // Auto-ready both players once both have picked gods
-            let p0_god = manager.bind().get_player_god(0).to_string();
-            let p1_god = manager.bind().get_player_god(1).to_string();
-            if !p0_god.is_empty() && !p1_god.is_empty() {
-                godot_print!("[AA2] All gods picked, advancing...");
-                manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
-                manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
-            }
-        }
 
-        // AI auto-draft: pick first choice immediately
-        if phase == "Shop" {
-            let ai_choices = manager.bind().get_draft_choices(1);
-            if !ai_choices.is_empty() {
-                manager.bind_mut().apply_player_action(1, "DraftHero".into(), "0".into());
+            // AI auto-draft: pick first choice immediately
+            if phase == "Shop" {
+                let ai_choices = manager.bind().get_draft_choices(1);
+                if !ai_choices.is_empty() {
+                    manager.bind_mut().apply_player_action(1, "DraftHero".into(), "0".into());
+                }
             }
         }
 
         if phase == self.current_phase {
             // Check if combat viewer finished playing
-            if phase == "Combat" && self.combat_started
+            if phase == "Combat" && self.combat_started && !manager.bind().is_networked()
                 && let Some(viewer) = self.base().get_node_or_null("CombatViewerUI")
             {
                 let viewer: Gd<crate::combat_viewer_ui::CombatViewerUI> = viewer.cast();
@@ -97,26 +104,30 @@ impl IControl for MainScene {
 
         if phase == "Shop" || phase == "GracePeriod" {
             self.combat_started = false;
-            // AI auto-readies during shop
-            if phase == "Shop" {
+            if !manager.bind().is_networked() {
+                // AI auto-readies during shop
+                if phase == "Shop" {
+                    manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
+                }
+            }
+        }
+
+        if !manager.bind().is_networked() {
+            if phase == "Combat" && !self.combat_started {
+                manager.bind_mut().run_combat();
+                self.combat_started = true;
+                // Start combat viewer playback
+                if let Some(viewer) = self.base().get_node_or_null("CombatViewerUI") {
+                    let mut viewer: Gd<crate::combat_viewer_ui::CombatViewerUI> = viewer.cast();
+                    viewer.bind_mut().start_playback(0);
+                }
+            }
+
+            if phase == "GracePeriod" {
+                // Skip grace period for now (no animation)
+                manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
                 manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
             }
-        }
-
-        if phase == "Combat" && !self.combat_started {
-            manager.bind_mut().run_combat();
-            self.combat_started = true;
-            // Start combat viewer playback
-            if let Some(viewer) = self.base().get_node_or_null("CombatViewerUI") {
-                let mut viewer: Gd<crate::combat_viewer_ui::CombatViewerUI> = viewer.cast();
-                viewer.bind_mut().start_playback(0);
-            }
-        }
-
-        if phase == "GracePeriod" {
-            // Skip grace period for now (no animation)
-            manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
-            manager.bind_mut().apply_player_action(1, "Ready".into(), "".into());
         }
     }
 }

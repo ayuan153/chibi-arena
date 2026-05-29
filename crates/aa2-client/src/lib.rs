@@ -1,7 +1,7 @@
 use godot::prelude::*;
 
 mod game_manager;
-mod net_client;
+pub mod net_client;
 mod main_scene;
 mod shop_ui;
 mod board_ui;

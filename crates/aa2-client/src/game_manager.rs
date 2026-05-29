@@ -94,6 +94,20 @@ impl GameManager {
         self.net.is_some()
     }
 
+    /// Public accessor for networked state (used by MainScene to gate local-only logic).
+    #[func]
+    pub fn is_networked(&self) -> bool {
+        self.networked()
+    }
+
+    /// Request the server to start the game. No-op if not networked.
+    #[func]
+    pub fn start_game(&mut self) {
+        if let Some(nc) = &self.net {
+            nc.send(ClientMsg::Start);
+        }
+    }
+
     /// Connect to a remote game server via WebSocket. Sends a Join message immediately.
     #[func]
     pub fn connect_to_server(&mut self, url: GString) {

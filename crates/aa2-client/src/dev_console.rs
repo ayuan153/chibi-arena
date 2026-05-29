@@ -137,7 +137,15 @@ impl DevConsole {
                 let r = manager.bind_mut().apply_player_action(0, "Ready".into(), "".into());
                 format!("Ready: {r}")
             }
-            "help" => "Commands: gold <n>, hp <n>, phase, round, state, buy <slot>, reroll, combat, ready, help".to_string(),
+            "help" => "Commands: gold <n>, hp <n>, phase, round, state, buy <slot>, reroll, combat, ready, connect <url>, start, help".to_string(),
+            "connect" => {
+                manager.bind_mut().connect_to_server(arg.into());
+                format!("Connecting to {arg}")
+            }
+            "start" => {
+                manager.bind_mut().start_game();
+                "Sent start".to_string()
+            }
             _ => format!("Unknown command: {command}. Type 'help'."),
         }
     }

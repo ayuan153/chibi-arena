@@ -6,7 +6,7 @@ authors = ["ayuan153"]
 license = "MIT"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
 godot = "0.5"
@@ -20,3 +20,7 @@ tokio-tungstenite = "0.29"
 futures-util = { version = "0.3", features = ["sink"] }
 serde_json = { workspace = true }
 
+
+[dev-dependencies]
+aa2-server = { path = "../aa2-server" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
