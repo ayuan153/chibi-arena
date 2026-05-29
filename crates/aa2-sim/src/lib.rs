@@ -1951,7 +1951,7 @@ mod tests {
         // Projectile travel time: target moves toward attacker during wind-up,
         // so actual distance is less than 400. Drow projectile speed = 1250.
         let travel_ticks = hit_tick - spawn_tick;
-        assert!(travel_ticks >= 1 && travel_ticks < 30, "Unexpected travel time: {travel_ticks}");
+        assert!((1..30).contains(&travel_ticks), "Unexpected travel time: {travel_ticks}");
     }
 
     #[test]

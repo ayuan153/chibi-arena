@@ -300,10 +300,8 @@ mod tests {
         assert!(!shop.offerings.contains(&Some("ult".to_string())));
 
         // Return offerings and try at level 3
-        for slot in shop.offerings.drain(..) {
-            if let Some(name) = slot {
-                pool.return_ability(&name);
-            }
+        for name in shop.offerings.drain(..).flatten() {
+            pool.return_ability(&name);
         }
         shop.level = 3;
         // Roll many times to check ult can appear

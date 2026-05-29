@@ -2066,7 +2066,7 @@ fn test_burrowstrike_wave_hits_closer_first() {
         "Close enemy (tick {}) should be stunned before far enemy (tick {})", close_tick, far_tick);
     // At 2000 u/s: 400 unit difference = 0.2s = 6 ticks difference
     let diff = far_tick - close_tick;
-    assert!(diff >= 4 && diff <= 8,
+    assert!((4..=8).contains(&diff),
         "Expected ~6 tick difference, got {}", diff);
 }
 
@@ -2497,7 +2497,6 @@ fn test_spear_blocked_by_magic_immunity() {
         pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
     });
-    let target_hp_before = target.hp;
     let target_pos_before = target.position;
 
     let mut sim = Simulation::new(vec![caster, target]);

@@ -197,7 +197,7 @@ The dev binary resolves string names to file paths:
 
 Usage:
 ```bash
-cargo run --bin aa2-dev -- --loadout data/loadouts/sven_nuker.ron data/loadouts/drow_support.ron
+cargo run -p aa2-sim --bin aa2-sim-dev -- --loadout data/loadouts/sven_nuker.ron data/loadouts/drow_support.ron
 ```
 
 ---

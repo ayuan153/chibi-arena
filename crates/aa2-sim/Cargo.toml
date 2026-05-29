@@ -8,7 +8,7 @@ aa2-data = { path = "../aa2-data" }
 serde = { workspace = true }
 
 [[bin]]
-name = "aa2-dev"
+name = "aa2-sim-dev"
 path = "src/bin/dev.rs"
 
 [dev-dependencies]

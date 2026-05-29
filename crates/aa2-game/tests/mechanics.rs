@@ -636,7 +636,7 @@ fn test_slug_name_resolution() {
         name.to_lowercase().replace(' ', "_")
     }
 
-    let bench = vec![
+    let bench = [
         "Spear of Mars".to_string(),
         "Heavenly Grace".to_string(),
         "Dark Pact".to_string(),
@@ -655,7 +655,7 @@ fn test_slug_name_resolution() {
     assert_eq!(found, Some(&"Dark Pact".to_string()));
 
     // Heroes too
-    let heroes = vec!["Sand King".to_string(), "Crystal Maiden".to_string()];
+    let heroes = ["Sand King".to_string(), "Crystal Maiden".to_string()];
     let found = heroes.iter().find(|h| slug(h) == slug("sand_king"));
     assert_eq!(found, Some(&"Sand King".to_string()));
 
@@ -682,7 +682,7 @@ fn test_illusions_not_counted_as_survivors() {
     let team_a = vec![(config_a, Vec2::new(1000.0, 500.0), vec![])];
     let team_b = vec![(config_b, Vec2::new(1000.0, 1500.0), vec![])];
 
-    let (winner, survivors_a, survivors_b, _log) = run_combat_with_log(&team_a, &team_b, 42);
+    let (winner, survivors_a, _survivors_b, _log) = run_combat_with_log(&team_a, &team_b, 42);
 
     // Team A should win
     assert_eq!(winner, Some(0));

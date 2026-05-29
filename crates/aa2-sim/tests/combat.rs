@@ -113,13 +113,10 @@ fn test_io_instant_turn_rate_vs_slow_hero() {
     let mut io_cast_tick = None;
     for _ in 0..100 {
         sim_io.step();
-        if io_cast_tick.is_none() {
-            if let Some(evt) = sim_io.combat_log.iter().find(|e| matches!(e, CombatEvent::CastStart { .. })) {
-                if let CombatEvent::CastStart { tick, .. } = evt {
-                    io_cast_tick = Some(*tick);
-                }
+        if io_cast_tick.is_none()
+            && let Some(CombatEvent::CastStart { tick, .. }) = sim_io.combat_log.iter().find(|e| matches!(e, CombatEvent::CastStart { .. })) {
+                io_cast_tick = Some(*tick);
             }
-        }
         if io_cast_tick.is_some() { break; }
     }
 
@@ -129,13 +126,10 @@ fn test_io_instant_turn_rate_vs_slow_hero() {
     let mut slow_cast_tick = None;
     for _ in 0..100 {
         sim_slow.step();
-        if slow_cast_tick.is_none() {
-            if let Some(evt) = sim_slow.combat_log.iter().find(|e| matches!(e, CombatEvent::CastStart { .. })) {
-                if let CombatEvent::CastStart { tick, .. } = evt {
-                    slow_cast_tick = Some(*tick);
-                }
+        if slow_cast_tick.is_none()
+            && let Some(CombatEvent::CastStart { tick, .. }) = sim_slow.combat_log.iter().find(|e| matches!(e, CombatEvent::CastStart { .. })) {
+                slow_cast_tick = Some(*tick);
             }
-        }
         if slow_cast_tick.is_some() { break; }
     }
 

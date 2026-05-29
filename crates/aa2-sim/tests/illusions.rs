@@ -460,7 +460,6 @@ fn test_illusion_cannot_use_essence_shift() {
     });
 
     let enemy = Unit::from_hero_def(&hero, 1, 1, Vec2::new(100.0, 0.0));
-    let enemy_buffs_before = enemy.buffs.len();
 
     let mut sim = Simulation::with_seed(vec![test_illusion, enemy], 42);
 

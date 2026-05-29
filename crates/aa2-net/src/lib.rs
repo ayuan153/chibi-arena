@@ -98,7 +98,10 @@ pub struct StateSnapshot {
 pub enum ClientMsg {
     /// Initial join request.
     Join { name: String },
-    /// A game action.
+    /// A game action, reusing the existing string action protocol: `action_type`
+    /// is the action name (e.g. "Buy", "Equip") and `param` is its argument
+    /// payload (some actions pack multiple args, e.g. SetPosition as "hero,x,y").
+    /// The server parses and validates this pair into a typed action.
     Action { action_type: String, param: String },
 }
 
