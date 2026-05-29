@@ -149,3 +149,92 @@ async fn combat_runs_and_advances() {
         _ => panic!("expected PhaseChange"),
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn game_reaches_gameover() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(aa2_server::serve(listener, PathBuf::from("../../data"), 42));
+
+    let gods = aa2_data::load_all_gods(&PathBuf::from("../../data/gods")).unwrap();
+    let god_name = gods[0].name.clone();
+
+    // Connect two human clients
+    let (ws0, _) = tokio_tungstenite::connect_async(format!("ws://{addr}")).await.unwrap();
+    let (mut w0, mut r0) = ws0.split();
+    let (ws1, _) = tokio_tungstenite::connect_async(format!("ws://{addr}")).await.unwrap();
+    let (mut w1, mut r1) = ws1.split();
+
+    // Both join, c0 starts
+    send(&mut w0, &ClientMsg::Join { name: "H0".into() }).await;
+    recv_until(&mut r0, |m| matches!(m, ServerMsg::Welcome { .. })).await;
+    send(&mut w1, &ClientMsg::Join { name: "H1".into() }).await;
+    recv_until(&mut r1, |m| matches!(m, ServerMsg::Welcome { .. })).await;
+    send(&mut w0, &ClientMsg::Start).await;
+
+    // Driver: reads messages, readies up each prep phase, returns placements on GameOver.
+    async fn drive(
+        w: &mut futures_util::stream::SplitSink<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, Message>,
+        r: &mut futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
+        god_name: &str,
+    ) -> Vec<u8> {
+        let mut last_readied: Option<(Phase, u32)> = None;
+        let mut god_picked = false;
+        loop {
+            let msg = r.next().await.unwrap().unwrap();
+            let text = match msg.to_text() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            let sm: ServerMsg = match serde_json::from_str(text) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            match &sm {
+                ServerMsg::GameOver { placements } => return placements.clone(),
+                ServerMsg::Snapshot(snap) => {
+                    let key = (snap.phase.clone(), snap.round);
+                    if snap.phase == Phase::GodPick && !god_picked {
+                        god_picked = true;
+                        send(w, &ClientMsg::Action { action_type: "PickGod".into(), param: god_name.to_string() }).await;
+                    }
+                    if matches!(snap.phase, Phase::GodPick | Phase::Shop | Phase::GracePeriod) && last_readied.as_ref() != Some(&key) {
+                        last_readied = Some(key);
+                        send(w, &ClientMsg::Action { action_type: "Ready".into(), param: String::new() }).await;
+                    }
+                }
+                ServerMsg::PhaseChange { phase, round, .. } => {
+                    let key = (phase.clone(), *round);
+                    if matches!(phase, Phase::GodPick | Phase::Shop | Phase::GracePeriod) && last_readied.as_ref() != Some(&key) {
+                        if *phase == Phase::GodPick && !god_picked {
+                            god_picked = true;
+                            send(w, &ClientMsg::Action { action_type: "PickGod".into(), param: god_name.to_string() }).await;
+                        }
+                        last_readied = Some(key);
+                        send(w, &ClientMsg::Action { action_type: "Ready".into(), param: String::new() }).await;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Run both drivers concurrently with a generous virtual-time timeout
+    let result = timeout(Duration::from_secs(2400), async {
+        let gn = god_name.clone();
+        let (p0, p1) = tokio::join!(
+            drive(&mut w0, &mut r0, &gn),
+            drive(&mut w1, &mut r1, &god_name),
+        );
+        (p0, p1)
+    })
+    .await
+    .expect("game did not reach GameOver within 2400s virtual time");
+
+    let placements = result.0;
+    // Structural assertions
+    assert_eq!(placements.len(), 8, "expected 8 placements, got {:?}", placements);
+    let mut sorted = placements.clone();
+    sorted.sort();
+    assert_eq!(sorted, vec![0, 1, 2, 3, 4, 5, 6, 7], "placements must be a permutation of 0..=7, got {:?}", placements);
+}
