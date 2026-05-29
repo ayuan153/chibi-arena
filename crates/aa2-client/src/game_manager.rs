@@ -22,11 +22,7 @@ pub struct GameManager {
     gods: Vec<God>,
     rng: Option<StdRng>,
     last_combat_results: Vec<CombatResult>,
-    /// Draft choices per player: [STR, AGI, INT] hero names
-    draft_choices: HashMap<u8, [Option<String>; 3]>,
     last_phase: String,
-    /// If set, the next DraftHero action replaces this hero index instead of adding
-    pending_reroll: Option<usize>,
 }
 
 #[godot_api]
@@ -79,8 +75,6 @@ impl GameManager {
         game.gods = self.gods.clone();
         self.game = Some(game);
         self.rng = Some(StdRng::seed_from_u64(seed as u64));
-        self.draft_choices.clear();
-        self.pending_reroll = None;
         self.last_phase.clear();
 
         // Mark extra players as dead
@@ -137,148 +131,34 @@ impl GameManager {
                 // param: "hero_name,slot_a,slot_b"
                 let parts: Vec<&str> = param_str.splitn(3, ',').collect();
                 if parts.len() != 3 { return "invalid params".into(); }
-                let hero_name = parts[0];
+                let hero_name = parts[0].to_string();
                 let slot_a: usize = parts[1].parse().unwrap_or(0);
                 let slot_b: usize = parts[2].parse().unwrap_or(0);
-                let p = &mut game.players[player_id as usize];
-                if let Some(abilities) = p.equipped.get_mut(hero_name)
-                    && slot_a < abilities.len() && slot_b < abilities.len()
-                {
-                    abilities.swap(slot_a, slot_b);
-                    return "ok".into();
-                }
-                return "invalid slot".into();
+                Action::SwapAbilities(hero_name, slot_a, slot_b)
             }
             "DraftHero" => {
                 let idx: usize = param_str.parse().unwrap_or(0);
                 Action::DraftHero(idx)
             }
             "RerollHero" => {
-                // Generate 3 draft choices (STR/AGI/INT) for hero reroll
-                let hero_idx: usize = param_str.parse().unwrap_or(0);
-                let p = &game.players[player_id as usize];
-                if p.gold < 2 {
-                    return "not enough gold".into();
-                }
-                if hero_idx >= p.heroes.len() {
-                    return "invalid hero index".into();
-                }
-                game.players[player_id as usize].gold -= 2;
-                // Generate choices across all tiers
-                use aa2_game::draft::generate_reroll_choices;
-                let owned: Vec<&str> = game.players[player_id as usize].heroes.iter().map(|s| s.as_str()).collect();
-                let available: Vec<&HeroDef> = self.hero_defs.values()
-                    .filter(|h| !owned.contains(&h.name.as_str()))
-                    .collect();
-                let choices = generate_reroll_choices(&available, rng);
-                self.draft_choices.insert(player_id as u8, choices);
-                self.pending_reroll = Some(hero_idx);
-                godot_print!("[AA2] Hero reroll draft started for slot {hero_idx}");
-                return "ok".into();
+                Action::RerollHero(param_str)
             }
             "Ready" => {
-                // Auto-pick random draft choice if pending (reroll or round draft)
-                if let Some(choices) = self.draft_choices.get(&(player_id as u8)).cloned() {
-                    let valid: Vec<usize> = choices.iter().enumerate()
-                        .filter(|(_, c)| c.is_some())
-                        .map(|(i, _)| i)
-                        .collect();
-                    let pick_idx = if valid.is_empty() { 0 } else {
-                        use rand::seq::SliceRandom;
-                        *valid.choose(rng).unwrap()
-                    };
-                    let hero_name = choices[pick_idx].clone().unwrap_or_default();
-                    if !hero_name.is_empty()
-                        && let Some(p) = game.players.get_mut(player_id as usize)
-                    {
-                        if let Some(reroll_idx) = self.pending_reroll {
-                            if reroll_idx < p.heroes.len() {
-                                let old = p.heroes[reroll_idx].clone();
-                                p.heroes[reroll_idx] = hero_name.clone();
-                                if let Some(pos) = p.hero_positions.remove(&old) {
-                                    p.hero_positions.insert(hero_name.clone(), pos);
-                                }
-                                if let Some(abilities) = p.equipped.remove(&old) {
-                                    p.equipped.insert(hero_name.clone(), abilities);
-                                }
-                                godot_print!("[AA2] Auto-rerolled {old} -> {hero_name}");
-                            }
-                        } else {
-                            p.heroes.push(hero_name.clone());
-                            p.hero_positions.insert(hero_name, (500.0, 1500.0));
-                        }
-                    }
-                    self.draft_choices.remove(&(player_id as u8));
-                    self.pending_reroll = None;
-                }
                 Action::Ready
             }
             _ => return GString::from(format!("unknown action: {action_str}").as_str()),
         };
 
-        match game.apply_action(player_id as u8, action.clone(), rng) {
+        match game.apply_action(player_id as u8, action.clone(), &self.hero_defs, rng) {
             Ok(()) => {
-                // Post-action handling for DraftHero
-                if let Action::DraftHero(idx) = &action
-                    && let Some(choices) = self.draft_choices.get(&(player_id as u8))
-                    && let Some(Some(hero_name)) = choices.get(*idx)
-                {
-                    let name = hero_name.clone();
-                    if let Some(p) = game.players.get_mut(player_id as usize) {
-                        if let Some(reroll_idx) = self.pending_reroll {
-                            // Reroll: replace existing hero, keep abilities
-                            if reroll_idx < p.heroes.len() {
-                                let old_hero = p.heroes[reroll_idx].clone();
-                                p.heroes[reroll_idx] = name.clone();
-                                if let Some(pos) = p.hero_positions.remove(&old_hero) {
-                                    p.hero_positions.insert(name.clone(), pos);
-                                }
-                                if let Some(abilities) = p.equipped.remove(&old_hero) {
-                                    p.equipped.insert(name.clone(), abilities);
-                                }
-                                godot_print!("[AA2] Rerolled {old_hero} -> {name}");
-                            }
-                            self.pending_reroll = None;
-                        } else {
-                            // Normal draft: add new hero
-                            p.heroes.push(name.clone());
-                            p.hero_positions.insert(name, (500.0, 1500.0));
-                        }
-                    }
-                    self.draft_choices.remove(&(player_id as u8));
-                    // Clear draft_pending if no more players need to draft
-                    if !self.draft_choices.values().any(|_| true) {
-                        game.draft_pending = false;
-                    }
-                }
-                // Post-Ready: generate draft choices if we just entered a draft round
-                if matches!(action, Action::Ready) {
-                    if game.phase == GamePhase::Shop && game.draft_pending && !self.draft_choices.contains_key(&0) {
-                        // Can't call self.do_generate_draft() here due to borrow — use inline logic
-                        use aa2_game::draft::{generate_draft_choices, tier_for_draft_round};
-                        let tier = tier_for_draft_round(game.round).unwrap_or(0);
-                        let all_heroes: Vec<&HeroDef> = self.hero_defs.values().collect();
-                        for p in &game.players {
-                            if p.alive {
-                                let owned: Vec<&str> = p.heroes.iter().map(|s| s.as_str()).collect();
-                                let available: Vec<&HeroDef> = all_heroes.iter()
-                                    .filter(|h| !owned.contains(&h.name.as_str()))
-                                    .copied()
-                                    .collect();
-                                let choices = generate_draft_choices(&available, tier, rng);
-                                self.draft_choices.insert(p.id, choices);
-                            }
-                        }
-                    }
-                    // Log shop state for debugging
-                    if game.phase == GamePhase::Shop {
-                        let offerings: Vec<_> = game.players[0].shop.offerings.iter()
-                            .filter_map(|o| o.as_ref())
-                            .collect();
-                        godot_print!("[AA2] Shop offerings: {:?}", offerings);
-                        if let Some(choices) = self.draft_choices.get(&0) {
-                            godot_print!("[AA2] Draft choices: {:?}", choices);
-                        }
+                // Log shop state for debugging after Ready
+                if matches!(action, Action::Ready) && game.phase == GamePhase::Shop {
+                    let offerings: Vec<_> = game.players[0].shop.offerings.iter()
+                        .filter_map(|o| o.as_ref())
+                        .collect();
+                    godot_print!("[AA2] Shop offerings: {:?}", offerings);
+                    if let Some(choices) = game.draft_choices.get(&0) {
+                        godot_print!("[AA2] Draft choices: {:?}", choices);
                     }
                 }
                 "ok".into()
@@ -357,7 +237,7 @@ impl GameManager {
             let phase = format!("{:?}", game.phase);
             if phase != self.last_phase {
                 self.last_phase = phase;
-                if game.phase == GamePhase::Shop && game.draft_pending && !self.draft_choices.contains_key(&0) {
+                if game.phase == GamePhase::Shop && game.draft_pending && !game.draft_choices.contains_key(&0) {
                     should_generate_draft = true;
                 }
             }
@@ -370,20 +250,21 @@ impl GameManager {
 
     fn do_generate_draft(&mut self) {
         use aa2_game::draft::{generate_draft_choices, tier_for_draft_round};
-        let Some(game) = &self.game else { return };
+        let Some(game) = &mut self.game else { return };
         let Some(rng) = &mut self.rng else { return };
 
         let tier = tier_for_draft_round(game.round).unwrap_or(0);
-        let all_heroes: Vec<&HeroDef> = self.hero_defs.values().collect();
-        for player in &game.players {
-            if player.alive {
-                let owned: Vec<&str> = player.heroes.iter().map(|s| s.as_str()).collect();
+        let mut all_heroes: Vec<&HeroDef> = self.hero_defs.values().collect();
+        all_heroes.sort_by_key(|h| &h.name);
+        for i in 0..game.players.len() {
+            if game.players[i].alive {
+                let owned: Vec<&str> = game.players[i].heroes.iter().map(|s| s.as_str()).collect();
                 let available: Vec<&HeroDef> = all_heroes.iter()
                     .filter(|h| !owned.contains(&h.name.as_str()))
                     .copied()
                     .collect();
                 let choices = generate_draft_choices(&available, tier, rng);
-                self.draft_choices.insert(player.id, choices);
+                game.draft_choices.insert(game.players[i].id, choices);
             }
         }
     }
@@ -635,7 +516,9 @@ impl GameManager {
     #[func]
     pub fn get_draft_choices(&self, player_id: i32) -> PackedStringArray {
         let mut arr = PackedStringArray::new();
-        if let Some(choices) = self.draft_choices.get(&(player_id as u8)) {
+        if let Some(game) = &self.game
+            && let Some(choices) = game.draft_choices.get(&(player_id as u8))
+        {
             for choice in choices {
                 arr.push(&GString::from(choice.as_deref().unwrap_or("")));
             }
@@ -646,7 +529,7 @@ impl GameManager {
     #[func]
     pub fn is_draft_active(&self) -> bool {
         // Show draft UI when player 0 has pending choices (round draft OR hero reroll)
-        self.draft_choices.contains_key(&0)
+        self.game.as_ref().is_some_and(|g| g.draft_choices.contains_key(&0))
     }
 
     #[func]

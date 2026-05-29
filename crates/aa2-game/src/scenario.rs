@@ -82,6 +82,8 @@ pub enum Action {
     DraftHero(usize),
     /// Discard hero, get new draft choices.
     RerollHero(String),
+    /// Swap two equipped ability slots on a hero (hero_name, slot_a, slot_b).
+    SwapAbilities(String, usize, usize),
     /// Signal player is done with current phase.
     Ready,
 }
@@ -295,7 +297,7 @@ fn execute_action(
             game.players[p_idx].god_buff_target = Some(hero.clone());
         }
         // These are handled by GameState::apply_action in the game loop, not in scenarios.
-        Action::PickGod(_) | Action::DraftHero(_) | Action::RerollHero(_) | Action::Ready => {}
+        Action::PickGod(_) | Action::DraftHero(_) | Action::RerollHero(_) | Action::SwapAbilities(..) | Action::Ready => {}
     }
 }
 

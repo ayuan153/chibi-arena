@@ -50,7 +50,7 @@ fn run() -> Result<(), String> {
     game.gods = gods.clone();
 
     // God pick phase
-    god_pick_phase(&mut game, &mut rng)?;
+    god_pick_phase(&mut game, &hero_defs, &mut rng)?;
 
     // Start round 1
     game.start_round1();
@@ -450,7 +450,7 @@ fn available_heroes_for_player<'a>(all_heroes: &'a [HeroDef], player: &PlayerSta
 
 // --- God Pick Phase ---
 
-fn god_pick_phase(game: &mut GameState, rng: &mut StdRng) -> Result<(), String> {
+fn god_pick_phase(game: &mut GameState, hero_defs: &HashMap<String, HeroDef>, rng: &mut StdRng) -> Result<(), String> {
     let gods = game.gods.clone();
     println!("\n=== GOD PICK ===\n");
     for (i, god) in gods.iter().enumerate() {
@@ -468,7 +468,7 @@ fn god_pick_phase(game: &mut GameState, rng: &mut StdRng) -> Result<(), String> 
         if let Ok(idx) = line.trim().parse::<usize>()
             && idx >= 1 && idx <= gods.len()
         {
-            game.apply_action(0, Action::PickGod(gods[idx - 1].clone()), rng)?;
+            game.apply_action(0, Action::PickGod(gods[idx - 1].clone()), hero_defs, rng)?;
             println!("  You chose: {}\n", gods[idx - 1].name);
             break;
         }
@@ -477,7 +477,7 @@ fn god_pick_phase(game: &mut GameState, rng: &mut StdRng) -> Result<(), String> 
     // AI picks randomly
     for i in 1..8u8 {
         let god = gods.choose(rng).expect("gods not empty").clone();
-        game.apply_action(i, Action::PickGod(god), rng)?;
+        game.apply_action(i, Action::PickGod(god), hero_defs, rng)?;
     }
     Ok(())
 }
@@ -843,17 +843,13 @@ fn handle_draft(game: &mut GameState, drafts: &mut [Option<DraftState>], player_
     match &draft.choices[index - 1] {
         Some(name) => {
             let name = name.clone();
-            // Use apply_action for validation
+            // Populate game.draft_choices so apply_action can perform the assignment
+            game.draft_choices.insert(player_id as u8, draft.choices.clone());
             let mut rng = rand::thread_rng();
-            if let Err(e) = game.apply_action(player_id as u8, Action::DraftHero(index - 1), &mut rng) {
+            if let Err(e) = game.apply_action(player_id as u8, Action::DraftHero(index - 1), hero_defs, &mut rng) {
                 println!("  Cannot draft: {e}");
                 return;
             }
-            game.players[player_id].heroes.push(name.clone());
-            // Set default position: center of player's half
-            game.players[player_id].hero_positions.insert(
-                name.clone(), (1000.0, 500.0)
-            );
             println!("  Drafted {}!", name);
             if let Some(h) = hero_defs.get(&name) {
                 println!("    {:?} | Tier {} | {} | Range {:.0}",

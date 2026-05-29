@@ -121,6 +121,12 @@ pub struct GameState {
     /// Available gods for this game.
     #[serde(default)]
     pub gods: Vec<god::God>,
+    /// Draft choices per player: [STR, AGI, INT] hero names (migrated from client).
+    #[serde(default)]
+    pub draft_choices: HashMap<u8, [Option<String>; 3]>,
+    /// If set, the next DraftHero action replaces this hero index instead of adding.
+    #[serde(default)]
+    pub pending_reroll: Option<usize>,
 }
 
 impl GameState {
@@ -141,6 +147,8 @@ impl GameState {
             cycle_round: 0,
             ready_players: HashSet::new(),
             gods: god::all_gods(),
+            draft_choices: HashMap::new(),
+            pending_reroll: None,
         }
     }
 
@@ -341,7 +349,7 @@ impl GameState {
     }
 
     /// Apply a player action, validating state and dispatching logic.
-    pub fn apply_action(&mut self, player_id: u8, action: crate::scenario::Action, rng: &mut impl rand::Rng) -> Result<(), String> {
+    pub fn apply_action(&mut self, player_id: u8, action: crate::scenario::Action, hero_defs: &HashMap<String, aa2_data::HeroDef>, rng: &mut impl rand::Rng) -> Result<(), String> {
         let p_idx = player_id as usize;
         if p_idx >= self.players.len() {
             return Err("invalid player_id".to_string());
@@ -430,13 +438,98 @@ impl GameState {
                 if idx > 2 {
                     return Err("draft index must be 0-2".to_string());
                 }
+                // Perform the actual hero assignment
+                let hero_name = self.draft_choices.get(&player_id)
+                    .and_then(|choices| choices.get(idx))
+                    .and_then(|c| c.clone())
+                    .ok_or_else(|| "no draft choice at index".to_string())?;
+                if let Some(reroll_idx) = self.pending_reroll {
+                    // Reroll: replace existing hero, keep abilities and position
+                    if reroll_idx < self.players[p_idx].heroes.len() {
+                        let old_hero = self.players[p_idx].heroes[reroll_idx].clone();
+                        self.players[p_idx].heroes[reroll_idx] = hero_name.clone();
+                        if let Some(pos) = self.players[p_idx].hero_positions.remove(&old_hero) {
+                            self.players[p_idx].hero_positions.insert(hero_name.clone(), pos);
+                        }
+                        if let Some(abilities) = self.players[p_idx].equipped.remove(&old_hero) {
+                            self.players[p_idx].equipped.insert(hero_name.clone(), abilities);
+                        }
+                    }
+                    self.pending_reroll = None;
+                } else {
+                    // Normal draft: add new hero
+                    self.players[p_idx].heroes.push(hero_name.clone());
+                    self.players[p_idx].hero_positions.insert(hero_name, (500.0, 1500.0));
+                }
+                self.draft_choices.remove(&player_id);
+                // Clear draft_pending if no more players need to draft
+                if self.draft_choices.is_empty() {
+                    self.draft_pending = false;
+                }
                 Ok(())
             }
-            Action::RerollHero(_) => {
-                // Actual reroll logic requires available heroes list from caller
+            Action::RerollHero(ref hero_idx_str) => {
+                let hero_idx: usize = hero_idx_str.parse().map_err(|_| "invalid hero index".to_string())?;
+                if self.players[p_idx].gold < 2 {
+                    return Err("not enough gold".to_string());
+                }
+                if hero_idx >= self.players[p_idx].heroes.len() {
+                    return Err("invalid hero index".to_string());
+                }
+                self.players[p_idx].gold -= 2;
+                let owned: Vec<&str> = self.players[p_idx].heroes.iter().map(|s| s.as_str()).collect();
+                let mut available: Vec<&aa2_data::HeroDef> = hero_defs.values()
+                    .filter(|h| !owned.contains(&h.name.as_str()))
+                    .collect();
+                available.sort_by_key(|h| &h.name);
+                let choices = draft::generate_reroll_choices(&available, rng);
+                self.draft_choices.insert(player_id, choices);
+                self.pending_reroll = Some(hero_idx);
                 Ok(())
+            }
+            Action::SwapAbilities(ref hero_name, slot_a, slot_b) => {
+                if let Some(abilities) = self.players[p_idx].equipped.get_mut(hero_name)
+                    && slot_a < abilities.len() && slot_b < abilities.len()
+                {
+                    abilities.swap(slot_a, slot_b);
+                    Ok(())
+                } else {
+                    Err("invalid slot".to_string())
+                }
             }
             Action::Ready => {
+                // Pre-Ready: auto-pick random draft choice if pending (reroll or round draft)
+                if let Some(choices) = self.draft_choices.get(&player_id).cloned() {
+                    let valid: Vec<usize> = choices.iter().enumerate()
+                        .filter(|(_, c)| c.is_some())
+                        .map(|(i, _)| i)
+                        .collect();
+                    let pick_idx = if valid.is_empty() { 0 } else {
+                        use rand::seq::SliceRandom;
+                        *valid.choose(rng).unwrap()
+                    };
+                    let hero_name = choices[pick_idx].clone().unwrap_or_default();
+                    if !hero_name.is_empty() {
+                        if let Some(reroll_idx) = self.pending_reroll {
+                            if reroll_idx < self.players[p_idx].heroes.len() {
+                                let old = self.players[p_idx].heroes[reroll_idx].clone();
+                                self.players[p_idx].heroes[reroll_idx] = hero_name.clone();
+                                if let Some(pos) = self.players[p_idx].hero_positions.remove(&old) {
+                                    self.players[p_idx].hero_positions.insert(hero_name.clone(), pos);
+                                }
+                                if let Some(abilities) = self.players[p_idx].equipped.remove(&old) {
+                                    self.players[p_idx].equipped.insert(hero_name.clone(), abilities);
+                                }
+                            }
+                        } else {
+                            self.players[p_idx].heroes.push(hero_name.clone());
+                            self.players[p_idx].hero_positions.insert(hero_name, (500.0, 1500.0));
+                        }
+                    }
+                    self.draft_choices.remove(&player_id);
+                    self.pending_reroll = None;
+                }
+
                 self.ready_players.insert(player_id);
                 // Check if all alive players are ready
                 let all_ready = self.players.iter()
@@ -463,6 +556,25 @@ impl GameState {
                                     self.config.shop_size_bonus,
                                     rng,
                                 );
+                            }
+                        }
+                    }
+
+                    // Post-Ready: generate draft choices if we just entered a draft round
+                    if self.phase == GamePhase::Shop && self.draft_pending && !self.draft_choices.contains_key(&0) {
+                        use crate::draft::{generate_draft_choices, tier_for_draft_round};
+                        let tier = tier_for_draft_round(self.round).unwrap_or(0);
+                        let mut all_heroes: Vec<&aa2_data::HeroDef> = hero_defs.values().collect();
+                        all_heroes.sort_by_key(|h| &h.name);
+                        for i in 0..self.players.len() {
+                            if self.players[i].alive {
+                                let owned: Vec<&str> = self.players[i].heroes.iter().map(|s| s.as_str()).collect();
+                                let available: Vec<&aa2_data::HeroDef> = all_heroes.iter()
+                                    .filter(|h| !owned.contains(&h.name.as_str()))
+                                    .copied()
+                                    .collect();
+                                let choices = generate_draft_choices(&available, tier, rng);
+                                self.draft_choices.insert(self.players[i].id, choices);
                             }
                         }
                     }
