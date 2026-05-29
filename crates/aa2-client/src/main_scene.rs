@@ -158,6 +158,7 @@ impl MainScene {
         self.set_screen_visible("PersistentChrome/PlayerList", !show_god_pick);
         self.set_screen_visible("PersistentChrome/GodPortrait", !show_god_pick);
         self.set_screen_visible("CombatViewerUI", show_combat);
+        self.set_screen_visible("DamageMeter", show_bottom || show_combat);
         self.set_screen_visible("ReadyButton", show_bottom);
 
         // ScoreboardUI: force-hide on GodPick, force-show on Finished, otherwise user-controlled

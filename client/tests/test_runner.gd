@@ -42,6 +42,7 @@ func run_all_tests():
 		"res://tests/test_equip.gd",
 		"res://tests/test_combat.gd",
 		"res://tests/test_sell.gd",
+		"res://tests/test_damage_meter.gd",
 	]
 
 	for script_path in test_scripts:

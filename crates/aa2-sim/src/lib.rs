@@ -83,6 +83,80 @@ pub enum CombatEvent {
     MoveTo { tick: u32, unit_id: u32, x: f32, y: f32, speed: f32 },
 }
 
+/// Total damage dealt by a single unit during a combat, with team + display name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnitDamage {
+    pub unit_id: u32,
+    pub team: u8,
+    pub name: String,
+    pub damage: f32,
+}
+
+/// Aggregates damage dealt per unit from a combat log.
+/// Sources: Attack(attacker_id), AbilityDamage(caster_id),
+/// ProjectileHit correlated to the most recent ProjectileSpawn for that target,
+/// WaveHit correlated to the most recent CastStart caster.
+/// DarkPactPulse.self_damage is NOT counted (it is self-damage, not damage dealt to enemies).
+/// Includes every spawned unit (0 damage if it dealt none). Sorted by damage DESC,
+/// ties broken by unit_id ASC for determinism.
+pub fn summarize_damage(log: &[CombatEvent]) -> Vec<UnitDamage> {
+    use std::collections::HashMap;
+
+    let mut spawn: HashMap<u32, (u8, String)> = HashMap::new();
+    let mut damage: HashMap<u32, f32> = HashMap::new();
+    let mut proj_src: HashMap<u32, u32> = HashMap::new(); // target_id -> attacker_id
+    let mut last_caster: Option<u32> = None;
+
+    for event in log {
+        match event {
+            CombatEvent::UnitSpawn { unit_id, team, name, .. } => {
+                spawn.insert(*unit_id, (*team, name.clone()));
+                damage.entry(*unit_id).or_insert(0.0);
+            }
+            CombatEvent::Attack { attacker_id, damage: dmg, .. } => {
+                *damage.entry(*attacker_id).or_insert(0.0) += dmg;
+            }
+            CombatEvent::AbilityDamage { caster_id, damage: dmg, .. } => {
+                *damage.entry(*caster_id).or_insert(0.0) += dmg;
+            }
+            CombatEvent::ProjectileSpawn { attacker_id, target_id, .. } => {
+                proj_src.insert(*target_id, *attacker_id);
+            }
+            CombatEvent::ProjectileHit { target_id, damage: dmg, .. } => {
+                if let Some(&attacker) = proj_src.get(target_id) {
+                    *damage.entry(attacker).or_insert(0.0) += dmg;
+                }
+            }
+            CombatEvent::CastStart { caster_id, .. } => {
+                last_caster = Some(*caster_id);
+            }
+            CombatEvent::WaveHit { damage: dmg, .. } => {
+                if let Some(caster) = last_caster {
+                    *damage.entry(caster).or_insert(0.0) += dmg;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut result: Vec<UnitDamage> = spawn
+        .into_iter()
+        .map(|(unit_id, (team, name))| UnitDamage {
+            unit_id,
+            team,
+            name,
+            damage: damage.get(&unit_id).copied().unwrap_or(0.0),
+        })
+        .collect();
+
+    result.sort_by(|a, b| {
+        b.damage.partial_cmp(&a.damage).unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.unit_id.cmp(&b.unit_id))
+    });
+
+    result
+}
+
 /// Xoshiro128++ RNG for deterministic damage rolls.
 /// We own this implementation to guarantee identical output across all platforms
 /// and Rust versions (no external crate can change the algorithm under us).
@@ -2375,5 +2449,25 @@ mod tests {
         assert!(sim.units[0].hp < attacker_max_hp,
             "Attacker should have taken reflected damage: hp={} max={}",
             sim.units[0].hp, attacker_max_hp);
+    }
+
+    #[test]
+    fn test_summarize_damage() {
+        use crate::{CombatEvent, UnitDamage, summarize_damage};
+
+        let log = vec![
+            CombatEvent::UnitSpawn { tick: 0, unit_id: 1, team: 0, name: "A".to_string(), x: 0.0, y: 0.0, max_hp: 100.0 },
+            CombatEvent::UnitSpawn { tick: 0, unit_id: 2, team: 1, name: "B".to_string(), x: 100.0, y: 0.0, max_hp: 100.0 },
+            CombatEvent::Attack { tick: 1, attacker_id: 1, target_id: 2, damage: 10.0 },
+            CombatEvent::AbilityDamage { tick: 2, caster_id: 1, target_id: 2, ability_name: "test".to_string(), damage: 5.0, damage_type: aa2_data::DamageType::Physical },
+            CombatEvent::ProjectileSpawn { tick: 3, attacker_id: 2, target_id: 1 },
+            CombatEvent::ProjectileHit { tick: 4, target_id: 1, damage: 7.0 },
+        ];
+
+        let result = summarize_damage(&log);
+        assert_eq!(result, vec![
+            UnitDamage { unit_id: 1, team: 0, name: "A".to_string(), damage: 15.0 },
+            UnitDamage { unit_id: 2, team: 1, name: "B".to_string(), damage: 7.0 },
+        ]);
     }
 }

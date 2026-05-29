@@ -591,6 +591,26 @@ impl GameManager {
         self.last_combat_results.len() as i32
     }
 
+    /// Per-unit damage summary for a matchup's last combat, sorted by damage descending.
+    /// Each dict: { unit_id: i32, team: i32, name: GString, damage: i32 }.
+    #[func]
+    pub fn get_damage_summary(&self, matchup_index: i32) -> Array<VarDictionary> {
+        let mut arr = Array::new();
+        let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
+            return arr;
+        };
+        let summary = aa2_sim::summarize_damage(&result.combat_log);
+        for ud in &summary {
+            let mut d = VarDictionary::new();
+            d.set("unit_id", ud.unit_id as i32);
+            d.set("team", ud.team as i32);
+            d.set("name", &GString::from(ud.name.as_str()));
+            d.set("damage", ud.damage.round() as i32);
+            arr.push(&d);
+        }
+        arr
+    }
+
     #[func]
     pub fn get_available_gods(&self) -> Array<VarDictionary> {
         let mut arr = Array::new();
