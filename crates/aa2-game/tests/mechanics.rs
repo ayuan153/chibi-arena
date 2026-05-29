@@ -106,7 +106,7 @@ fn test_combat_timeout_draw_mutual_damage() {
 
     // Give 2 players identical single-hero teams (to maximize chance of timeout or draw)
     // Use a hero with high HP — pick the first available hero
-    let hero_name = hero_defs.keys().next().unwrap().clone();
+    let hero_name = hero_defs.keys().min().unwrap().clone();
 
     for i in 0..2 {
         game.players[i].heroes.push(hero_name.clone());
@@ -288,8 +288,8 @@ fn test_grace_period_gold_spending_then_reset() {
 fn test_ability_level_in_combat() {
     let (hero_defs, ability_defs) = load_defs();
 
-    let hero_name = hero_defs.keys().next().unwrap().clone();
-    let ability_name = ability_defs.keys().next().unwrap().clone();
+    let hero_name = hero_defs.keys().min().unwrap().clone();
+    let ability_name = ability_defs.keys().min().unwrap().clone();
 
     let mut player = PlayerState::new(0);
     player.heroes.push(hero_name.clone());
@@ -344,7 +344,7 @@ fn test_run_combat_returns_result_on_timeout() {
     let (hero_defs, ability_defs) = load_defs();
 
     // Build two identical single-hero teams
-    let hero_name = hero_defs.keys().next().unwrap().clone();
+    let hero_name = hero_defs.keys().min().unwrap().clone();
 
     let mut player = PlayerState::new(0);
     player.heroes.push(hero_name.clone());

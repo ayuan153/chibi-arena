@@ -68,6 +68,13 @@ fn pick_one_per_attribute(heroes: &[&&HeroDef], rng: &mut impl rand::Rng) -> [Op
         .map(|h| h.name.as_str())
         .collect();
 
+    // Sort by name before shuffling so the seeded shuffle is reproducible:
+    // callers build these from a HashMap (random iteration order), which would
+    // otherwise make the seeded shuffle non-deterministic across process runs.
+    str_heroes.sort_unstable();
+    agi_heroes.sort_unstable();
+    int_heroes.sort_unstable();
+
     str_heroes.shuffle(rng);
     agi_heroes.shuffle(rng);
     int_heroes.shuffle(rng);
@@ -177,5 +184,33 @@ mod tests {
         let choices = generate_draft_choices(&available, 0, &mut rng);
         // STR choice must be str_b since str_a is excluded
         assert_eq!(choices[0].as_deref(), Some("str_b"));
+    }
+
+    /// Regression: draft choices must be deterministic under a fixed seed regardless of the
+    /// INPUT order of the candidate slice. Callers build that slice from a HashMap, whose
+    /// iteration order is randomized per process, so without the internal sort a seeded
+    /// shuffle would still produce different picks run-to-run. Same seed + reordered input
+    /// must produce identical choices.
+    #[test]
+    fn test_draft_choices_input_order_independent() {
+        use rand::SeedableRng;
+        let heroes = [
+            make_hero("Charlie", Attribute::Strength, 0),
+            make_hero("Alice", Attribute::Strength, 0),
+            make_hero("Bob", Attribute::Strength, 0),
+            make_hero("Yara", Attribute::Agility, 0),
+            make_hero("Xena", Attribute::Agility, 0),
+            make_hero("Mona", Attribute::Intelligence, 0),
+        ];
+        let order_a: Vec<&HeroDef> =
+            vec![&heroes[0], &heroes[1], &heroes[2], &heroes[3], &heroes[4], &heroes[5]];
+        let order_b: Vec<&HeroDef> =
+            vec![&heroes[2], &heroes[5], &heroes[0], &heroes[4], &heroes[1], &heroes[3]];
+
+        let mut rng_a = rand::rngs::StdRng::seed_from_u64(42);
+        let mut rng_b = rand::rngs::StdRng::seed_from_u64(42);
+        let a = generate_draft_choices(&order_a, 0, &mut rng_a);
+        let b = generate_draft_choices(&order_b, 0, &mut rng_b);
+        assert_eq!(a, b, "draft must be independent of candidate input order under same seed");
     }
 }

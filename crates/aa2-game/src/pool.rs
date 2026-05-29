@@ -62,7 +62,8 @@ impl AbilityPool {
         ultimates: &HashSet<String>,
         ultimate_unlock_level: u32,
     ) -> Vec<String> {
-        self.counts
+        let mut available: Vec<String> = self
+            .counts
             .iter()
             .filter(|(_, count)| **count > 0)
             .filter(|(name, _)| {
@@ -73,7 +74,12 @@ impl AbilityPool {
                 }
             })
             .map(|(name, _)| name.clone())
-            .collect()
+            .collect();
+        // Sort for deterministic order: counts is a HashMap (random iteration order),
+        // and the shop roll shuffles this list with a seeded RNG, so a stable input
+        // order is required for reproducible offerings under a fixed seed.
+        available.sort_unstable();
+        available
     }
 }
 
