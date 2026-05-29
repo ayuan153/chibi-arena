@@ -24,7 +24,7 @@ aa2/
 │   ├── aa2-sim/      — Combat simulation (Dota2-fidelity)
 │   ├── aa2-game/     — Game loop: economy, draft, shop, gods, matchups
 │   └── aa2-client/   — Godot GDExtension (gdext, cdylib)
-├── client/           — Godot 4.3 project
+├── client/           — Godot 4.6 project
 ├── data/
 │   ├── heroes/       — Hero body definitions (.ron)
 │   └── abilities/    — Ability definitions (.ron)

@@ -6,7 +6,7 @@ AA2 (Ability Arena 2) is a standalone cross-platform port of the Dota 2 mod Abil
 
 **Targets:** macOS (primary dev), iOS, Android, Windows, Linux  
 **Art style:** 2D chibi/anime, top-down perspective  
-**Engine:** Godot 4.3 (presentation) + Rust (simulation + game logic)
+**Engine:** Godot 4.6 (presentation) + Rust (simulation + game logic)
 
 ---
 
@@ -16,7 +16,7 @@ The system is a hybrid: a deterministic Rust simulation drives all game logic, w
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Godot 4.3 (GDExtension)                                │
+│ Godot 4.6 (GDExtension)                                │
 │   Scenes, UI, Rendering, Audio, Input                   │
 │         ↕ (gdext bindings)                              │
 │ ┌─────────────────────────────────────────────────────┐ │
@@ -49,7 +49,7 @@ The system is a hybrid: a deterministic Rust simulation drives all game logic, w
 |-------|-----------|------|
 | Simulation | Rust (`aa2-sim`) | Deterministic ECS combat at 30Hz, f32 math, server-authoritative |
 | Game Logic | Rust (`aa2-game`) | Game state machine, economy, draft, shop, matchups |
-| Client | Rust (`aa2-client`) + Godot 4.3 | GDExtension bridge, UI, rendering, audio |
+| Client | Rust (`aa2-client`) + Godot 4.6 | GDExtension bridge, UI, rendering, audio |
 | Server | Rust (`aa2-server`) | Headless sim, WebSocket, matchmaking, MMR, anti-cheat |
 | Data | Rust (`aa2-data`) | Shared types, RON/JSON deserialization, validation |
 
@@ -75,10 +75,10 @@ The core combat simulation. ECS-based (custom lightweight ECS, not bevy) running
 - Entity management (heroes, projectiles, summons)
 - Attribute system (STR/AGI/INT derived stats)
 - Attack loop with BAT, attack speed, animation timing
-- Ability casting (cast points, channels, targeting)
+- Ability casting (cast points, targeting)
 - Projectile system (homing, travel time)
 - Buff/debuff framework (stacking rules, tick-based durations)
-- Grid-based pathfinding with collision
+- Direct movement with collision push-apart (grid-based A* pathfinding is planned, not yet implemented)
 - Targeting AI (aggro, priority, range checks)
 - Turn rate and movement
 
@@ -91,7 +91,7 @@ Shared data definitions and loading.
 **Responsibilities:**
 - Type definitions: `Hero`, `Ability`, `God`, `Buff`, `Projectile`
 - `serde::Serialize` + `serde::Deserialize` on all types
-- RON file loader with hot-reload via `notify` crate (dev)
+- RON file loader (dev) — loaded at startup; live hot-reload is planned, not yet implemented
 - Validation (stat ranges, ability references, tier constraints)
 - Same structs deserialize from RON (dev) and PostgreSQL JSONB (prod)
 
@@ -111,8 +111,9 @@ Owns the full game loop. Depends on aa2-sim and aa2-data.
 
 **Key design:** aa2-game is SHARED between client and server. This enables:
 - Offline/dev mode (full game locally)
-- Client-side prediction (optional)
 - Server-side validation (authoritative)
+
+In multiplayer the client is a **dumb client**: it does not run aa2-sim or predict state. The server is authoritative and the client only renders received state/events. (Decision recorded — see `docs/design/networking.md`.)
 
 ### `aa2-client`
 
@@ -183,6 +184,18 @@ Autobattlers have no player input during combat — there's nothing to "lock ste
 
 30Hz (33.33ms per tick). Chosen to match Dota 2's server tick rate for mechanical fidelity while remaining cheap enough for mobile.
 
+### Determinism (scope)
+
+The sim is deterministic **on a given platform/build**: a seeded xoshiro128++ RNG plus fixed
+tick and iteration order produce identical results for the same seed. It uses `f32` math, so it is
+**not** guaranteed bit-identical across architectures (x86 vs ARM). This is acceptable because the
+multiplayer model is **server-authoritative with a dumb client**: the server is the single source
+of truth and clients render the server's recorded event stream rather than re-simulating. So
+"deterministic replay" means *re-running the same build on the same platform with the same seed*;
+replays sent to clients are server-recorded event logs, not client-side resimulations. Cross-platform
+bit-determinism (which would require fixed-point math) is **out of scope** unless we later add
+client-side prediction.
+
 ### Attribute System
 
 | Attribute | Per Point | Derived Stats |
@@ -210,7 +223,7 @@ mult = 1 - (0.06 * armor) / (1 + 0.06 * |armor|)
 - **Projectiles:** Homing with configurable speed. Travel time = distance / speed. On-hit effects applied on arrival.
 - **Abilities:** Cast point → effect → cooldown. Targeting modes: unit, point, no-target, passive.
 - **Buffs/Debuffs:** Stack rules (refresh, independent, max stacks). Tick-based duration. Modifier priority system. DamageReflection buff.
-- **Pathfinding:** Grid-based A* with unit collision. Recalculates on obstruction.
+- **Movement:** Direct movement toward target with collision push-apart resolution. (Grid-based A* pathfinding is planned, not yet implemented.)
 - **Turn rate:** Units must face target before attacking/casting. Configurable degrees/second.
 
 ---
@@ -232,9 +245,12 @@ All game content is data-driven. The same Rust structs deserialize from two sour
 - **Hero Bodies** — tiers D/C/B/A/S, base stats, BAT, attack range, movement speed
 - **Abilities** — levels 1–9, scaling values, targeting, cooldowns
 
-### Hot-Reload (Dev)
+### Hot-Reload (Dev) — Planned (not yet implemented)
 
-The `notify` crate watches RON files. On change:
+> Today, RON files are loaded at startup; changing data requires restarting the client
+> (the gdext dylib also requires a Godot restart). The workflow below is the intended future state.
+
+The `notify` crate would watch RON files. On change:
 1. File re-parsed and validated
 2. Affected entities in the sim updated in-place
 3. No restart required
@@ -247,9 +263,9 @@ A single developer can run the full game loop locally without a server.
 
 - aa2-client loads aa2-game directly (same process, no network)
 - Developer controls all 8 player slots (draft, positioning)
-- Hot-reload data files for instant balance iteration
+- Edit RON data files and restart to iterate on balance (live hot-reload planned)
 - AI bots fill empty slots for testing combat
-- Replay recording enabled for debugging combat sequences
+- Combat event log available for debugging combat sequences
 - No network dependency — pure local execution
 
 ---
@@ -281,7 +297,7 @@ aa2/
 │   ├── aa2-game/       # Game state machine, economy, draft ✓
 │   ├── aa2-client/     # GDExtension crate (gdext, cdylib) ← Phase 3
 │   └── aa2-server/     # Networking, matchmaking, WebSocket (Phase 4)
-├── client/             # Godot 4.3 project
+├── client/             # Godot 4.6 project
 ├── data/               # RON data files
 └── docs/               # Architecture & design documentation
 ```
@@ -296,7 +312,7 @@ During combat, the sim runs to completion instantly (~50ms) and produces a `Vec<
 
 ### Playback
 
-The client receives the full event stream and schedules animations using Godot tweens. Tick → time conversion: `tick / 30 = seconds`. Animation is cosmetic-only and doesn't need to be deterministic. Supports:
+The client receives the full event stream and animates it forward using Godot tweens. Tick → time conversion: `tick / 30 = seconds`. Animation is cosmetic-only and doesn't need to be deterministic. Planned (not yet implemented):
 - Play/pause/seek
 - Speed control (0.5x–4x)
 - Board switching (view any player)

@@ -4,6 +4,9 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 **Timeline:** ~36 weeks to platform release, ongoing content thereafter.
 
+> Note: the week numbers below are **nominal/relative effort estimates, not calendar weeks**.
+> Actual elapsed development has run well ahead of this schedule.
+
 ---
 
 ## Phase 0: Foundation + Dev Mode (Weeks 1–4) ✓ COMPLETE
@@ -67,13 +70,13 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 **Completed:** All success criteria met. Full combat fidelity achieved with:
 - Buff/debuff system (stacking rules, duration, tick damage, dispel types)
-- Cast system (cast point, backswing, mana cost, cooldown, channeling with interrupts)
+- Cast system (cast point, backswing, mana cost, cooldown). Channeling is specified in mechanics-reference but **not yet implemented**.
 - Data-driven ability engine (AbilityDef → effect execution pipeline)
 - AoE shapes (circle, cone, line), all damage types functional (physical/magical/pure)
 - Unit-targeted and ground-targeted ability support
 - Multi-unit combat (5v5) with spatial partitioning and collision avoidance
-- Replay system with deterministic playback (same seed → identical outcome)
-- Hot-reload for ability/hero data files
+- Replay playback (same-platform deterministic; see architecture "Determinism" note)
+- Data files loaded at startup (live hot-reload: **planned, not yet implemented**)
 - Dev CLI with bot draft and 5v5 battles
 
 ---
@@ -131,7 +134,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 
 ---
 
-## Phase 3: Client (Weeks 21–28) ← CURRENT
+## Phase 3: Client (Weeks 21–28) ✓ Local client complete (polish ongoing)
 
 | Week | Focus |
 |------|-------|
@@ -145,7 +148,7 @@ Solo-dev project (with AI agent assistance). Cross-platform autobattler with Dot
 | 28 | Structural polish: HP bars, damage numbers, death fade, cast indicators |
 
 **Deliverables:**
-- Godot 4.3 project with GDExtension (gdext 0.5)
+- Godot 4.6 project with GDExtension (gdext 0.5)
 - `aa2-client` crate (cdylib) loaded by Godot via .gdextension
 - All game screens: shop, draft, combat viewer, scoreboard, god pick
 - Combat replay system (event-based — client animates CombatEvent stream using tweens)
@@ -170,7 +173,11 @@ The aa2-client crate calls aa2-game directly in the same process. No FFI boundar
 
 ---
 
-## Phase 4: Networking (Weeks 29–36)
+## Phase 4: Networking (Weeks 29–36) ← CURRENT
+
+> **Decision:** dumb-client state-sync (server-authoritative; clients render received state/events
+> and do **not** run the sim or predict). See `docs/design/networking.md` for the vertical-slice
+> design. Composable ability effects are being treated as part of this prototype milestone.
 
 | Week | Focus |
 |------|-------|
@@ -230,7 +237,7 @@ The aa2-client crate calls aa2-game directly in the same process. No FFI boundar
 | Dependency | When Needed | Notes |
 |------------|-------------|-------|
 | Rust stable + cross-compilation | Phase 0 | aarch64-apple-ios, aarch64-linux-android targets |
-| Godot 4.3+ | Phase 3 | GDExtension support, cross-platform builds |
+| Godot 4.6+ | Phase 3 | GDExtension support, cross-platform builds |
 | gdext 0.5 | Phase 3 | Rust GDExtension bindings |
 | PostgreSQL | Phase 4+ | Player accounts, matchmaking, leaderboards |
 | Cloud hosting | Phase 4+ | Game servers, matchmaking service |

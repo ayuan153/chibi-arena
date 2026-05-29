@@ -6,7 +6,7 @@ The Godot client is the visual presentation layer for AA2. The `aa2-client` crat
 
 ## Technology
 
-- **Godot 4.3+** with GDExtension
+- **Godot 4.6** with GDExtension
 - **gdext 0.5** (Rust GDExtension bindings)
 - **Code-first approach:** hand-written `project.godot`, no editor dependency
 - **Crate type:** `cdylib` — produces .dylib/.so/.dll loaded by Godot
