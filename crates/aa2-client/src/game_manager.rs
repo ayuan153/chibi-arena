@@ -11,6 +11,9 @@ use aa2_game::god;
 use aa2_game::scenario::Action;
 use aa2_game::pool::AbilityPool;
 use aa2_data::{AbilityDef, God, HeroDef};
+use aa2_net::ClientMsg;
+
+use crate::net_client;
 
 #[derive(GodotClass)]
 #[class(init, base=Node)]
@@ -23,6 +26,8 @@ pub struct GameManager {
     rng: Option<StdRng>,
     last_combat_results: Vec<CombatResult>,
     last_phase: String,
+    net: Option<net_client::NetClient>,
+    net_state: net_client::NetState,
 }
 
 #[godot_api]
@@ -85,8 +90,36 @@ impl GameManager {
         }
     }
 
+    fn networked(&self) -> bool {
+        self.net.is_some()
+    }
+
+    /// Connect to a remote game server via WebSocket. Sends a Join message immediately.
+    #[func]
+    pub fn connect_to_server(&mut self, url: GString) {
+        let nc = net_client::NetClient::connect(url.to_string());
+        nc.send(ClientMsg::Join { name: "Player".into() });
+        self.net = Some(nc);
+    }
+
+    #[func]
+    pub fn get_my_player_id(&self) -> i32 {
+        if self.networked() {
+            self.net_state.my_player_id() as i32
+        } else {
+            0
+        }
+    }
+
     #[func]
     pub fn apply_player_action(&mut self, player_id: i32, action_type: GString, param: GString) -> GString {
+        if self.networked() {
+            self.net.as_ref().unwrap().send(ClientMsg::Action {
+                action_type: action_type.to_string(),
+                param: param.to_string(),
+            });
+            return "ok".into();
+        }
         let Some(game) = &mut self.game else { return "no game".into() };
         let Some(rng) = &mut self.rng else { return "no rng".into() };
 
@@ -118,6 +151,9 @@ impl GameManager {
 
     #[func]
     pub fn get_gold(&self, player_id: i32) -> i32 {
+        if self.networked() {
+            return self.net_state.gold(player_id as usize) as i32;
+        }
         self.game.as_ref()
             .and_then(|g| g.players.get(player_id as usize))
             .map(|p| p.gold as i32)
@@ -126,6 +162,9 @@ impl GameManager {
 
     #[func]
     pub fn get_shop_level(&self, player_id: i32) -> i32 {
+        if self.networked() {
+            return self.net_state.shop_level(player_id as usize) as i32;
+        }
         self.game.as_ref()
             .and_then(|g| g.players.get(player_id as usize))
             .map(|p| p.shop.level as i32)
@@ -134,6 +173,13 @@ impl GameManager {
 
     #[func]
     pub fn get_shop_offerings(&self, player_id: i32) -> PackedStringArray {
+        if self.networked() {
+            let mut arr = PackedStringArray::new();
+            for slot in self.net_state.shop_offerings(player_id as usize) {
+                arr.push(&GString::from(slot.as_deref().unwrap_or("")));
+            }
+            return arr;
+        }
         let mut arr = PackedStringArray::new();
         if let Some(game) = &self.game
             && let Some(player) = game.players.get(player_id as usize)
@@ -147,6 +193,9 @@ impl GameManager {
 
     #[func]
     pub fn get_shop_locked(&self, player_id: i32) -> bool {
+        if self.networked() {
+            return self.net_state.shop_locked(player_id as usize);
+        }
         self.game.as_ref()
             .and_then(|g| g.players.get(player_id as usize))
             .map(|p| p.shop.locked)
@@ -155,6 +204,9 @@ impl GameManager {
 
     #[func]
     pub fn get_upgrade_cost(&self, player_id: i32) -> i32 {
+        if self.networked() {
+            return self.net_state.upgrade_cost(player_id as usize).map(|c| c as i32).unwrap_or(-1);
+        }
         self.game.as_ref()
             .and_then(|g| g.players.get(player_id as usize))
             .and_then(|p| p.shop.upgrade_cost())
@@ -164,6 +216,9 @@ impl GameManager {
 
     #[func]
     pub fn get_phase(&self) -> GString {
+        if self.networked() {
+            return GString::from(self.net_state.phase().as_str());
+        }
         self.game.as_ref()
             .map(|g| match &g.phase {
                 GamePhase::GodPick => "GodPick",
@@ -178,6 +233,12 @@ impl GameManager {
 
     #[func]
     pub fn tick(&mut self, dt: f32) {
+        if self.networked() {
+            while let Some(msg) = self.net.as_ref().unwrap().try_recv() {
+                self.net_state.apply(&msg);
+            }
+            return;
+        }
         let mut should_generate_draft = false;
 
         if let (Some(game), Some(rng)) = (&mut self.game, &mut self.rng) {
@@ -220,6 +281,13 @@ impl GameManager {
 
     #[func]
     pub fn get_heroes(&self, player_id: i32) -> PackedStringArray {
+        if self.networked() {
+            let mut arr = PackedStringArray::new();
+            for h in self.net_state.heroes(player_id as usize) {
+                arr.push(&GString::from(h.as_str()));
+            }
+            return arr;
+        }
         let mut arr = PackedStringArray::new();
         if let Some(game) = &self.game
             && let Some(player) = game.players.get(player_id as usize)
@@ -233,6 +301,10 @@ impl GameManager {
 
     #[func]
     pub fn get_hero_position(&self, player_id: i32, hero_name: GString) -> Vector2 {
+        if self.networked() {
+            let (x, y) = self.net_state.hero_position(player_id as usize, &hero_name.to_string());
+            return Vector2::new(x, y);
+        }
         if let Some(game) = &self.game
             && let Some(player) = game.players.get(player_id as usize)
         {
@@ -328,6 +400,13 @@ impl GameManager {
 
     #[func]
     pub fn get_bench(&self, player_id: i32) -> PackedStringArray {
+        if self.networked() {
+            let mut arr = PackedStringArray::new();
+            for a in self.net_state.bench(player_id as usize) {
+                arr.push(&GString::from(a.as_str()));
+            }
+            return arr;
+        }
         let mut arr = PackedStringArray::new();
         if let Some(game) = &self.game
             && let Some(player) = game.players.get(player_id as usize)
@@ -341,6 +420,13 @@ impl GameManager {
 
     #[func]
     pub fn get_equipped_abilities(&self, player_id: i32, hero_name: GString) -> PackedStringArray {
+        if self.networked() {
+            let mut arr = PackedStringArray::new();
+            for a in self.net_state.equipped(player_id as usize, &hero_name.to_string()) {
+                arr.push(&GString::from(a.as_str()));
+            }
+            return arr;
+        }
         let mut arr = PackedStringArray::new();
         if let Some(game) = &self.game
             && let Some(player) = game.players.get(player_id as usize)
@@ -357,6 +443,9 @@ impl GameManager {
 
     #[func]
     pub fn get_ability_level(&self, player_id: i32, ability_name: GString) -> i32 {
+        if self.networked() {
+            return self.net_state.ability_level(player_id as usize, &ability_name.to_string()) as i32;
+        }
         if let Some(game) = &self.game
             && let Some(player) = game.players.get(player_id as usize)
         {
@@ -387,6 +476,7 @@ impl GameManager {
 
     #[func]
     pub fn get_combat_event_count(&self, matchup_index: i32) -> i32 {
+        if self.networked() { return 0; }
         self.last_combat_results
             .get(matchup_index as usize)
             .map(|r| r.combat_log.len() as i32)
@@ -395,6 +485,7 @@ impl GameManager {
 
     #[func]
     pub fn get_combat_event(&self, matchup_index: i32, event_index: i32) -> VarDictionary {
+        if self.networked() { return VarDictionary::new(); }
         let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
             return VarDictionary::new();
         };
@@ -406,6 +497,7 @@ impl GameManager {
 
     #[func]
     pub fn get_combat_result(&self, matchup_index: i32) -> VarDictionary {
+        if self.networked() { return VarDictionary::new(); }
         let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
             return VarDictionary::new();
         };
@@ -418,6 +510,7 @@ impl GameManager {
 
     #[func]
     pub fn get_combat_matchup_count(&self) -> i32 {
+        if self.networked() { return 0; }
         self.last_combat_results.len() as i32
     }
 
@@ -425,6 +518,7 @@ impl GameManager {
     /// Each dict: { unit_id: i32, team: i32, name: GString, damage: i32 }.
     #[func]
     pub fn get_damage_summary(&self, matchup_index: i32) -> Array<VarDictionary> {
+        if self.networked() { return Array::new(); }
         let mut arr = Array::new();
         let Some(result) = self.last_combat_results.get(matchup_index as usize) else {
             return arr;
@@ -455,6 +549,11 @@ impl GameManager {
 
     #[func]
     pub fn get_player_god(&self, player_id: i32) -> GString {
+        if self.networked() {
+            return self.net_state.player_god(player_id as usize)
+                .map(|g| GString::from(g.as_str()))
+                .unwrap_or_default();
+        }
         self.game.as_ref()
             .and_then(|g| g.players.get(player_id as usize))
             .and_then(|p| p.god.as_ref())
@@ -464,6 +563,13 @@ impl GameManager {
 
     #[func]
     pub fn get_draft_choices(&self, player_id: i32) -> PackedStringArray {
+        if self.networked() {
+            let mut arr = PackedStringArray::new();
+            for choice in self.net_state.draft_choices(player_id as usize) {
+                arr.push(&GString::from(choice.as_deref().unwrap_or("")));
+            }
+            return arr;
+        }
         let mut arr = PackedStringArray::new();
         if let Some(game) = &self.game
             && let Some(choices) = game.draft_choices.get(&(player_id as u8))
@@ -477,17 +583,26 @@ impl GameManager {
 
     #[func]
     pub fn is_draft_active(&self) -> bool {
+        if self.networked() {
+            return self.net_state.is_draft_active(self.net_state.my_player_id() as usize);
+        }
         // Show draft UI when player 0 has pending choices (round draft OR hero reroll)
         self.game.as_ref().is_some_and(|g| g.draft_choices.contains_key(&0))
     }
 
     #[func]
     pub fn get_player_count(&self) -> i32 {
+        if self.networked() {
+            return self.net_state.player_count() as i32;
+        }
         self.game.as_ref().map(|g| g.players.len() as i32).unwrap_or(0)
     }
 
     #[func]
     pub fn get_player_hp(&self, player_id: i32) -> f32 {
+        if self.networked() {
+            return self.net_state.player_hp(player_id as usize);
+        }
         self.game.as_ref()
             .and_then(|g| g.players.get(player_id as usize))
             .map(|p| p.hp)
@@ -496,6 +611,9 @@ impl GameManager {
 
     #[func]
     pub fn get_player_alive(&self, player_id: i32) -> bool {
+        if self.networked() {
+            return self.net_state.player_alive(player_id as usize);
+        }
         self.game.as_ref()
             .and_then(|g| g.players.get(player_id as usize))
             .map(|p| p.alive)
@@ -504,6 +622,9 @@ impl GameManager {
 
     #[func]
     pub fn get_round(&self) -> i32 {
+        if self.networked() {
+            return self.net_state.round() as i32;
+        }
         self.game.as_ref().map(|g| g.round as i32).unwrap_or(0)
     }
 
@@ -518,6 +639,20 @@ impl GameManager {
 
     #[func]
     pub fn get_player_placement(&self, player_id: i32) -> i32 {
+        if self.networked() {
+            if let Some(ref placements) = self.net_state.placements {
+                return placements.iter().position(|&id| id == player_id as u8)
+                    .map(|i| (i + 1) as i32)
+                    .unwrap_or(0);
+            }
+            if self.net_state.player_alive(player_id as usize) {
+                return 1;
+            }
+            let alive_count = (0..self.net_state.player_count())
+                .filter(|&i| self.net_state.player_alive(i))
+                .count();
+            return (alive_count + 1) as i32;
+        }
         let Some(game) = &self.game else { return 0 };
         let Some(player) = game.players.get(player_id as usize) else { return 0 };
         if player.alive {

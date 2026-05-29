@@ -8,9 +8,14 @@ version = "0.1.0"
 dependencies = [
  "aa2-data",
  "aa2-game",
+ "aa2-net",
  "aa2-sim",
+ "futures-util",
  "godot",
  "rand 0.8.6",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]

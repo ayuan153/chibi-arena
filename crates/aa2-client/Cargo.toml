@@ -13,5 +13,10 @@ godot = "0.5"
 aa2-game = { path = "../aa2-game" }
 aa2-sim = { path = "../aa2-sim" }
 aa2-data = { path = "../aa2-data" }
+aa2-net = { path = "../aa2-net" }
 rand = "0.8"
+tokio = { version = "1", features = ["rt", "net", "sync", "macros"] }
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", features = ["sink"] }
+serde_json = { workspace = true }
 
