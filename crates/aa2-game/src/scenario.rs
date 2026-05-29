@@ -177,7 +177,7 @@ pub fn run_scenario(
             .collect();
         for ra in &round_actions {
             for action in &ra.actions {
-                execute_action(&mut game, ra.player, action, &ultimates, &mut rng);
+                execute_action(&mut game, ra.player, action, &mut rng, hero_defs);
             }
         }
 
@@ -244,60 +244,80 @@ fn apply_setup(game: &mut GameState, action: &SetupAction) {
     }
 }
 
+/// Parse a string-based action (from FFI or network) into a typed Action.
+///
+/// This is the single source of truth for action_type/param string decoding.
+/// The `gods` slice is used to resolve god names for PickGod.
+pub fn parse_action(action_type: &str, param: &str, gods: &[aa2_data::God]) -> Result<Action, String> {
+    match action_type {
+        "Buy" => {
+            let slot: usize = param.parse().unwrap_or(0);
+            Ok(Action::Buy(slot))
+        }
+        "Sell" => Ok(Action::Sell(param.to_string())),
+        "RerollShop" => Ok(Action::RerollShop),
+        "UpgradeShop" => Ok(Action::UpgradeShop),
+        "LockShop" => Ok(Action::LockShop),
+        "SetPosition" => {
+            let parts: Vec<&str> = param.splitn(3, ',').collect();
+            if parts.len() != 3 { return Err("bad params".to_string()); }
+            let name = parts[0].to_string();
+            let x: f32 = parts[1].parse().unwrap_or(1000.0);
+            let y: f32 = parts[2].parse().unwrap_or(500.0);
+            Ok(Action::SetPosition(name, x, y))
+        }
+        "Equip" => {
+            let parts: Vec<&str> = param.splitn(2, ',').collect();
+            if parts.len() != 2 { return Err("bad params".to_string()); }
+            Ok(Action::Equip(parts[0].to_string(), parts[1].to_string()))
+        }
+        "Unequip" => {
+            let parts: Vec<&str> = param.splitn(2, ',').collect();
+            if parts.len() != 2 { return Err("bad params".to_string()); }
+            Ok(Action::Unequip(parts[0].to_string(), parts[1].to_string()))
+        }
+        "PickGod" => {
+            match gods.iter().find(|g| g.name == param).cloned() {
+                Some(god) => Ok(Action::PickGod(god)),
+                None => Err("unknown god".to_string()),
+            }
+        }
+        "SwapAbilities" => {
+            // param: "hero_name,slot_a,slot_b"
+            let parts: Vec<&str> = param.splitn(3, ',').collect();
+            if parts.len() != 3 { return Err("invalid params".to_string()); }
+            let hero_name = parts[0].to_string();
+            let slot_a: usize = parts[1].parse().unwrap_or(0);
+            let slot_b: usize = parts[2].parse().unwrap_or(0);
+            Ok(Action::SwapAbilities(hero_name, slot_a, slot_b))
+        }
+        "DraftHero" => {
+            let idx: usize = param.parse().unwrap_or(0);
+            Ok(Action::DraftHero(idx))
+        }
+        "RerollHero" => {
+            Ok(Action::RerollHero(param.to_string()))
+        }
+        "Ready" => {
+            Ok(Action::Ready)
+        }
+        _ => Err(format!("unknown action: {action_type}")),
+    }
+}
+
 fn execute_action(
     game: &mut GameState,
     player: u8,
     action: &Action,
-    ultimates: &HashSet<String>,
     rng: &mut impl Rng,
+    hero_defs: &HashMap<String, aa2_data::HeroDef>,
 ) {
-    let p_idx = player as usize;
     match action {
-        Action::Buy(slot) => {
-            if let Some(Some(name)) = game.players[p_idx].shop.offerings.get(*slot).cloned() {
-                let bench_cap = game.config.bench_capacity as usize;
-                let _ = game.players[p_idx].buy_ability(&name, &mut game.pool, bench_cap);
-                game.players[p_idx].shop.offerings[*slot] = None;
-            }
-        }
-        Action::Sell(name) => {
-            let _ = game.players[p_idx].sell_ability(name, &mut game.pool);
-        }
-        Action::Equip(ability, hero) => {
-            let _ = game.players[p_idx].equip_ability(ability, hero, ultimates, &game.config);
-        }
-        Action::Unequip(ability, hero) => {
-            let _ = game.players[p_idx].unequip_ability(ability, hero);
-        }
-        Action::RerollShop => {
-            let reroll_cost = game
-                .config
-                .reroll_cost_override
-                .unwrap_or(crate::economy::REROLL_COST);
-            let _ = game.players[p_idx].reroll_shop(
-                &mut game.pool,
-                ultimates,
-                game.config.ultimate_unlock_level,
-                game.config.shop_size_bonus,
-                reroll_cost,
-                rng,
-            );
-        }
-        Action::UpgradeShop => {
-            let p = &mut game.players[p_idx];
-            p.shop.upgrade(&mut p.gold);
-        }
-        Action::LockShop => {
-            game.players[p_idx].shop.toggle_lock();
-        }
-        Action::SetPosition(hero, x, y) => {
-            game.players[p_idx].hero_positions.insert(hero.clone(), (*x, *y));
-        }
-        Action::SetGodBuff(hero) => {
-            game.players[p_idx].god_buff_target = Some(hero.clone());
-        }
         // These are handled by GameState::apply_action in the game loop, not in scenarios.
         Action::PickGod(_) | Action::DraftHero(_) | Action::RerollHero(_) | Action::SwapAbilities(..) | Action::Ready => {}
+        _ => {
+            let _ = game.apply_action(player, action.clone(), hero_defs, rng);
+        }
     }
 }
 
@@ -339,5 +359,145 @@ fn ai_actions(game: &mut GameState, player_idx: usize, ultimates: &HashSet<Strin
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aa2_data::{God, GodPassive};
+
+    fn test_gods() -> Vec<God> {
+        vec![God {
+            name: "Mars".to_string(),
+            description: "God of War".to_string(),
+            passive: GodPassive::Sorcery { trigger_chance: 0.5 },
+        }]
+    }
+
+    #[test]
+    fn parse_action_buy() {
+        let gods = test_gods();
+        let result = parse_action("Buy", "2", &gods).unwrap();
+        assert!(matches!(result, Action::Buy(2)));
+    }
+
+    #[test]
+    fn parse_action_sell() {
+        let gods = test_gods();
+        let result = parse_action("Sell", "Fireball", &gods).unwrap();
+        assert!(matches!(result, Action::Sell(ref s) if s == "Fireball"));
+    }
+
+    #[test]
+    fn parse_action_reroll_shop() {
+        let gods = test_gods();
+        let result = parse_action("RerollShop", "", &gods).unwrap();
+        assert!(matches!(result, Action::RerollShop));
+    }
+
+    #[test]
+    fn parse_action_upgrade_shop() {
+        let gods = test_gods();
+        let result = parse_action("UpgradeShop", "", &gods).unwrap();
+        assert!(matches!(result, Action::UpgradeShop));
+    }
+
+    #[test]
+    fn parse_action_lock_shop() {
+        let gods = test_gods();
+        let result = parse_action("LockShop", "", &gods).unwrap();
+        assert!(matches!(result, Action::LockShop));
+    }
+
+    #[test]
+    fn parse_action_set_position() {
+        let gods = test_gods();
+        let result = parse_action("SetPosition", "Sven,100.0,200.0", &gods).unwrap();
+        assert!(matches!(result, Action::SetPosition(ref n, x, y) if n == "Sven" && x == 100.0 && y == 200.0));
+    }
+
+    #[test]
+    fn parse_action_equip() {
+        let gods = test_gods();
+        let result = parse_action("Equip", "Fireball,Sven", &gods).unwrap();
+        assert!(matches!(result, Action::Equip(ref a, ref h) if a == "Fireball" && h == "Sven"));
+    }
+
+    #[test]
+    fn parse_action_unequip() {
+        let gods = test_gods();
+        let result = parse_action("Unequip", "Fireball,Sven", &gods).unwrap();
+        assert!(matches!(result, Action::Unequip(ref a, ref h) if a == "Fireball" && h == "Sven"));
+    }
+
+    #[test]
+    fn parse_action_pick_god() {
+        let gods = test_gods();
+        let result = parse_action("PickGod", "Mars", &gods).unwrap();
+        assert!(matches!(result, Action::PickGod(ref g) if g.name == "Mars"));
+    }
+
+    #[test]
+    fn parse_action_swap_abilities() {
+        let gods = test_gods();
+        let result = parse_action("SwapAbilities", "Sven,0,1", &gods).unwrap();
+        assert!(matches!(result, Action::SwapAbilities(ref h, 0, 1) if h == "Sven"));
+    }
+
+    #[test]
+    fn parse_action_draft_hero() {
+        let gods = test_gods();
+        let result = parse_action("DraftHero", "1", &gods).unwrap();
+        assert!(matches!(result, Action::DraftHero(1)));
+    }
+
+    #[test]
+    fn parse_action_reroll_hero() {
+        let gods = test_gods();
+        let result = parse_action("RerollHero", "0", &gods).unwrap();
+        assert!(matches!(result, Action::RerollHero(ref s) if s == "0"));
+    }
+
+    #[test]
+    fn parse_action_ready() {
+        let gods = test_gods();
+        let result = parse_action("Ready", "", &gods).unwrap();
+        assert!(matches!(result, Action::Ready));
+    }
+
+    #[test]
+    fn parse_action_unknown_type() {
+        let gods = test_gods();
+        let result = parse_action("Explode", "", &gods);
+        assert_eq!(result.unwrap_err(), "unknown action: Explode");
+    }
+
+    #[test]
+    fn parse_action_unknown_god() {
+        let gods = test_gods();
+        let result = parse_action("PickGod", "Zeus", &gods);
+        assert_eq!(result.unwrap_err(), "unknown god");
+    }
+
+    #[test]
+    fn parse_action_set_position_bad_params() {
+        let gods = test_gods();
+        let result = parse_action("SetPosition", "Sven,100.0", &gods);
+        assert_eq!(result.unwrap_err(), "bad params");
+    }
+
+    #[test]
+    fn parse_action_equip_bad_params() {
+        let gods = test_gods();
+        let result = parse_action("Equip", "Fireball", &gods);
+        assert_eq!(result.unwrap_err(), "bad params");
+    }
+
+    #[test]
+    fn parse_action_swap_abilities_bad_params() {
+        let gods = test_gods();
+        let result = parse_action("SwapAbilities", "Sven,0", &gods);
+        assert_eq!(result.unwrap_err(), "invalid params");
     }
 }

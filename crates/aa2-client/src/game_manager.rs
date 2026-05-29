@@ -93,60 +93,9 @@ impl GameManager {
         let action_str = action_type.to_string();
         let param_str = param.to_string();
 
-        let action = match action_str.as_str() {
-            "Buy" => {
-                let slot: usize = param_str.parse().unwrap_or(0);
-                Action::Buy(slot)
-            }
-            "Sell" => Action::Sell(param_str),
-            "RerollShop" => Action::RerollShop,
-            "UpgradeShop" => Action::UpgradeShop,
-            "LockShop" => Action::LockShop,
-            "SetPosition" => {
-                let parts: Vec<&str> = param_str.splitn(3, ',').collect();
-                if parts.len() != 3 { return "bad params".into(); }
-                let name = parts[0].to_string();
-                let x: f32 = parts[1].parse().unwrap_or(1000.0);
-                let y: f32 = parts[2].parse().unwrap_or(500.0);
-                Action::SetPosition(name, x, y)
-            }
-            "Equip" => {
-                let parts: Vec<&str> = param_str.splitn(2, ',').collect();
-                if parts.len() != 2 { return "bad params".into(); }
-                Action::Equip(parts[0].to_string(), parts[1].to_string())
-            }
-            "Unequip" => {
-                let parts: Vec<&str> = param_str.splitn(2, ',').collect();
-                if parts.len() != 2 { return "bad params".into(); }
-                Action::Unequip(parts[0].to_string(), parts[1].to_string())
-            }
-            "PickGod" => {
-                let gods = &self.gods;
-                match gods.iter().find(|g| g.name == param_str).cloned() {
-                    Some(god) => Action::PickGod(god),
-                    None => return GString::from("unknown god"),
-                }
-            }
-            "SwapAbilities" => {
-                // param: "hero_name,slot_a,slot_b"
-                let parts: Vec<&str> = param_str.splitn(3, ',').collect();
-                if parts.len() != 3 { return "invalid params".into(); }
-                let hero_name = parts[0].to_string();
-                let slot_a: usize = parts[1].parse().unwrap_or(0);
-                let slot_b: usize = parts[2].parse().unwrap_or(0);
-                Action::SwapAbilities(hero_name, slot_a, slot_b)
-            }
-            "DraftHero" => {
-                let idx: usize = param_str.parse().unwrap_or(0);
-                Action::DraftHero(idx)
-            }
-            "RerollHero" => {
-                Action::RerollHero(param_str)
-            }
-            "Ready" => {
-                Action::Ready
-            }
-            _ => return GString::from(format!("unknown action: {action_str}").as_str()),
+        let action = match aa2_game::scenario::parse_action(&action_str, &param_str, &self.gods) {
+            Ok(a) => a,
+            Err(e) => return GString::from(e.as_str()),
         };
 
         match game.apply_action(player_id as u8, action.clone(), &self.hero_defs, rng) {
