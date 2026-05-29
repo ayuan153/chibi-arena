@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/aa2-sim", "crates/aa2-data", "crates/aa2-game", "crates/aa2-client"]
+members = ["crates/aa2-sim", "crates/aa2-data", "crates/aa2-game", "crates/aa2-client", "crates/aa2-net"]
 resolver = "2"
 
 [workspace.package]
@@ -12,3 +12,4 @@ license = "MIT"
 serde = { version = "1", features = ["derive"] }
 ron = "0.8"
 rand = "0.8"
+serde_json = "1"

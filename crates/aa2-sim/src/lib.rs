@@ -49,7 +49,7 @@ pub fn clamp_to_arena(pos: Vec2) -> (Vec2, bool) {
 pub type Tick = u32;
 
 /// Combat event for logging/replay.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum CombatEvent {
     /// A unit attacked and dealt damage (melee instant hit).
     Attack { tick: u32, attacker_id: u32, target_id: u32, damage: f32 },
@@ -2469,5 +2469,20 @@ mod tests {
             UnitDamage { unit_id: 1, team: 0, name: "A".to_string(), damage: 15.0 },
             UnitDamage { unit_id: 2, team: 1, name: "B".to_string(), damage: 7.0 },
         ]);
+    }
+
+    /// CombatEvent must survive a JSON round trip so the client can read the streamed combat log.
+    #[test]
+    fn combat_event_json_round_trip() {
+        use crate::CombatEvent;
+
+        let log = vec![
+            CombatEvent::Attack { tick: 1, attacker_id: 0, target_id: 1, damage: 12.0 },
+            CombatEvent::AbilityDamage { tick: 2, caster_id: 0, target_id: 1, ability_name: "Rage".into(), damage: 30.0, damage_type: aa2_data::DamageType::Magical },
+            CombatEvent::Death { tick: 5, unit_id: 1 },
+        ];
+        let json = serde_json::to_string(&log).unwrap();
+        let back: Vec<CombatEvent> = serde_json::from_str(&json).unwrap();
+        assert_eq!(log, back);
     }
 }

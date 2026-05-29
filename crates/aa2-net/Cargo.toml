@@ -1,15 +1,11 @@
 [package]
-name = "aa2-sim"
+name = "aa2-net"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-aa2-data = { path = "../aa2-data" }
+aa2-sim = { path = "../aa2-sim" }
 serde = { workspace = true }
-
-[[bin]]
-name = "aa2-dev"
-path = "src/bin/dev.rs"
 
 [dev-dependencies]
 serde_json = { workspace = true }
