@@ -256,6 +256,29 @@ pub enum Delivery {
         /// AoE radius per ability level.
         radius: Vec<f32>,
     },
+    /// Linear projectile that travels in a direction, impaling the first hero hit,
+    /// dragging them to a wall, dealing pass-through damage, and optionally bouncing.
+    /// `homing` reserved for Spirit Lance (always false for Spear of Mars).
+    Projectile {
+        /// If true, projectile homes toward a target (Spirit Lance). If false, linear (Spear).
+        homing: bool,
+        /// Travel speed in units/sec.
+        speed: f32,
+        /// Hit detection width (radius from projectile center).
+        width: f32,
+        /// Travel range per ability level.
+        range: Vec<f32>,
+        /// Number of wall bounces per ability level (0 = no bounce).
+        wall_bounces: Vec<u32>,
+        /// Fire trail DPS per ability level (0 = no trail).
+        fire_trail_dps: Vec<f32>,
+        /// Fire trail slow fraction per ability level (0.0–1.0).
+        fire_trail_slow: Vec<f32>,
+        /// Fire trail duration per ability level (seconds; currently unused, 2s hardcoded).
+        fire_trail_duration: Vec<f32>,
+        /// Stun duration on wall-pin per ability level (seconds).
+        stun_duration: Vec<f32>,
+    },
 }
 
 /// What happens to each affected unit.
@@ -417,18 +440,6 @@ pub enum Effect {
         illusion_duration: Vec<f32>,
         bounce_radius: Vec<f32>,
         bounce_count: Vec<u32>,
-    },
-    /// Spear of Mars: projectile that impales first hero, drags to wall, damages pass-through.
-    SpearOfMars {
-        damage: Vec<f32>,
-        stun_duration: Vec<f32>,
-        range: Vec<f32>,
-        travel_speed: f32,
-        width: f32,
-        fire_trail_dps: Vec<f32>,
-        fire_trail_slow: Vec<f32>,
-        fire_trail_duration: Vec<f32>,
-        wall_bounces: Vec<u32>,
     },
 }
 

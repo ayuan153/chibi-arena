@@ -2701,12 +2701,12 @@ fn test_spear_of_mars_deals_damage_on_impale() {
     let mut sim = Simulation::new(vec![u0, u1]);
     let initial_hp = sim.units[1].hp;
 
-    // Manually inject a SpearOfMarsTravel heading toward the target
+    // Manually inject a ComposableProjectile heading toward the target
     sim.pending_effects.push(PendingEffect {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Spear of Mars".to_string(),
-        kind: PendingEffectKind::SpearOfMarsTravel {
+        kind: PendingEffectKind::ComposableProjectile {
             start_pos: Vec2::new(0.0, 0.0),
             direction: Vec2::new(1.0, 0.0),
             travel_speed: 1400.0,

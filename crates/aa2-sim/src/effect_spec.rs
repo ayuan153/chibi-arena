@@ -3,7 +3,7 @@
 //! Resolves `EffectSpec` (trigger + targeting + delivery + payloads) into concrete
 //! combat events, replacing bespoke per-ability match arms one ability at a time.
 
-use aa2_data::{BuffDef, DamageType, Delivery, EffectSpec, Payload, TargetingSpec, Trigger};
+use aa2_data::{BuffDef, DamageType, Delivery, EffectSpec, Payload, TargetingSpec, Trigger, value_at_level};
 use crate::buff::{active_status, apply_buff, dispel, Buff, TickEffect};
 use crate::combat::{apply_armor, apply_magic_resistance};
 use crate::pending::{PendingEffect, PendingEffectKind};
@@ -372,6 +372,51 @@ fn resolve_spec(
                     );
                 }
             }
+        }
+        Delivery::Projectile { speed, width, range, wall_bounces, fire_trail_dps, fire_trail_slow, fire_trail_duration, stun_duration, .. } => {
+            debug_assert!(!range.is_empty(), "Projectile range must not be empty");
+            if range.is_empty() {
+                return;
+            }
+            let direction = if let Some(tpos) = target_pos {
+                let d = (tpos - caster_pos).normalize();
+                if d.length() < 1e-6 { Vec2::new(1.0, 0.0) } else { d }
+            } else {
+                Vec2::new(1.0, 0.0)
+            };
+            let wb = if !wall_bounces.is_empty() {
+                let idx = (level.saturating_sub(1) as usize).min(wall_bounces.len().saturating_sub(1));
+                wall_bounces[idx]
+            } else {
+                0
+            };
+            // Resolve damage from the first Damage payload
+            let dmg = spec.payload.iter().find_map(|p| {
+                if let Payload::Damage { base, .. } = p { Some(value_at_level(base, level)) } else { None }
+            }).unwrap_or(0.0);
+            pending_effects.push(PendingEffect {
+                caster_id,
+                caster_team,
+                ability_name: ability_name.to_string(),
+                kind: PendingEffectKind::ComposableProjectile {
+                    start_pos: caster_pos,
+                    direction,
+                    travel_speed: *speed,
+                    max_range: value_at_level(range, level),
+                    current_distance: 0.0,
+                    width: *width,
+                    damage: dmg,
+                    stun_duration_secs: value_at_level(stun_duration, level),
+                    impaled_unit: None,
+                    pass_through_hit: Vec::new(),
+                    fire_trail_dps: value_at_level(fire_trail_dps, level),
+                    fire_trail_slow: value_at_level(fire_trail_slow, level),
+                    fire_trail_duration_secs: value_at_level(fire_trail_duration, level),
+                    bounces_remaining: wb,
+                    fire_trail_positions: Vec::new(),
+                },
+                delay_ticks_remaining: 0,
+            });
         }
     }
 }

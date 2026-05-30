@@ -1081,7 +1081,7 @@ impl Simulation {
                         false
                     }
                 }
-                PendingEffectKind::SpearOfMarsTravel {
+                PendingEffectKind::ComposableProjectile {
                     start_pos,
                     direction,
                     travel_speed,
@@ -1106,7 +1106,7 @@ impl Simulation {
                     let ft_slow = *fire_trail_slow;
                     let _ft_dur = *fire_trail_duration_secs;
 
-                    // Advance spear
+                    // Advance projectile
                     let step = spd * TICK_DURATION;
                     *current_distance += step;
                     let cur_dist = *current_distance;
@@ -1217,19 +1217,12 @@ impl Simulation {
                     on_death: None,
                                 };
                                 apply_buff(&mut u.buffs, stun_buff);
-                                // Damage already applied on impale; wall-pin only adds stun
                             }
 
-                        // Gaben bounce
+                        // Wall bounce
                         if *bounces_remaining > 0 {
                             *bounces_remaining -= 1;
                             // Reflect direction off wall
-                            let wall_normal = if clamped_pos.x <= 0.0 || clamped_pos.x >= ARENA_WIDTH {
-                                Vec2::new(-dir.x.signum(), 0.0)
-                            } else {
-                                Vec2::new(0.0, -dir.y.signum())
-                            };
-                            // Corner case: both axes clamped
                             let nx = if spear_pos.x != clamped_pos.x { -dir.x } else { dir.x };
                             let ny = if spear_pos.y != clamped_pos.y { -dir.y } else { dir.y };
                             *direction = Vec2::new(nx, ny).normalize();
@@ -1240,7 +1233,6 @@ impl Simulation {
                             let pinned_id = *impaled_unit;
                             pass_through_hit.retain(|id| Some(*id) == pinned_id);
                             *impaled_unit = None;
-                            let _ = wall_normal; // used above via component reflection
                             false
                         } else {
                             // Apply fire trail debuff to all hit units

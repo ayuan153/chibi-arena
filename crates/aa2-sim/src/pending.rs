@@ -41,22 +41,38 @@ pub enum PendingEffectKind {
         /// Ticks until the next pulse fires.
         ticks_until_next_pulse: u32,
     },
-    /// Spear of Mars: traveling projectile that impales first hero and drags to wall.
-    SpearOfMarsTravel {
+    /// Composable linear projectile: impales first hero, drags to wall, pass-through damage,
+    /// wall-pin stun, fire trail (DoT + slow), wall bounces. Data-driven via `Delivery::Projectile`.
+    ComposableProjectile {
+        /// Start position of the current travel segment.
         start_pos: Vec2,
+        /// Normalized travel direction.
         direction: Vec2,
+        /// Travel speed in units/sec.
         travel_speed: f32,
+        /// Maximum range for this segment.
         max_range: f32,
+        /// Distance traveled in current segment.
         current_distance: f32,
+        /// Hit detection width.
         width: f32,
+        /// Damage per hit (resolved from payload at cast time).
         damage: f32,
+        /// Stun duration on wall-pin (seconds).
         stun_duration_secs: f32,
+        /// ID of the currently impaled unit (first hero hit).
         impaled_unit: Option<u32>,
+        /// IDs of units already hit (no double-hit).
         pass_through_hit: Vec<u32>,
+        /// Fire trail DPS (0 = no trail).
         fire_trail_dps: f32,
+        /// Fire trail slow fraction (0.0–1.0).
         fire_trail_slow: f32,
+        /// Fire trail duration (seconds; currently unused, 2s hardcoded).
         fire_trail_duration_secs: f32,
+        /// Remaining wall bounces.
         bounces_remaining: u32,
+        /// Recorded fire trail positions (every ~50 units).
         fire_trail_positions: Vec<Vec2>,
     },
     /// Generic composable expanding wave: applies data-driven payloads to units as wave reaches them.
