@@ -77,6 +77,7 @@ fn spirit_lance_ability() -> AbilityDef {
         cast_range: 750.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
         max_charges: None,
+        effect_specs: None,
     }
 }
 
@@ -214,6 +215,7 @@ fn test_cdr_reduces_cooldown() {
             cast_range: 600.0,
             cast_behavior: aa2_data::CastBehavior::default(),
             max_charges: None,
+            effect_specs: None,
         },
         cooldown_remaining: 0.0,
         level: 1,

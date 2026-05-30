@@ -1,5 +1,211 @@
 use serde::{Deserialize, Serialize};
 
+// ─── Buff value types (canonical source; re-exported by aa2-sim::buff) ───
+
+/// Behavior when the same buff is reapplied.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum StackBehavior {
+    /// Same source reapplies → timer resets (default).
+    RefreshDuration,
+    /// Multiple instances accumulate up to max stacks.
+    StackIntensity(u32),
+    /// Each application is tracked separately.
+    Independent,
+}
+
+/// Determines what strength of dispel can remove this buff.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DispelType {
+    /// Removed by any dispel.
+    BasicDispel,
+    /// Only removed by strong dispel.
+    StrongDispel,
+    /// Cannot be removed.
+    Undispellable,
+}
+
+/// Status effect flags applied by buffs/debuffs.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq)]
+pub struct StatusFlags {
+    /// Prevents all actions.
+    pub stunned: bool,
+    /// Prevents ability casting.
+    pub silenced: bool,
+    /// Prevents attacking.
+    pub disarmed: bool,
+    /// Prevents movement.
+    pub rooted: bool,
+    /// Prevents all actions + sets MS to 140 + disables passives.
+    pub hexed: bool,
+    /// Cannot be targeted or take damage.
+    pub invulnerable: bool,
+    /// Immune to magic damage, most debuffs, and spell targeting.
+    pub magic_immune: bool,
+}
+
+impl StatusFlags {
+    /// Merge multiple status flags by OR-ing all fields together.
+    pub fn merge(flags: &[StatusFlags]) -> StatusFlags {
+        let mut result = StatusFlags::default();
+        for f in flags {
+            result.stunned |= f.stunned;
+            result.silenced |= f.silenced;
+            result.disarmed |= f.disarmed;
+            result.rooted |= f.rooted;
+            result.hexed |= f.hexed;
+            result.invulnerable |= f.invulnerable;
+            result.magic_immune |= f.magic_immune;
+        }
+        result
+    }
+}
+
+/// Additive stat modifiers from buffs.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub struct StatModifier {
+    /// Bonus armor (additive).
+    #[serde(default)]
+    pub bonus_armor: f32,
+    /// Bonus attack speed (additive).
+    #[serde(default)]
+    pub bonus_attack_speed: f32,
+    /// Bonus move speed (additive).
+    #[serde(default)]
+    pub bonus_move_speed: f32,
+    /// Bonus damage (additive).
+    #[serde(default)]
+    pub bonus_damage: f32,
+    /// Bonus magic resistance (multiplicative with base).
+    #[serde(default)]
+    pub bonus_magic_resistance: f32,
+    /// Bonus HP regen per second (additive).
+    #[serde(default)]
+    pub bonus_hp_regen: f32,
+    /// Bonus strength (adds HP + damage if STR primary).
+    #[serde(default)]
+    pub bonus_strength: f32,
+    /// Bonus agility (adds armor, AS, damage if AGI primary).
+    #[serde(default)]
+    pub bonus_agi: f32,
+    /// Bonus intelligence (adds mana, mana regen, damage if INT primary).
+    #[serde(default)]
+    pub bonus_int: f32,
+    /// Status resistance (0.5 = 50% shorter debuffs).
+    #[serde(default)]
+    pub status_resistance: f32,
+}
+
+// ─── Composable effect schema (data-only; resolvers live in aa2-sim) ───
+
+/// Data definition for a periodic tick effect (DoT or HoT).
+/// The runtime `TickEffect` in aa2-sim adds `ticks_until_next` state.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct TickEffectDef {
+    /// Positive = damage, negative = heal.
+    pub damage: f32,
+    /// Type of damage dealt.
+    pub damage_type: DamageType,
+    /// Apply every N ticks.
+    pub interval_ticks: u32,
+}
+
+/// Data definition for a buff/debuff, parameterized per-level where applicable.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct BuffDef {
+    /// Name identifier for this buff.
+    pub name: String,
+    /// Duration in seconds per ability level.
+    pub duration: Vec<f32>,
+    /// Status effects this buff applies.
+    pub status: StatusFlags,
+    /// Stat modifiers this buff applies.
+    #[serde(default)]
+    pub stat_modifier: Option<StatModifier>,
+    /// Periodic tick effect (DoT/HoT).
+    #[serde(default)]
+    pub tick_effect: Option<TickEffectDef>,
+    /// How this buff stacks with itself.
+    pub stacking: StackBehavior,
+    /// What dispel strength removes this buff.
+    pub dispel_type: DispelType,
+    /// true = negative effect (from enemy).
+    #[serde(default)]
+    pub is_debuff: bool,
+    /// If true, this debuff applies even to magic immune units.
+    #[serde(default)]
+    pub pierces_magic_immunity: bool,
+    /// Percentage of autoattack damage reflected back to attacker (0.0 to 1.0).
+    #[serde(default)]
+    pub damage_reflection_pct: f32,
+}
+
+/// When an effect fires.
+/// More variants (OnAttack, OnHit, OnKill, Periodic) added as abilities are ported.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum Trigger {
+    /// Fires when the ability is cast.
+    OnCast,
+}
+
+/// Who/where the effect targets.
+/// Minimal set for the proof; will grow to cover single-target, ally, point.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum TargetingSpec {
+    /// Targets the caster.
+    Caster,
+    /// Targets enemies within the delivery area.
+    EnemiesInDelivery,
+}
+
+/// How the effect reaches affected units.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum Delivery {
+    /// Applied immediately with no travel time.
+    Instant,
+    /// Expands outward from origin at a fixed speed.
+    ExpandingWave {
+        /// Maximum radius per ability level.
+        max_radius: Vec<f32>,
+        /// Expansion speed (units/sec).
+        speed: f32,
+    },
+}
+
+/// What happens to each affected unit.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum Payload {
+    /// Deal damage of the given type.
+    Damage {
+        /// Damage type.
+        kind: DamageType,
+        /// Base damage per ability level.
+        base: Vec<f32>,
+    },
+    /// Apply a buff/debuff.
+    ApplyBuff(BuffDef),
+    /// Dispel debuffs up to the given strength.
+    Dispel {
+        /// Maximum dispel strength to remove.
+        strength: DispelType,
+    },
+    /// Trigger a chained sub-effect. Recursion is bounded by
+    /// `MAX_EFFECT_CHAIN_DEPTH` (enforced in aa2-sim, added later).
+    Chain(Box<EffectSpec>),
+}
+
+/// A composable effect specification: trigger + targeting + delivery + payloads.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct EffectSpec {
+    /// When this effect fires.
+    pub trigger: Trigger,
+    /// Who/where it targets.
+    pub targeting: TargetingSpec,
+    /// How it reaches targets.
+    pub delivery: Delivery,
+    /// What happens to each affected unit.
+    pub payload: Vec<Payload>,
+}
+
 /// How an effect interacts with illusions.
 /// Determines whether illusions can use/benefit from this effect.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
@@ -215,6 +421,10 @@ pub struct AbilityDef {
     /// If set, ability uses a charge system instead of normal cooldown.
     #[serde(default)]
     pub max_charges: Option<u32>,
+    /// If Some, this ability uses the composable resolver and the legacy
+    /// `effects` Vec is ignored during execution.
+    #[serde(default)]
+    pub effect_specs: Option<Vec<EffectSpec>>,
 }
 
 /// Default cast range for abilities (600 units).

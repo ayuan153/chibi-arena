@@ -84,7 +84,7 @@ fn test_io_instant_turn_rate_vs_slow_hero() {
         effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
     };
 
     // Io: instant turn rate (999.0)

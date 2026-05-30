@@ -2061,7 +2061,7 @@ mod tests {
                 effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
             },
             cooldown_remaining: 0.0,
             level: 0,
@@ -2096,7 +2096,7 @@ mod tests {
                 effects: vec![Effect::Damage { kind: DamageType::Physical, base: vec![200.0] }],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
             },
             cooldown_remaining: 0.0,
             level: 0,
@@ -2134,7 +2134,7 @@ mod tests {
                 effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
             },
             cooldown_remaining: 5.0, // on cooldown
             level: 0,
@@ -2173,7 +2173,7 @@ mod tests {
                 effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
             },
             cooldown_remaining: 0.0,
             level: 0,
@@ -2222,6 +2222,7 @@ mod tests {
             cast_range: 600.0,
             cast_behavior: aa2_data::CastBehavior::default(),
             max_charges: None,
+            effect_specs: None,
         };
         let ability2 = AbilityDef {
             name: "War Cry".to_string(),
@@ -2235,6 +2236,7 @@ mod tests {
             cast_range: 600.0,
             cast_behavior: aa2_data::CastBehavior::default(),
             max_charges: None,
+            effect_specs: None,
         };
 
         let config = UnitConfig::new(hero)

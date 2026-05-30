@@ -452,7 +452,7 @@ mod tests {
             effects,
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
         }
     }
 
@@ -649,6 +649,7 @@ mod tests {
                 cast_range: 600.0,
                 cast_behavior: aa2_data::CastBehavior::default(),
                 max_charges: None,
+                effect_specs: None,
             },
             cooldown_remaining: 0.0,
             level: 1,
@@ -713,6 +714,7 @@ mod tests {
             cast_range: 0.0,
             cast_behavior: aa2_data::CastBehavior::default(),
             max_charges: None,
+            effect_specs: None,
         };
         execute_ability(&ability, 1, 0, 0, Vec2::new(0.0, 0.0), None, None, &mut units, 10, &mut Vec::new());
 
@@ -766,6 +768,7 @@ mod tests {
                 cast_range: 0.0,
                 cast_behavior: aa2_data::CastBehavior::default(),
                 max_charges: None,
+                effect_specs: None,
             },
             cooldown_remaining: 0.0,
             level: 1,

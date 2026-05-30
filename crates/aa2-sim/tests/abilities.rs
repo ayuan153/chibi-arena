@@ -57,7 +57,7 @@ fn dark_pact_ability() -> AbilityDef {
         }],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
     }
 }
 
@@ -78,7 +78,7 @@ fn heavenly_grace_ability() -> AbilityDef {
         }],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
     }
 }
 
@@ -98,7 +98,7 @@ fn ravage_ability() -> AbilityDef {
         }],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
     }
 }
 
@@ -551,7 +551,7 @@ fn test_hg_dispels_on_cast() {
         }],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
     };
 
     execute_ability(
@@ -587,7 +587,7 @@ fn test_hg_targets_highest_y_ally() {
             effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
         },
         cooldown_remaining: 0.0,
         level: 1,
@@ -626,7 +626,7 @@ fn test_hg_self_cast_when_no_allies() {
             effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
         },
         cooldown_remaining: 0.0,
         level: 1,
@@ -663,7 +663,7 @@ fn test_hg_targets_furthest_on_subsequent_cast() {
             effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
         },
         cooldown_remaining: 0.0,
         level: 1,
@@ -1627,7 +1627,7 @@ fn test_glaives_bounce_applies_modifiers() {
             }],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
         },
         cooldown_remaining: 0.0,
         level: 9,
@@ -1648,7 +1648,7 @@ fn test_glaives_bounce_applies_modifiers() {
             }],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
         },
         cooldown_remaining: 0.0,
         level: 1,
@@ -1728,7 +1728,7 @@ fn test_glaives_bounce_50_percent_physical() {
             }],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
         },
         cooldown_remaining: 0.0,
         level: 9,
@@ -1820,7 +1820,7 @@ fn test_lazy_targeting_no_walk() {
         aoe_shape: None,
         cast_range: 300.0,
         cast_behavior: aa2_data::CastBehavior::Lazy,
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
 
     let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -1870,7 +1870,7 @@ fn test_burrowstrike_line_stun() {
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -1942,7 +1942,7 @@ fn test_burrowstrike_teleport() {
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -1979,6 +1979,7 @@ fn test_charges_system() {
         cast_range: 600.0,
         cast_behavior: aa2_data::CastBehavior::default(),
         max_charges: Some(2),
+        effect_specs: None,
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2032,7 +2033,7 @@ fn test_burrowstrike_wave_hits_closer_first() {
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2093,7 +2094,7 @@ fn test_burrowstrike_invulnerable_during_travel() {
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2144,7 +2145,7 @@ fn test_caustic_finale_explosion_on_death() {
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2205,7 +2206,7 @@ fn test_glaives_blocked_by_magic_immunity() {
         aoe_shape: None,
         cast_range: 0.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
 
     let mut attacker = Unit::from_hero_def(&hero, 0, 0, Vec2::new(0.0, 0.0));
@@ -2661,7 +2662,7 @@ fn test_lazy_does_not_drive_movement_for_cast() {
         aoe_shape: None,
         cast_range: 300.0,
         cast_behavior: aa2_data::CastBehavior::Lazy,
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
     let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 1);
     let mut u0 = Unit::from_config(&config_a, 0, 0, Vec2::new(0.0, 0.0));
@@ -2705,7 +2706,7 @@ fn test_seek_walks_past_spell_immune() {
         aoe_shape: None,
         cast_range: 600.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
     let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 1);
     let mut u0 = Unit::from_config(&config_a, 0, 0, Vec2::new(0.0, 0.0));
@@ -2779,7 +2780,7 @@ fn test_slot_priority_order() {
         aoe_shape: None,
         cast_range: 600.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
     let ability_b = AbilityDef {
         name: "SlotB".to_string(),
@@ -2793,7 +2794,7 @@ fn test_slot_priority_order() {
         aoe_shape: None,
         cast_range: 300.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
     let config = UnitConfig::new(hero.clone())
         .with_ability(ability_a, 1)
@@ -2838,7 +2839,7 @@ fn test_auto_attack_when_abilities_on_cooldown() {
         aoe_shape: None,
         cast_range: 600.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
-        max_charges: None,
+        max_charges: None, effect_specs: None,
     };
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
     let mut u0 = Unit::from_config(&config, 0, 0, Vec2::new(0.0, 0.0));

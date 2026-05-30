@@ -137,7 +137,7 @@ mod tests {
             effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
         }
     }
 
