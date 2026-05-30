@@ -90,15 +90,33 @@ fn ravage_ability() -> AbilityDef {
         mana_cost: vec![150.0],
         cast_point: 0.0,
         targeting: TargetType::NoTarget,
-        effects: vec![Effect::ExpandingWaveStun {
-            damage: vec![250.0],
-            stun_duration: vec![2.0],
-            radius: vec![1025.0],
-            wave_speed: 905.0,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        effect_specs: Some(vec![aa2_data::EffectSpec {
+            trigger: aa2_data::Trigger::OnCast,
+            targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
+            delivery: aa2_data::Delivery::ExpandingWave {
+                max_radius: vec![1025.0],
+                speed: 905.0,
+            },
+            payload: vec![
+                aa2_data::Payload::Damage { kind: aa2_data::DamageType::Magical, base: vec![250.0] },
+                aa2_data::Payload::ApplyBuff(aa2_data::BuffDef {
+                    name: "stun".to_string(),
+                    duration: vec![2.0],
+                    status: aa2_data::StatusFlags { stunned: true, ..Default::default() },
+                    stat_modifier: None,
+                    tick_effect: None,
+                    stacking: aa2_data::StackBehavior::RefreshDuration,
+                    dispel_type: aa2_data::DispelType::StrongDispel,
+                    is_debuff: true,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                }),
+            ],
+        }]),
     }
 }
 
@@ -388,14 +406,28 @@ fn test_expanding_wave() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Ravage".to_string(),
-        kind: PendingEffectKind::ExpandingWave {
-            damage: 250.0,
-            stun_duration_secs: 2.0,
-            max_radius: 1025.0,
-            wave_speed: 905.0,
-            current_radius: 0.0,
+        kind: PendingEffectKind::Composable {
             origin: Vec2::new(0.0, 0.0),
+            current_radius: 0.0,
+            max_radius: 1025.0,
+            speed: 905.0,
             already_hit: Vec::new(),
+            payload: vec![
+                aa2_data::Payload::Damage { kind: aa2_data::DamageType::Magical, base: vec![250.0] },
+                aa2_data::Payload::ApplyBuff(aa2_data::BuffDef {
+                    name: "stun".to_string(),
+                    duration: vec![2.0],
+                    status: aa2_data::StatusFlags { stunned: true, ..Default::default() },
+                    stat_modifier: None,
+                    tick_effect: None,
+                    stacking: aa2_data::StackBehavior::RefreshDuration,
+                    dispel_type: aa2_data::DispelType::StrongDispel,
+                    is_debuff: true,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                }),
+            ],
+            level: 1,
         },
         delay_ticks_remaining: 0,
     });
@@ -446,14 +478,28 @@ fn test_status_resistance() {
         caster_id: 1,
         caster_team: 1,
         ability_name: "Ravage".to_string(),
-        kind: PendingEffectKind::ExpandingWave {
-            damage: 100.0,
-            stun_duration_secs: 2.0,
-            max_radius: 500.0,
-            wave_speed: 905.0,
-            current_radius: 0.0,
+        kind: PendingEffectKind::Composable {
             origin: Vec2::new(0.0, 0.0),
+            current_radius: 0.0,
+            max_radius: 500.0,
+            speed: 905.0,
             already_hit: Vec::new(),
+            payload: vec![
+                aa2_data::Payload::Damage { kind: aa2_data::DamageType::Magical, base: vec![100.0] },
+                aa2_data::Payload::ApplyBuff(aa2_data::BuffDef {
+                    name: "stun".to_string(),
+                    duration: vec![2.0],
+                    status: aa2_data::StatusFlags { stunned: true, ..Default::default() },
+                    stat_modifier: None,
+                    tick_effect: None,
+                    stacking: aa2_data::StackBehavior::RefreshDuration,
+                    dispel_type: aa2_data::DispelType::StrongDispel,
+                    is_debuff: true,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                }),
+            ],
+            level: 1,
         },
         delay_ticks_remaining: 0,
     });
@@ -789,12 +835,19 @@ fn test_ravage_wave_timing_distance_based() {
     let hero = make_hero();
 
     // Verify loaded data
-    let effect = &ravage.effects[0];
-    let (damage, stun_dur, wave_speed) = match effect {
-        aa2_data::Effect::ExpandingWaveStun { damage, stun_duration, wave_speed, .. } => {
-            (aa2_data::value_at_level(damage, 2), aa2_data::value_at_level(stun_duration, 2), *wave_speed)
-        }
-        _ => panic!("Expected ExpandingWaveStun"),
+    let specs = ravage.effect_specs.as_ref().expect("effect_specs should be present");
+    let spec = &specs[0];
+    let wave_speed = match &spec.delivery {
+        aa2_data::Delivery::ExpandingWave { speed, .. } => *speed,
+        _ => panic!("Expected ExpandingWave delivery"),
+    };
+    let _damage = match &spec.payload[0] {
+        aa2_data::Payload::Damage { base, .. } => aa2_data::value_at_level(base, 2),
+        _ => panic!("Expected Damage payload"),
+    };
+    let stun_dur = match &spec.payload[1] {
+        aa2_data::Payload::ApplyBuff(def) => aa2_data::value_at_level(&def.duration, 2),
+        _ => panic!("Expected ApplyBuff payload"),
     };
     assert_eq!(wave_speed, 905.0);
     assert_eq!(stun_dur, 2.2);
@@ -811,14 +864,14 @@ fn test_ravage_wave_timing_distance_based() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Ravage".to_string(),
-        kind: aa2_sim::pending::PendingEffectKind::ExpandingWave {
-            damage,
-            stun_duration_secs: stun_dur,
-            max_radius: 700.0,
-            wave_speed,
-            current_radius: 0.0,
+        kind: aa2_sim::pending::PendingEffectKind::Composable {
             origin: Vec2::new(0.0, 0.0),
+            current_radius: 0.0,
+            max_radius: 700.0,
+            speed: wave_speed,
             already_hit: Vec::new(),
+            payload: spec.payload.clone(),
+            level: 2,
         },
         delay_ticks_remaining: 0,
     });

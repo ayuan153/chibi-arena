@@ -11,12 +11,26 @@ AbilityDef(
     mana_cost: [80.0],
     cast_point: 0.0,
     targeting: NoTarget,
-    effects: [
-        Rage(
-            duration: [1.0, 2.0, 4.0, 4.0, 4.0, 7.0, 7.0, 7.0, 7.0],
-        ),
-    ],
+    effects: [],
     description: "Lifestealer goes into a rage, becoming magic immune and purging debuffs.",
     aoe_shape: None,
     cast_range: 0.0,
+    effect_specs: Some([
+        EffectSpec(
+            trigger: OnCast,
+            targeting: Caster,
+            delivery: Instant,
+            payload: [
+                Dispel(strength: BasicDispel),
+                ApplyBuff(BuffDef(
+                    name: "rage",
+                    duration: [1.0, 2.0, 4.0, 4.0, 4.0, 7.0, 7.0, 7.0, 7.0],
+                    status: StatusFlags(magic_immune: true),
+                    stacking: RefreshDuration,
+                    dispel_type: Undispellable,
+                    is_debuff: false,
+                )),
+            ],
+        ),
+    ]),
 )

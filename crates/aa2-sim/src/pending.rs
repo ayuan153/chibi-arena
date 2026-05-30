@@ -1,6 +1,6 @@
 //! Pending effects system: delayed or over-time effects that fire independently of caster actions.
 
-use aa2_data::DamageType;
+use aa2_data::{DamageType, Payload};
 use crate::vec2::Vec2;
 
 /// The kind of pending effect currently active.
@@ -79,22 +79,22 @@ pub enum PendingEffectKind {
         bounces_remaining: u32,
         fire_trail_positions: Vec<Vec2>,
     },
-    /// Ravage: expanding wave that stuns units as it reaches them.
-    ExpandingWave {
-        /// Magical damage dealt to each unit hit.
-        damage: f32,
-        /// Stun duration in seconds.
-        stun_duration_secs: f32,
+    /// Generic composable expanding wave: applies data-driven payloads to units as wave reaches them.
+    Composable {
+        /// Origin position (caster pos at cast time).
+        origin: Vec2,
+        /// Current radius of the wave.
+        current_radius: f32,
         /// Maximum radius the wave expands to.
         max_radius: f32,
         /// Speed of wave expansion in units/sec.
-        wave_speed: f32,
-        /// Current radius of the wave.
-        current_radius: f32,
-        /// Origin position (caster pos at cast time).
-        origin: Vec2,
+        speed: f32,
         /// Unit IDs already hit by this wave.
         already_hit: Vec<u32>,
+        /// Payloads to apply to each hit unit.
+        payload: Vec<Payload>,
+        /// Ability level (for per-level payload values).
+        level: u8,
     },
 }
 

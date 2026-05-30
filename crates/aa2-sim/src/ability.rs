@@ -24,6 +24,14 @@ pub fn execute_ability(
     tick: u32,
     pending_effects: &mut Vec<PendingEffect>,
 ) -> Vec<CombatEvent> {
+    // Composable path: if effect_specs is present, use the generic resolver and skip legacy.
+    if let Some(specs) = ability.effect_specs.as_ref() {
+        return crate::effect_spec::run_cast_effect_specs(
+            specs, &ability.name, level, caster_id, caster_team, caster_pos,
+            units, tick, pending_effects,
+        );
+    }
+
     let mut events = Vec::new();
 
     // Determine target indices based on targeting type
@@ -120,7 +128,7 @@ pub fn execute_ability(
                     });
                 }
                 Effect::Summon { .. } => {}
-                Effect::DarkPact { .. } | Effect::BuffTargetAndSelf { .. } | Effect::ExpandingWaveStun { .. } => {
+                Effect::DarkPact { .. } | Effect::BuffTargetAndSelf { .. } => {
                     // These are handled outside the per-target loop
                 }
                 Effect::FurySwipes { .. } | Effect::ChaosStrike { .. } | Effect::EssenceShift { .. } => {
@@ -130,9 +138,6 @@ pub fn execute_ability(
                     // Attack modifier — handled in the attack pipeline
                 }
                 Effect::Burrowstrike { .. } => {
-                    // Handled outside the per-target loop
-                }
-                Effect::Rage { .. } => {
                     // Handled outside the per-target loop
                 }
                 Effect::SpearOfMars { .. } => {
@@ -217,25 +222,6 @@ pub fn execute_ability(
                     events.push(CombatEvent::BuffApplied { tick, target_id: caster_id, name: name.clone() });
                 }
             }
-            Effect::ExpandingWaveStun {
-                damage, stun_duration, radius, wave_speed,
-            } => {
-                pending_effects.push(PendingEffect {
-                    caster_id,
-                    caster_team,
-                    ability_name: ability.name.clone(),
-                    kind: PendingEffectKind::ExpandingWave {
-                        damage: value_at_level(damage, level),
-                        stun_duration_secs: value_at_level(stun_duration, level),
-                        max_radius: value_at_level(radius, level),
-                        wave_speed: *wave_speed,
-                        current_radius: 0.0,
-                        origin: caster_pos,
-                        already_hit: Vec::new(),
-                    },
-                    delay_ticks_remaining: 0,
-                });
-            }
             Effect::Burrowstrike {
                 damage, stun_duration, range, width, travel_speed,
                 caustic_finale_damage, caustic_finale_radius,
@@ -293,29 +279,6 @@ pub fn execute_ability(
                     },
                     delay_ticks_remaining: 0,
                 });
-            }
-            Effect::Rage { duration } => {
-                if let Some(caster) = units.iter_mut().find(|u| u.id == caster_id) {
-                    // Basic dispel on cast
-                    crate::buff::dispel(&mut caster.buffs, DispelType::BasicDispel);
-                    // Apply magic immunity buff
-                    let dur_ticks = (value_at_level(duration, level) * 30.0) as u32;
-                    let rage_buff = Buff {
-                        name: "rage".to_string(),
-                        remaining_ticks: dur_ticks,
-                        tick_effect: None,
-                        stacking: StackBehavior::RefreshDuration,
-                        dispel_type: DispelType::Undispellable,
-                        status: StatusFlags { magic_immune: true, ..StatusFlags::default() },
-                        stat_modifier: None,
-                        source_id: caster_id,
-                        is_debuff: false,
-                        pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                    };
-                    apply_buff(&mut caster.buffs, rage_buff);
-                    events.push(CombatEvent::BuffApplied { tick, target_id: caster_id, name: "rage".to_string() });
-                }
             }
             Effect::SpearOfMars {
                 damage, stun_duration, range, travel_speed, width,
@@ -708,13 +671,32 @@ mod tests {
             mana_cost: vec![80.0],
             cast_point: 0.0,
             targeting: TargetType::NoTarget,
-            effects: vec![Effect::Rage { duration: vec![4.0] }],
+            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
             cast_range: 0.0,
             cast_behavior: aa2_data::CastBehavior::default(),
             max_charges: None,
-            effect_specs: None,
+            effect_specs: Some(vec![aa2_data::EffectSpec {
+                trigger: aa2_data::Trigger::OnCast,
+                targeting: aa2_data::TargetingSpec::Caster,
+                delivery: aa2_data::Delivery::Instant,
+                payload: vec![
+                    aa2_data::Payload::Dispel { strength: aa2_data::DispelType::BasicDispel },
+                    aa2_data::Payload::ApplyBuff(aa2_data::BuffDef {
+                        name: "rage".to_string(),
+                        duration: vec![4.0],
+                        status: aa2_data::StatusFlags { magic_immune: true, ..Default::default() },
+                        stat_modifier: None,
+                        tick_effect: None,
+                        stacking: aa2_data::StackBehavior::RefreshDuration,
+                        dispel_type: aa2_data::DispelType::Undispellable,
+                        is_debuff: false,
+                        pierces_magic_immunity: false,
+                        damage_reflection_pct: 0.0,
+                    }),
+                ],
+            }]),
         };
         execute_ability(&ability, 1, 0, 0, Vec2::new(0.0, 0.0), None, None, &mut units, 10, &mut Vec::new());
 

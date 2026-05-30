@@ -26,6 +26,7 @@ pub enum DispelType {
 
 /// Status effect flags applied by buffs/debuffs.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq)]
+#[serde(default)]
 pub struct StatusFlags {
     /// Prevents all actions.
     pub stunned: bool,
@@ -292,13 +293,6 @@ pub enum Effect {
         #[serde(default)]
         dispel_on_cast: bool,
     },
-    /// Expanding wave AoE stun (Ravage). Hits units when wave reaches them.
-    ExpandingWaveStun {
-        damage: Vec<f32>,
-        stun_duration: Vec<f32>,
-        radius: Vec<f32>,
-        wave_speed: f32,
-    },
     /// Fury Swipes: per-target stacking flat damage, added post-crit.
     FurySwipes {
         damage_per_stack: Vec<f32>,
@@ -341,10 +335,6 @@ pub enum Effect {
         travel_speed: f32,              // units/sec (2000)
         caustic_finale_damage: Vec<f32>, // on-death explosion damage (0 = none, >0 at Super+)
         caustic_finale_radius: f32,      // explosion radius (400)
-    },
-    /// Rage: self-buff granting magic immunity + basic dispel on cast.
-    Rage {
-        duration: Vec<f32>,
     },
     /// Spirit Lance: projectile that damages, slows, and spawns an illusion at target.
     SpiritLance {

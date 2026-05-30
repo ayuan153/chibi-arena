@@ -8,23 +8,34 @@
 // Gaben (9): +600 radius, wave comes back in stunning for half duration
 AbilityDef(
     name: "Ravage",
-    cooldown: [150.0, 145.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0],  // base cooldown
+    cooldown: [150.0, 145.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0],
     mana_cost: [125.0, 225.0, 325.0, 325.0, 325.0, 325.0, 325.0, 325.0, 325.0],
     cast_point: 0.3,
     targeting: NoTarget,
-    effects: [
-        ExpandingWaveStun(
-            // Damage (magical): L1=275, L2=375, L3=475, L4-5=475, L6(Super)=475, L7-8=475, L9(Gaben)=475
-            damage: [275.0, 375.0, 475.0, 475.0, 475.0, 475.0, 475.0, 475.0, 475.0],
-            // Stun duration: L1=2.0, L2=2.2, L3=2.4, L4-5=2.4, L6(Super)=3.4, L7-8=3.4, L9(Gaben)=3.4
-            stun_duration: [2.0, 2.2, 2.4, 2.4, 2.4, 3.4, 3.4, 3.4, 3.4],
-            // Radius: L1-5=700, L6-8=700, L9(Gaben)=1300
-            radius: [700.0, 700.0, 700.0, 700.0, 700.0, 700.0, 700.0, 700.0, 1300.0],
-            wave_speed: 905.0,
-        ),
-    ],
+    effects: [],
     description: "Slams the ground, sending a wave that stuns and damages all enemies.",
     is_ultimate: true,
     aoe_shape: None,
-    cast_range: 0.0,  // Self-centered, no range needed
+    cast_range: 0.0,
+    effect_specs: Some([
+        EffectSpec(
+            trigger: OnCast,
+            targeting: EnemiesInDelivery,
+            delivery: ExpandingWave(
+                max_radius: [700.0, 700.0, 700.0, 700.0, 700.0, 700.0, 700.0, 700.0, 1300.0],
+                speed: 905.0,
+            ),
+            payload: [
+                Damage(kind: Magical, base: [275.0, 375.0, 475.0, 475.0, 475.0, 475.0, 475.0, 475.0, 475.0]),
+                ApplyBuff(BuffDef(
+                    name: "stun",
+                    duration: [2.0, 2.2, 2.4, 2.4, 2.4, 3.4, 3.4, 3.4, 3.4],
+                    status: StatusFlags(stunned: true),
+                    stacking: RefreshDuration,
+                    dispel_type: StrongDispel,
+                    is_debuff: true,
+                )),
+            ],
+        ),
+    ]),
 )

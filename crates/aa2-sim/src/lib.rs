@@ -14,6 +14,7 @@ pub mod aoe;
 pub mod ai;
 pub mod pending;
 pub mod attack_modifier;
+pub mod effect_spec;
 
 use vec2::Vec2;
 use unit::{Unit, UnitState, ACQUISITION_RANGE, ACTION_THRESHOLD};
@@ -928,7 +929,7 @@ impl Simulation {
     fn step_pending_effects(&mut self) {
         use pending::PendingEffectKind;
         use pending::PendingEffect;
-        use combat::apply_magic_resistance;
+        use combat::{apply_armor, apply_magic_resistance};
         use buff::{apply_buff, dispel, Buff, DispelType, StackBehavior, StatModifier, StatusFlags, TickEffect};
 
         let tick = self.tick;
@@ -1547,23 +1548,25 @@ impl Simulation {
 
                     done
                 }
-                PendingEffectKind::ExpandingWave {
-                    damage,
-                    stun_duration_secs,
-                    max_radius,
-                    wave_speed,
-                    current_radius,
+                PendingEffectKind::Composable {
                     origin,
+                    current_radius,
+                    max_radius,
+                    speed,
                     already_hit,
+                    payload,
+                    level,
                 } => {
-                    *current_radius += *wave_speed * TICK_DURATION;
+                    *current_radius += *speed * TICK_DURATION;
                     let cr = *current_radius;
                     let mr = *max_radius;
-                    let dmg = *damage;
-                    let stun_secs = *stun_duration_secs;
                     let orig = *origin;
+                    let lvl = *level;
+                    let payload_clone = payload.clone();
 
-                    for u in self.units.iter_mut() {
+                    // Collect newly-hit unit IDs (deterministic: index order)
+                    let mut newly_hit: Vec<(usize, u32)> = Vec::new();
+                    for (idx, u) in self.units.iter().enumerate() {
                         if u.team == caster_team || !u.is_alive() || u.id == caster_id {
                             continue;
                         }
@@ -1571,40 +1574,63 @@ impl Simulation {
                             continue;
                         }
                         if orig.distance(u.position) <= cr {
-                            already_hit.push(u.id);
-                            // Skip magical damage and stun on magic immune units
-                            if active_status(&u.buffs).magic_immune {
-                                continue;
-                            }
-                            let actual = apply_magic_resistance(dmg, u.magic_resistance);
-                            u.hp -= actual;
-                            let base_ticks = (stun_secs * 30.0) as u32;
-                            let actual_ticks = if u.status_resistance > 0.0 {
-                                (base_ticks as f32 * (1.0 - u.status_resistance)) as u32
-                            } else {
-                                base_ticks
-                            };
-                            let stun_buff = Buff {
-                                name: "stun".to_string(),
-                                remaining_ticks: actual_ticks,
-                                tick_effect: None,
-                                stacking: StackBehavior::RefreshDuration,
-                                dispel_type: DispelType::StrongDispel,
-                                status: StatusFlags { stunned: true, ..StatusFlags::default() },
-                                stat_modifier: None,
-                                source_id: caster_id,
-                                is_debuff: true,
-                                pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                            };
-                            apply_buff(&mut u.buffs, stun_buff);
-                            events.push(CombatEvent::WaveHit {
-                                tick,
-                                target_id: u.id,
-                                damage: actual,
-                                stun_duration: actual_ticks as f32 / 30.0,
-                            });
+                            newly_hit.push((idx, u.id));
                         }
+                    }
+                    for &(_, uid) in &newly_hit {
+                        already_hit.push(uid);
+                    }
+
+                    // Apply payloads to each newly-hit unit, emitting WaveHit
+                    for (target_idx, _) in newly_hit {
+                        // Skip magic immune units entirely (matches old ExpandingWave behavior)
+                        if active_status(&self.units[target_idx].buffs).magic_immune {
+                            continue;
+                        }
+                        let mut total_damage = 0.0f32;
+                        let mut stun_duration_actual = 0.0f32;
+                        for p in &payload_clone {
+                            match p {
+                                aa2_data::Payload::Damage { kind, base } => {
+                                    let idx = (lvl.saturating_sub(1) as usize).min(base.len().saturating_sub(1));
+                                    let raw = base[idx];
+                                    let actual = match kind {
+                                        aa2_data::DamageType::Physical => apply_armor(raw, self.units[target_idx].armor),
+                                        aa2_data::DamageType::Magical => {
+                                            apply_magic_resistance(raw, self.units[target_idx].magic_resistance)
+                                        }
+                                        aa2_data::DamageType::Pure => raw,
+                                    };
+                                    if actual > 0.0 {
+                                        self.units[target_idx].hp -= actual;
+                                        total_damage += actual;
+                                    }
+                                }
+                                aa2_data::Payload::ApplyBuff(def) => {
+                                    let buff = crate::effect_spec::buff_from_def(def, lvl, caster_id);
+                                    let base_ticks = buff.remaining_ticks;
+                                    let sr = self.units[target_idx].status_resistance;
+                                    let actual_ticks = if def.is_debuff && sr > 0.0 {
+                                        (base_ticks as f32 * (1.0 - sr)) as u32
+                                    } else {
+                                        base_ticks
+                                    };
+                                    stun_duration_actual = actual_ticks as f32 / 30.0;
+                                    let buff = Buff { remaining_ticks: actual_ticks, ..buff };
+                                    apply_buff(&mut self.units[target_idx].buffs, buff);
+                                }
+                                aa2_data::Payload::Dispel { strength } => {
+                                    dispel(&mut self.units[target_idx].buffs, *strength);
+                                }
+                                aa2_data::Payload::Chain(_) => {}
+                            }
+                        }
+                        events.push(CombatEvent::WaveHit {
+                            tick,
+                            target_id: self.units[target_idx].id,
+                            damage: total_damage,
+                            stun_duration: stun_duration_actual,
+                        });
                     }
 
                     cr >= mr
