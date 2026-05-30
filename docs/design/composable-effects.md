@@ -1,8 +1,8 @@
 # Composable Ability Effects — Design Note (for sign-off)
 
-> Status: **PROPOSED — design for review, not yet implemented.** Defines a data-driven, composable
-> replacement for today's bespoke per-ability `Effect` enum so new abilities can be authored in RON
-> alone. Key decisions are resolved in §7.
+> Status: **APPROVED (2026-05-30) — in-progress; proof = Rage + Ravage.** Defines a data-driven,
+> composable replacement for today's bespoke per-ability `Effect` enum so new abilities can be
+> authored in RON alone. Key decisions are resolved in §7.
 
 ## 1. Problem
 
@@ -97,14 +97,33 @@ finale) becomes a **Delivery/Payload primitive reused across abilities**, not a 
 4. **Incremental migration, no big-bang** (§8) — keep the ~140 aa2-sim tests green throughout.
 5. **RON stays the authoring format** — no new DSL; composition is nested RON. Revisit only if RON
    proves too verbose in practice.
+6. **Sub-effects / chaining** (was open in §10) — modeled as a `Payload::Chain(Box<EffectSpec>)`
+   variant with a hard recursion bound `MAX_EFFECT_CHAIN_DEPTH = 2`.
+7. **Migration dispatch** — add an additive `#[serde(default)] effect_specs: Option<Vec<EffectSpec>>`
+   field on `AbilityDef`. If present, the engine runs the new resolver path and SKIPS the old
+   `Effect` match entirely for that ability (all-or-nothing per ability; never split one ability
+   across both paths). Unported RON files stay untouched thanks to serde default. The old `Effect`
+   enum + old paths are deleted only when all 11 abilities are ported.
+8. **Buff data ownership** (was M1) — chose the refactor (option b) over a duplicate spec. The buff
+   *data schema* (`StatusFlags`, `StatModifier`, `StackBehavior`, `DispelType`, and a new
+   `TickEffectDef` + `BuffDef`) lives in aa2-data; the runtime `Buff` in aa2-sim reuses those same
+   types and adds runtime state (`remaining_ticks`, tick countdown), constructed via
+   `Buff::from_def(level, source_id)`. Single source of truth for the schema; no parallel duplicate
+   type.
+9. **Proof abilities** — Rage + **Ravage** (NOT a generic plain-damage ability — no shipped ability
+   uses the generic `Effect::Damage`; it is test-fixture only). Ravage's `ExpandingWave` delivery
+   deliberately exercises the Delivery axis early.
 
 ## 8. Migration path
 
 1. Add the composable `EffectSpec` types in aa2-data **alongside** the existing `Effect` enum (no break).
-2. Implement the generic resolvers for the primitives the simplest abilities need; port **Rage + one
-   plain damage ability** as the proof. Move those abilities' tests to the new model.
+2. Implement the generic resolvers for the primitives the simplest abilities need; port **Rage +
+   Ravage** as the proof. Move those abilities' tests to the new model.
 3. Port the remaining abilities **one at a time** — each port = bespoke variant → composition, then
    delete that variant + its sim arm(s) and migrate its tests. The fixed-seed sim tests gate each port.
+   - **Test-migration discipline:** keep each ability's OLD tests compiling against the old variant
+     until that variant is deleted; write PARALLEL new tests for the composed version; delete the old
+     variant + its old tests in the SAME commit; never rewrite a test in place.
 4. When all 11 are ported, delete the old `Effect` enum, the per-ability `PendingEffectKind` arms, and
    the `attack_modifier` match. New abilities thereafter are **RON-only**.
 
@@ -121,13 +140,17 @@ finale) becomes a **Delivery/Payload primitive reused across abilities**, not a 
 - **How general does Delivery need to be?** Start with the six primitives above; resist a generic
   physics/geometry VM until a real ability demands it.
 - **Spawn / illusion semantics** (Spirit Lance) — likely its own `Payload` primitive carrying the
-  existing `IllusionInteraction`; confirm during that port.
+  existing `IllusionInteraction`; confirm during that port. **Spirit Lance is ported LAST** — its
+  `Spawn{illusion}` clones a full `Unit` into the `units` Vec, making it the highest-risk port.
 - **PRD / attack-timing** for OnAttack triggers — preserve current Chaos Strike / Glaives behavior
   exactly (tests pin it).
-- **Sub-effects / chaining** (caustic finale, fire trail) — modeled as a triggered child `EffectSpec`;
-  validate the recursion stays bounded.
-- **Over-generalization risk** — this is deliberately a fixed primitive set, not an interpreter; flag
-  if a port pushes toward a VM.
+- ~~**Sub-effects / chaining** (caustic finale, fire trail)~~ — **RESOLVED**, see §7 item 6.
+- ~~**Proof-ability selection**~~ — **RESOLVED**, see §7 item 9.
+- **Over-generalization guard** — this is deliberately a fixed primitive set, not an interpreter. If
+  a new ability needs a delivery primitive with >3 parameters or requires a 3rd new primitive, treat
+  it as a smell and consider a bespoke path.
+- **Deterministic ordering** — triggers resolve in ability-slot order per unit; units processed in
+  `self.units` index order.
 
 ---
 
