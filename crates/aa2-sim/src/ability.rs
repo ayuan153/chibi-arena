@@ -130,7 +130,7 @@ pub fn execute_ability(
                     });
                 }
                 Effect::Summon { .. } => {}
-                Effect::FurySwipes { .. } | Effect::ChaosStrike { .. } | Effect::EssenceShift { .. } => {
+                Effect::ChaosStrike { .. } | Effect::EssenceShift { .. } => {
                     // Attack modifiers are handled in the attack pipeline, not ability execution
                 }
                 Effect::GlaivesOfWisdom { .. } => {
@@ -524,6 +524,7 @@ mod tests {
                     on_death: None,
                     })),
                 ],
+                illusion_interaction: aa2_data::IllusionInteraction::Disabled,
             }]),
         };
         execute_ability(&ability, 1, 0, 0, Vec2::new(0.0, 0.0), None, None, &mut units, 10, &mut Vec::new());

@@ -161,6 +161,10 @@ pub fn apply_payload_to_unit(
             // Handled by resolve_on_death_spec with source_max_hp context.
             PayloadOutcome::Skipped
         }
+        Payload::StackingBonusDamage { .. } => {
+            // Handled directly by the attack pipeline (process_attack_modifiers).
+            PayloadOutcome::Skipped
+        }
     }
 }
 
@@ -236,6 +240,10 @@ fn resolve_spec(
                 (None, Some(ci)) => vec![ci],
                 _ => return,
             }
+        }
+        TargetingSpec::AttackTarget => {
+            // OnAttack targeting is resolved in the attack pipeline, not here.
+            return;
         }
     };
 

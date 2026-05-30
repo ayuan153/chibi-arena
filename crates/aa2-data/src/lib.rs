@@ -195,11 +195,13 @@ pub struct BuffDef {
 }
 
 /// When an effect fires.
-/// More variants (OnAttack, OnHit, OnKill, Periodic) added as abilities are ported.
+/// More variants (OnHit, OnKill, Periodic) added as abilities are ported.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum Trigger {
     /// Fires when the ability is cast.
     OnCast,
+    /// Fires when the owning unit lands an auto-attack (passive on-hit modifier).
+    OnAttack,
 }
 
 /// Who/where the effect targets.
@@ -212,6 +214,8 @@ pub enum TargetingSpec {
     EnemiesInDelivery,
     /// Targets the cast target AND the caster (dedup if equal; caster-only if no target).
     TargetAndCaster,
+    /// Targets the auto-attack target (used with `Trigger::OnAttack`).
+    AttackTarget,
 }
 
 /// How the effect reaches affected units.
@@ -319,6 +323,17 @@ pub enum Payload {
         /// Fraction of the source (dead) unit's max HP added to damage.
         max_hp_pct: f32,
     },
+    /// Per-target stacking bonus damage (Fury Swipes pre-damage phase).
+    ///
+    /// Reads current stacks from `attack_modifier_state`, computes
+    /// `bonus = damage_per_stack[level] * current_stacks`, then increments stacks
+    /// and resets expiry to `stack_duration[level]` seconds.
+    StackingBonusDamage {
+        /// Flat bonus damage per stack, per ability level.
+        damage_per_stack: Vec<f32>,
+        /// Stack duration in seconds, per ability level.
+        stack_duration: Vec<f32>,
+    },
 }
 
 /// A composable effect specification: trigger + targeting + delivery + payloads.
@@ -332,6 +347,9 @@ pub struct EffectSpec {
     pub delivery: Delivery,
     /// What happens to each affected unit.
     pub payload: Vec<Payload>,
+    /// How this effect interacts with illusions (default: Disabled).
+    #[serde(default)]
+    pub illusion_interaction: IllusionInteraction,
 }
 
 /// How an effect interacts with illusions.
@@ -397,12 +415,6 @@ pub enum Effect {
     ApplyBuff { name: String, duration: f32 },
     Heal { base: Vec<f32> },
     Summon { unit: String, count: u32 },
-    /// Fury Swipes: per-target stacking flat damage, added post-crit.
-    FurySwipes {
-        damage_per_stack: Vec<f32>,
-        stack_duration: Vec<f32>,
-        armor_reduction_per_stack: Vec<f32>,
-    },
     /// Chaos Strike: PRD-based crit with lifesteal.
     ChaosStrike {
         proc_chance: Vec<f32>,
@@ -673,7 +685,6 @@ impl Effect {
             // Crits work on illusions
             Effect::ChaosStrike { .. } => IllusionInteraction::Full,
             // Attack modifiers that do NOT work on illusions
-            Effect::FurySwipes { .. } => IllusionInteraction::Disabled,
             Effect::EssenceShift { .. } => IllusionInteraction::Disabled,
             Effect::GlaivesOfWisdom { .. } => IllusionInteraction::Disabled,
             // All other effects: disabled by default for illusions

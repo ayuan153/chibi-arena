@@ -11,17 +11,37 @@ AbilityDef(
     mana_cost: [0.0],
     cast_point: 0.0,
     targeting: Passive,
-    effects: [
-        FurySwipes(
-            // Damage per stack: L1=12, L2=20, L3=36, L4-5=36, L6-8=36, L9=36
-            damage_per_stack: [12.0, 20.0, 36.0, 36.0, 36.0, 36.0, 36.0, 36.0, 36.0],
-            // Stack duration (seconds): L1=8, L2=12, L3=20, L4-5=20, L6-8=20, L9=20
-            stack_duration: [8.0, 12.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0],
-            // Armor reduction per stack: 0 at base, 1.5 at Super+
-            armor_reduction_per_stack: [0.0, 0.0, 0.0, 0.0, 0.0, 1.5, 1.5, 1.5, 1.5],
-        ),
-    ],
+    effects: [],
     description: "Each attack on the same target deals increasing bonus damage.",
     aoe_shape: None,
     cast_range: 0.0,
+    effect_specs: Some([
+        EffectSpec(
+            trigger: OnAttack,
+            targeting: AttackTarget,
+            delivery: Instant,
+            payload: [
+                StackingBonusDamage(
+                    // Damage per stack: L1=12, L2=20, L3=36, L4-5=36, L6-8=36, L9=36
+                    damage_per_stack: [12.0, 20.0, 36.0, 36.0, 36.0, 36.0, 36.0, 36.0, 36.0],
+                    // Stack duration (seconds): L1=8, L2=12, L3=20, L4-5=20, L6-8=20, L9=20
+                    stack_duration: [8.0, 12.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0],
+                ),
+                ApplyBuff((
+                    name: "fury_swipes_armor",
+                    // Duration matches stack_duration per level
+                    duration: [8.0, 12.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0],
+                    status: (),
+                    stat_modifier: Some((
+                        // Armor reduction per stack: 0 at base, 1.5 at Super+
+                        bonus_armor: [0.0, 0.0, 0.0, 0.0, 0.0, -1.5, -1.5, -1.5, -1.5],
+                    )),
+                    stacking: Independent,
+                    dispel_type: Undispellable,
+                    is_debuff: true,
+                    pierces_magic_immunity: true,
+                )),
+            ],
+        ),
+    ]),
 )

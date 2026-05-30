@@ -4,7 +4,7 @@
 //! and Essence Shift (stat steal). Integrates into the damage pipeline between
 //! base damage roll and armor reduction.
 
-use aa2_data::{Effect, value_at_level};
+use aa2_data::{Effect, Payload, Trigger, value_at_level};
 use crate::buff::{Buff, StackBehavior, DispelType, StatusFlags, StatModifier, active_status};
 use crate::unit::Unit;
 use crate::TICK_RATE;
@@ -85,6 +85,29 @@ pub(crate) fn process_attack_modifiers(
     for ai in 0..ability_count {
         let level = attacker.abilities[ai].level;
         if level == 0 { continue; }
+        // Composable path: abilities with effect_specs use the generic OnAttack resolver
+        if attacker.abilities[ai].def.effect_specs.is_some() {
+            let specs = attacker.abilities[ai].def.effect_specs.clone().unwrap();
+            // Illusion check for composable specs
+            if attacker.is_illusion {
+                let any_full = specs.iter().any(|s| s.illusion_interaction == aa2_data::IllusionInteraction::Full);
+                if !any_full { continue; }
+            }
+            for spec in &specs {
+                if spec.trigger != Trigger::OnAttack { continue; }
+                for payload in &spec.payload {
+                    if let Payload::StackingBonusDamage { damage_per_stack, stack_duration } = payload {
+                        let duration_secs = value_at_level(stack_duration, level);
+                        let stacks = get_fury_swipes_stacks(&attacker.attack_modifier_state, target_id, tick);
+                        let dmg_per = value_at_level(damage_per_stack, level);
+                        post_crit_bonus += stacks as f32 * dmg_per;
+                        let expiry = tick + (duration_secs * TICK_RATE) as u32;
+                        set_fury_swipes_stacks(&mut attacker.attack_modifier_state, target_id, stacks + 1, expiry);
+                    }
+                }
+            }
+            continue;
+        }
         let effects = attacker.abilities[ai].def.effects.clone();
         for effect in &effects {
             // Illusions skip effects that don't work on them
@@ -104,15 +127,6 @@ pub(crate) fn process_attack_modifiers(
                             lifesteal_pct = value_at_level(lifesteal, level) / 100.0;
                         }
                     }
-                }
-                Effect::FurySwipes { damage_per_stack, stack_duration, .. } => {
-                    let duration_secs = value_at_level(stack_duration, level);
-                    let stacks = get_fury_swipes_stacks(&attacker.attack_modifier_state, target_id, tick);
-                    let dmg_per = value_at_level(damage_per_stack, level);
-                    post_crit_bonus += stacks as f32 * dmg_per;
-                    // Increment stacks after damage calc (post-hit)
-                    let expiry = tick + (duration_secs * TICK_RATE) as u32;
-                    set_fury_swipes_stacks(&mut attacker.attack_modifier_state, target_id, stacks + 1, expiry);
                 }
                 Effect::GlaivesOfWisdom { int_damage_factor, mana_cost, .. } => {
                     // Glaives is totally blocked by magic immunity — becomes regular attack
@@ -229,39 +243,41 @@ pub fn post_attack_effects(
         }
     }
 
-    // Fury Swipes armor reduction
-    let ability_count = attacker.abilities.len();
-    for ai in 0..ability_count {
+    // Composable OnAttack post-damage: apply buff payloads (armor reduction, etc.)
+    let ability_count2 = attacker.abilities.len();
+    for ai in 0..ability_count2 {
         let level = attacker.abilities[ai].level;
         if level == 0 { continue; }
-        let effects = attacker.abilities[ai].def.effects.clone();
-        for effect in &effects {
-            if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
-                continue;
+        if attacker.abilities[ai].def.effect_specs.is_some() {
+            let specs = attacker.abilities[ai].def.effect_specs.clone().unwrap();
+            if attacker.is_illusion {
+                let any_full = specs.iter().any(|s| s.illusion_interaction == aa2_data::IllusionInteraction::Full);
+                if !any_full { continue; }
             }
-            if let Effect::FurySwipes { armor_reduction_per_stack, stack_duration, .. } = effect {
-                let armor_red = value_at_level(armor_reduction_per_stack, level);
-                if armor_red > 0.0 {
-                    let dur_secs = value_at_level(stack_duration, level);
-                    let dur_ticks = (dur_secs * TICK_RATE) as u32;
-                    let debuff = Buff {
-                        name: "fury_swipes_armor".to_string(),
-                        remaining_ticks: dur_ticks,
-                        tick_effect: None,
-                        stacking: StackBehavior::Independent,
-                        dispel_type: DispelType::Undispellable,
-                        status: StatusFlags::default(),
-                        stat_modifier: Some(StatModifier {
-                            bonus_armor: -armor_red,
-                            ..StatModifier::default()
-                        }),
-                        source_id: attacker.id,
-                        is_debuff: true,
-                        pierces_magic_immunity: true,
-                    damage_reflection_pct: 0.0,
-                    on_death: None,
-                    };
-                    target.buffs.push(debuff);
+            for spec in &specs {
+                if spec.trigger != Trigger::OnAttack { continue; }
+                for payload in &spec.payload {
+                    if let Payload::ApplyBuff(def) = payload {
+                        // Skip zero-effect buffs (e.g. armor reduction = 0 at lower levels)
+                        if let Some(ref sm) = def.stat_modifier {
+                            let resolved = sm.resolve(level);
+                            if resolved.bonus_armor == 0.0
+                                && resolved.bonus_attack_speed == 0.0
+                                && resolved.bonus_move_speed == 0.0
+                                && resolved.bonus_damage == 0.0
+                                && resolved.bonus_magic_resistance == 0.0
+                                && resolved.bonus_hp_regen == 0.0
+                                && resolved.bonus_strength == 0.0
+                                && resolved.bonus_agi == 0.0
+                                && resolved.bonus_int == 0.0
+                                && resolved.bonus_strength == 0.0
+                            {
+                                continue;
+                            }
+                        }
+                        let buff = crate::effect_spec::buff_from_def(def, level, attacker.id);
+                        target.buffs.push(buff);
+                    }
                 }
             }
         }
@@ -390,7 +406,9 @@ pub fn fury_swipes_gaben_spread(
 ) {
     // Check if attacker has Gaben Fury Swipes (level 9)
     let has_gaben_fs = attacker.abilities.iter().any(|a| {
-        a.level >= 9 && a.def.effects.iter().any(|e| matches!(e, Effect::FurySwipes { .. }))
+        a.level >= 9 && a.def.effect_specs.as_ref().is_some_and(|specs| {
+            specs.iter().any(|s| s.trigger == Trigger::OnAttack && s.payload.iter().any(|p| matches!(p, Payload::StackingBonusDamage { .. })))
+        })
     });
     if !has_gaben_fs { return; }
 
@@ -402,10 +420,15 @@ pub fn fury_swipes_gaben_spread(
         let dur_ticks = attacker.abilities.iter()
             .filter_map(|a| {
                 if a.level < 9 { return None; }
-                a.def.effects.iter().find_map(|e| {
-                    if let Effect::FurySwipes { stack_duration, .. } = e {
-                        Some((value_at_level(stack_duration, a.level) * TICK_RATE) as u32)
-                    } else { None }
+                a.def.effect_specs.as_ref().and_then(|specs| {
+                    specs.iter().find_map(|s| {
+                        if s.trigger != Trigger::OnAttack { return None; }
+                        s.payload.iter().find_map(|p| {
+                            if let Payload::StackingBonusDamage { stack_duration, .. } = p {
+                                Some((value_at_level(stack_duration, a.level) * TICK_RATE) as u32)
+                            } else { None }
+                        })
+                    })
                 })
             })
             .next()
@@ -518,7 +541,7 @@ mod tests {
 
     #[test]
     fn test_fury_swipes_stacking() {
-        use aa2_data::{AbilityDef, TargetType};
+        use aa2_data::{AbilityDef, TargetType, EffectSpec, Trigger, TargetingSpec, Delivery, Payload};
         use crate::cast::AbilityState;
 
         let mut rng = Rng::new(42);
@@ -529,14 +552,22 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::FurySwipes {
-                    damage_per_stack: vec![20.0],
-                    stack_duration: vec![15.0],
-                    armor_reduction_per_stack: vec![0.0],
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![EffectSpec {
+                    trigger: Trigger::OnAttack,
+                    targeting: TargetingSpec::AttackTarget,
+                    delivery: Delivery::Instant,
+                    payload: vec![
+                        Payload::StackingBonusDamage {
+                            damage_per_stack: vec![20.0],
+                            stack_duration: vec![15.0],
+                        },
+                    ],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 1,
@@ -568,7 +599,7 @@ mod tests {
 
     #[test]
     fn test_fury_swipes_no_crit() {
-        use aa2_data::{AbilityDef, TargetType};
+        use aa2_data::{AbilityDef, TargetType, EffectSpec, Trigger, TargetingSpec, Delivery, Payload};
         use crate::cast::AbilityState;
 
         let mut rng = Rng::new(42);
@@ -581,14 +612,22 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::FurySwipes {
-                    damage_per_stack: vec![20.0],
-                    stack_duration: vec![15.0],
-                    armor_reduction_per_stack: vec![0.0],
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![EffectSpec {
+                    trigger: Trigger::OnAttack,
+                    targeting: TargetingSpec::AttackTarget,
+                    delivery: Delivery::Instant,
+                    payload: vec![
+                        Payload::StackingBonusDamage {
+                            damage_per_stack: vec![20.0],
+                            stack_duration: vec![15.0],
+                        },
+                    ],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 1,

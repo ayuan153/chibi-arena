@@ -1,7 +1,7 @@
 //! Ability casting, execution, interactions, and scaling tests.
 //! Covers Dark Pact, Heavenly Grace, Ravage, and their interactions.
 
-use aa2_data::{AbilityDef, Attribute, BuffDef, DamageType, Delivery, Effect, EffectSpec, HeroDef, Payload, TargetType, TargetingSpec, Trigger, UnitConfig};
+use aa2_data::{AbilityDef, Attribute, BuffDef, DamageType, Delivery, Effect, EffectSpec, HeroDef, IllusionInteraction, Payload, TargetType, TargetingSpec, Trigger, UnitConfig};
 use aa2_sim::buff::{Buff, DispelType, StackBehavior, StatusFlags};
 use aa2_sim::cast::AbilityState;
 use aa2_sim::unit::Unit;
@@ -62,6 +62,7 @@ fn dark_pact_ability() -> AbilityDef {
                 aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
                 aa2_data::Payload::Dispel { strength: aa2_data::DispelType::StrongDispel },
             ],
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
         }]),
     }
 }
@@ -101,6 +102,7 @@ fn heavenly_grace_ability() -> AbilityDef {
                     on_death: None,
                 })),
             ],
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
         }]),
     }
 }
@@ -140,6 +142,7 @@ fn ravage_ability() -> AbilityDef {
                     on_death: None,
                 })),
             ],
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
         }]),
     }
 }
@@ -651,6 +654,7 @@ fn test_hg_dispels_on_cast() {
                     on_death: None,
                 })),
             ],
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
         }]),
     };
 
@@ -1760,14 +1764,22 @@ fn test_glaives_bounce_applies_modifiers() {
             mana_cost: vec![0.0],
             cast_point: 0.0,
             targeting: TargetType::Passive,
-            effects: vec![Effect::FurySwipes {
-                damage_per_stack: vec![20.0],
-                stack_duration: vec![15.0],
-                armor_reduction_per_stack: vec![0.0],
-            }],
+            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            effect_specs: Some(vec![aa2_data::EffectSpec {
+                trigger: aa2_data::Trigger::OnAttack,
+                targeting: aa2_data::TargetingSpec::AttackTarget,
+                delivery: aa2_data::Delivery::Instant,
+                payload: vec![
+                    aa2_data::Payload::StackingBonusDamage {
+                        damage_per_stack: vec![20.0],
+                        stack_duration: vec![15.0],
+                    },
+                ],
+                illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+            }]),
         },
         cooldown_remaining: 0.0,
         level: 1,
@@ -1964,9 +1976,11 @@ fn burrowstrike_specs(damage: Vec<f32>, stun_duration: Vec<f32>, range: Vec<f32>
                         payload: vec![
                             Payload::DamageWithSourceMaxHp { kind: DamageType::Magical, base: caustic_finale_damage, max_hp_pct: 0.085 },
                         ],
+                        illusion_interaction: IllusionInteraction::Disabled,
                     })),
                 })),
             ],
+            illusion_interaction: IllusionInteraction::Disabled,
         },
     ])
 }
