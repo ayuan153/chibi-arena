@@ -173,33 +173,35 @@ The aa2-client crate calls aa2-game directly in the same process. No FFI boundar
 
 ---
 
-## Phase 4: Networking (Weeks 29–36) ← CURRENT
+## Phase 4: Networking (Weeks 29–36) ✓ Vertical slice complete
 
 > **Decision:** dumb-client state-sync (server-authoritative; clients render received state/events
-> and do **not** run the sim or predict). See `docs/design/networking.md` for the vertical-slice
-> design. Composable ability effects are being treated as part of this prototype milestone.
+> and do **not** run the sim or predict). See `docs/design/networking.md` for the design.
 
-| Week | Focus |
-|------|-------|
-| 29–30 | aa2-server binary (headless sim, WebSocket server) |
-| 31–32 | State-sync protocol (10Hz snapshots, delta compression) |
-| 33 | Matchmaking + lobby system (region + MMR filtering) |
-| 34 | Reconnect support (full state snapshot on rejoin) |
-| 35 | Spectating (subscribe to other player boards) |
-| 36 | Anti-cheat (server-authoritative validation), load testing |
+### Delivered (vertical slice)
 
-**Deliverables:**
-- Dedicated server binary running headless simulation
-- WebSocket-based state sync with delta compression
-- Matchmaking, reconnect, and spectating
-- Client switches from local to networked mode
+- `aa2-net` crate: serde wire types (`ClientMsg`/`ServerMsg`/`StateSnapshot` DTOs)
+- `aa2-server`: tokio + tokio-tungstenite actor-model WebSocket server; single central task owns
+  lobby + `GameState` + RNG seed; per-connection reader/writer tasks over channels (no locks);
+  two-window clock (variable combat window + fixed prep window); AI bot fill; `GameOver` placements
+- Shared action dispatch: `aa2-game` owns `parse_action` + `apply_action` used by both client and
+  server; `aa2-game` stays networking-free (sim still compiles to WASM)
+- `aa2-client`: `NetClient` (background tokio thread + channels) + `NetState` behind existing
+  `GameManager` getters; enter networked mode via `AA2_SERVER` env var or dev-console `connect`
+- Lobby model: each WebSocket connection = one seat; Start fills remaining seats with AI bots
+- `./dev net-smoke`: automated networked smoke test (handshake → GodPick → pick god → Shop)
+- 271 Rust tests + 47 GDScript integration tests, all green
 
-**Milestone:** 8 humans playing online.
+### Deferred (see `docs/design/networking.md` §10)
 
-**Success Criteria:**
-- Stable 8-player game with <100ms perceived latency
-- Reconnect restores full game state within 2 seconds
-- Server validates all client actions (no trust-the-client)
+Reconnect robustness, lobby UI screen, matchmaking/accounts/auth, `wss://` + TLS, delta compression,
+persistence/PostgreSQL, spectating other boards, 8-human scale, client-side prediction.
+
+**Milestone:** Two+ human clients play a full game to elimination over WebSocket with server
+authoritative and AI filling remaining seats. ✓ MET
+
+**Next track:** Composable ability effects — needs its own design note first (in the style of
+`docs/design/networking.md`) before implementation.
 
 ---
 

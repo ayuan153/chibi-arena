@@ -36,8 +36,9 @@ The system is a hybrid: a deterministic Rust simulation drives all game logic, w
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│ aa2-server (Phase 4)                                    │
-│   WebSocket server, matchmaking, anti-cheat             │
+│ aa2-server (implemented)                                │
+│   WebSocket server (tokio + tokio-tungstenite),         │
+│   authoritative GameState, two-window clock, AI bots    │
 │         ↓                                               │
 │   aa2-game → aa2-sim → aa2-data                         │
 └─────────────────────────────────────────────────────────┘
@@ -50,7 +51,8 @@ The system is a hybrid: a deterministic Rust simulation drives all game logic, w
 | Simulation | Rust (`aa2-sim`) | Deterministic ECS combat at 30Hz, f32 math, server-authoritative |
 | Game Logic | Rust (`aa2-game`) | Game state machine, economy, draft, shop, matchups |
 | Client | Rust (`aa2-client`) + Godot 4.6 | GDExtension bridge, UI, rendering, audio |
-| Server | Rust (`aa2-server`) | Headless sim, WebSocket, matchmaking, MMR, anti-cheat |
+| Server | Rust (`aa2-server`) | WebSocket server (tokio + tokio-tungstenite), authoritative state, two-window clock |
+| Wire Types | Rust (`aa2-net`) | Serde `ClientMsg`/`ServerMsg`/`StateSnapshot` DTOs shared by client + server |
 | Data | Rust (`aa2-data`) | Shared types, RON/JSON deserialization, validation |
 
 ---
@@ -61,11 +63,13 @@ The system is a hybrid: a deterministic Rust simulation drives all game logic, w
 
 ```
 Godot (scenes/UI) ←→ aa2-client (cdylib, gdext) → aa2-game → aa2-sim → aa2-data
-                                                       ↑
-aa2-server ────────────────────────────────────────────┘ (same game logic)
+                          ↕ (networked mode)            ↑
+                       aa2-net (wire types)             │
+                          ↕                             │
+aa2-server ─────────────────────────────────────────────┘ (same game logic)
 ```
 
-No C boundary. No JSON serialization for client-game communication. aa2-client calls aa2-game directly as Rust library code in the same process.
+No C boundary. No JSON serialization for client-game communication in local mode. aa2-client calls aa2-game directly as Rust library code in the same process. In networked mode, the client reads server snapshots via aa2-net types instead.
 
 ### `aa2-sim`
 
@@ -112,8 +116,12 @@ Owns the full game loop. Depends on aa2-sim and aa2-data.
 **Key design:** aa2-game is SHARED between client and server. This enables:
 - Offline/dev mode (full game locally)
 - Server-side validation (authoritative)
+- Single action dispatch: `scenario::parse_action` + `GameState::apply_action` are used by both
+  client (local mode) and server — no duplication of validation logic.
 
 In multiplayer the client is a **dumb client**: it does not run aa2-sim or predict state. The server is authoritative and the client only renders received state/events. (Decision recorded — see `docs/design/networking.md`.)
+
+aa2-game has **no networking dependency** — the sim still compiles to WASM.
 
 ### `aa2-client`
 
@@ -124,27 +132,42 @@ GDExtension crate loaded by Godot. Bridges Rust game logic to Godot scenes.
 **Responsibilities:**
 - Exposes GDExtension classes (via gdext 0.5) for Godot to instantiate
 - Owns an `aa2-game::GameState` instance in local mode
-- Translates Godot input/signals into aa2-game actions
+- In networked mode: `NetClient` (background tokio thread + channels) + `NetState` behind the same
+  getter API; getters read the latest server `Snapshot` instead of local state
+- Translates Godot input/signals into aa2-game actions (local) or `ClientMsg::Action` (networked)
 - Provides combat replay data (event-based — schedules CombatEvent stream as Godot tweens)
 - Manages screen transitions (god pick, draft, shop, combat viewer)
+- Enter networked mode via `AA2_SERVER` env var or dev-console `connect <url>` command
 
-**Architecture:** Direct Rust function calls to aa2-game. No serialization boundary, no C FFI, no JSON marshaling.
+**Architecture:** Direct Rust function calls to aa2-game in local mode. No serialization boundary, no C FFI, no JSON marshaling. In networked mode, the same getter API reads from the latest server snapshot.
 
-### `aa2-server` (Phase 4)
+### `aa2-server` (implemented)
 
-Multiplayer game server.
+Multiplayer game server. Actor-model architecture: a single central task owns the lobby + one
+`GameState` + RNG seed; per-connection reader/writer tasks communicate over channels (no locks).
 
 **Responsibilities:**
-- WebSocket server (tokio + tungstenite)
-- Matchmaking queue with MMR-based pairing
-- Lobby management (8 players per game)
-- Replay recording (CombatEvent stream → file)
-- Anti-cheat validation (all mutations server-authoritative)
-- Reconnection handling
+- WebSocket server (tokio + tokio-tungstenite 0.29), binds `127.0.0.1:9001`
+- Lobby management (each connection = one seat; Start fills remaining with AI bots)
+- Authoritative game loop: validates actions via `GameState::apply_action`, drives the two-window
+  clock (variable combat window = longest matchup animation; fixed prep window)
+- Runs combat via `GameState::run_combat_round`, streams each viewer their matchup's `CombatEvent` log
+- Computes `GameOver` placements
+- Builds per-viewer `StateSnapshot` from `GameState` (projection lives here, not in aa2-game)
+
+### `aa2-net`
+
+Serde wire types shared by client and server.
+
+**Responsibilities:**
+- `ClientMsg` enum: `Join`, `Action`, `Start`
+- `ServerMsg` enum: `Welcome`, `Lobby`, `Snapshot`, `ActionResult`, `CombatStart`, `PhaseChange`, `GameOver`
+- `StateSnapshot` and supporting DTOs (`OwnView`, `PlayerView`, `ShopView`, `HeroView`, `Phase`)
+- Dependencies: `aa2-sim` (reuses `CombatEvent`) + `serde` only
 
 ---
 
-## Networking Architecture (Phase 4)
+## Networking Architecture (implemented)
 
 AA2 uses a **state-sync** model. The server is the single source of truth.
 
@@ -295,8 +318,9 @@ aa2/
 │   ├── aa2-data/       # Shared types, RON loading ✓
 │   ├── aa2-sim/        # Combat simulation engine ✓
 │   ├── aa2-game/       # Game state machine, economy, draft ✓
-│   ├── aa2-client/     # GDExtension crate (gdext, cdylib) ← Phase 3
-│   └── aa2-server/     # Networking, matchmaking, WebSocket (Phase 4)
+│   ├── aa2-net/        # Serde wire types (ClientMsg/ServerMsg/DTOs) ✓
+│   ├── aa2-client/     # GDExtension crate (gdext, cdylib) ✓
+│   └── aa2-server/     # WebSocket server (tokio, actor-model) ✓
 ├── client/             # Godot 4.6 project
 ├── data/               # RON data files
 └── docs/               # Architecture & design documentation
@@ -336,7 +360,7 @@ Data size: ~10KB per fight. Network-friendly — only transmit when something ha
 
 ---
 
-## Client/Server Protocol (Phase 4)
+## Client/Server Protocol (implemented)
 
 ### State Sync (Server → Client)
 - During combat: state snapshots at 10Hz (unit positions, HP, buffs, events)
