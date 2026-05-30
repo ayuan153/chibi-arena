@@ -39,6 +39,10 @@ impl NetState {
         }
     }
 
+    pub fn lobby_player_count(&self) -> usize {
+        self.lobby.iter().filter(|s| s.is_some()).count()
+    }
+
     pub fn my_player_id(&self) -> u8 {
         self.your_player_id
     }
@@ -262,6 +266,16 @@ mod tests {
         let seats = vec![Some("Alice".into()), None, Some("Bob".into())];
         state.apply(&ServerMsg::Lobby { seats: seats.clone() });
         assert_eq!(state.lobby, seats);
+    }
+
+    #[test]
+    fn lobby_player_count_counts_some_entries() {
+        let mut state = NetState::default();
+        assert_eq!(state.lobby_player_count(), 0);
+        state.apply(&ServerMsg::Lobby {
+            seats: vec![Some("A".into()), None, Some("B".into()), None],
+        });
+        assert_eq!(state.lobby_player_count(), 2);
     }
 
     #[test]

@@ -116,6 +116,12 @@ impl GameManager {
         self.net = Some(nc);
     }
 
+    /// Number of players currently in the lobby (non-empty seats from server Lobby message).
+    #[func]
+    pub fn get_lobby_player_count(&self) -> i32 {
+        self.net_state.lobby_player_count() as i32
+    }
+
     #[func]
     pub fn get_my_player_id(&self) -> i32 {
         if self.networked() {

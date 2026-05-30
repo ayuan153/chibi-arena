@@ -95,6 +95,36 @@ case "${1:-all}" in
         "$godot_bin" --path . --script tests/test_runner.gd
         echo "✓ Integration tests complete"
         ;;
+    net-smoke)
+        echo "→ Building aa2-client + aa2-server..."
+        cargo build -p aa2-client -p aa2-server
+        mkdir -p "$CLIENT_DIR/bin"
+        cp "$SCRIPT_DIR/target/debug/libaa2_client.dylib" "$CLIENT_DIR/bin/libaa2_client.dylib"
+        echo "✓ Build complete"
+
+        godot_bin="$(find_godot)"
+        if [ -z "$godot_bin" ]; then
+            echo "✗ Godot not found. Run: ./dev setup"
+            exit 1
+        fi
+
+        # Start server in background (cwd = repo root so "data" resolves)
+        "$SCRIPT_DIR/target/debug/aa2-server" &
+        SERVER_PID=$!
+        cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+        trap cleanup EXIT
+        sleep 1
+
+        echo "→ Running net smoke test..."
+        set +e
+        "$godot_bin" --headless --path "$CLIENT_DIR" --script tests/net_smoke.gd
+        EXIT_CODE=$?
+        set -e
+
+        cleanup
+        trap - EXIT
+        exit $EXIT_CODE
+        ;;
     setup)
         echo "→ Installing Godot via Homebrew..."
         if ! command -v brew &>/dev/null; then
@@ -105,15 +135,16 @@ case "${1:-all}" in
         echo "✓ Godot installed. Run: ./dev"
         ;;
     *)
-        echo "Usage: ./dev [all|client|editor|run|check|test|setup]"
+        echo "Usage: ./dev [all|client|editor|run|check|test|net-smoke|setup]"
         echo ""
-        echo "  all      Build all + launch Godot (default)"
-        echo "  client   Build aa2-client + launch Godot"
-        echo "  editor   Build + open Godot editor (inspect/debug)"
-        echo "  run      Skip build, just launch Godot"
-        echo "  check    cargo check + clippy + test"
-        echo "  test     Build + run integration tests (requires display)"
-        echo "  setup    Install Godot via Homebrew"
+        echo "  all        Build all + launch Godot (default)"
+        echo "  client     Build aa2-client + launch Godot"
+        echo "  editor     Build + open Godot editor (inspect/debug)"
+        echo "  run        Skip build, just launch Godot"
+        echo "  check      cargo check + clippy + test"
+        echo "  test       Build + run integration tests (requires display)"
+        echo "  net-smoke  Build + run networked smoke test (server + headless client)"
+        echo "  setup      Install Godot via Homebrew"
         exit 1
         ;;
 esac
