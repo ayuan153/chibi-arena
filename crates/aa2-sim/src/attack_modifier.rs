@@ -96,13 +96,34 @@ pub(crate) fn process_attack_modifiers(
             for spec in &specs {
                 if spec.trigger != Trigger::OnAttack { continue; }
                 for payload in &spec.payload {
-                    if let Payload::StackingBonusDamage { damage_per_stack, stack_duration } = payload {
-                        let duration_secs = value_at_level(stack_duration, level);
-                        let stacks = get_fury_swipes_stacks(&attacker.attack_modifier_state, target_id, tick);
-                        let dmg_per = value_at_level(damage_per_stack, level);
-                        post_crit_bonus += stacks as f32 * dmg_per;
-                        let expiry = tick + (duration_secs * TICK_RATE) as u32;
-                        set_fury_swipes_stacks(&mut attacker.attack_modifier_state, target_id, stacks + 1, expiry);
+                    match payload {
+                        Payload::StackingBonusDamage { damage_per_stack, stack_duration } => {
+                            let duration_secs = value_at_level(stack_duration, level);
+                            let stacks = get_fury_swipes_stacks(&attacker.attack_modifier_state, target_id, tick);
+                            let dmg_per = value_at_level(damage_per_stack, level);
+                            post_crit_bonus += stacks as f32 * dmg_per;
+                            let expiry = tick + (duration_secs * TICK_RATE) as u32;
+                            set_fury_swipes_stacks(&mut attacker.attack_modifier_state, target_id, stacks + 1, expiry);
+                        }
+                        Payload::Crit { proc_chance, crit_min, crit_max } => {
+                            let chance = value_at_level(proc_chance, level);
+                            let prd = get_or_create_prd(&mut attacker.prd_states, ai, chance);
+                            if prd.roll(rng) {
+                                let min_c = value_at_level(crit_min, level);
+                                let max_c = value_at_level(crit_max, level);
+                                let crit = rng.range_f32(min_c, max_c) / 100.0;
+                                if crit > crit_multiplier {
+                                    crit_multiplier = crit;
+                                    // Apply lifesteal from co-located Lifesteal payload
+                                    for ls_payload in &spec.payload {
+                                        if let Payload::Lifesteal { pct } = ls_payload {
+                                            lifesteal_pct = value_at_level(pct, level) / 100.0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -114,36 +135,20 @@ pub(crate) fn process_attack_modifiers(
             if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
                 continue;
             }
-            match effect {
-                Effect::ChaosStrike { proc_chance, crit_min, crit_max, lifesteal } => {
-                    let chance = value_at_level(proc_chance, level);
-                    let prd = get_or_create_prd(&mut attacker.prd_states, ai, chance);
-                    if prd.roll(rng) {
-                        let min_c = value_at_level(crit_min, level);
-                        let max_c = value_at_level(crit_max, level);
-                        let crit = rng.range_f32(min_c, max_c) / 100.0;
-                        if crit > crit_multiplier {
-                            crit_multiplier = crit;
-                            lifesteal_pct = value_at_level(lifesteal, level) / 100.0;
-                        }
-                    }
+            if let Effect::GlaivesOfWisdom { int_damage_factor, mana_cost, .. } = effect {
+                // Glaives is totally blocked by magic immunity — becomes regular attack
+                if target_is_magic_immune { continue; }
+                let cost = value_at_level(mana_cost, level);
+                if attacker.mana < cost {
+                    continue; // Can't afford — skip
                 }
-                Effect::GlaivesOfWisdom { int_damage_factor, mana_cost, .. } => {
-                    // Glaives is totally blocked by magic immunity — becomes regular attack
-                    if target_is_magic_immune { continue; }
-                    let cost = value_at_level(mana_cost, level);
-                    if attacker.mana < cost {
-                        continue; // Can't afford — skip
-                    }
-                    // TODO: check debuff immunity on target
-                    attacker.mana -= cost;
-                    // Total INT = base_int (floored at 1)
-                    let total_int = crate::unit::effective_stat(attacker.base_int, 0.0);
-                    let factor = value_at_level(int_damage_factor, level);
-                    bonus_magical_damage += total_int * factor;
-                    glaives_active = true;
-                }
-                _ => {}
+                // TODO: check debuff immunity on target
+                attacker.mana -= cost;
+                // Total INT = base_int (floored at 1)
+                let total_int = crate::unit::effective_stat(attacker.base_int, 0.0);
+                let factor = value_at_level(int_damage_factor, level);
+                bonus_magical_damage += total_int * factor;
+                glaives_active = true;
             }
         }
     }
@@ -368,14 +373,29 @@ pub fn find_ally_chaos_strike_aura(
         }
         for ability in &ally.abilities {
             if ability.level == 0 { continue; }
-            for effect in &ability.def.effects {
-                if let Effect::ChaosStrike { proc_chance, crit_min, crit_max, lifesteal } = effect {
-                    let chance = value_at_level(proc_chance, ability.level) * 0.5;
-                    let cmin = value_at_level(crit_min, ability.level);
-                    let cmax = value_at_level(crit_max, ability.level);
-                    let ls = value_at_level(lifesteal, ability.level);
-                    if best.is_none() || chance > best.unwrap().0 {
-                        best = Some((chance, cmin, cmax, ls));
+            if let Some(ref specs) = ability.def.effect_specs {
+                for spec in specs {
+                    if spec.trigger != Trigger::OnAttack { continue; }
+                    let mut crit_params: Option<(f32, f32, f32)> = None;
+                    let mut ls_val = 0.0_f32;
+                    for payload in &spec.payload {
+                        match payload {
+                            Payload::Crit { proc_chance, crit_min, crit_max } => {
+                                let chance = value_at_level(proc_chance, ability.level) * 0.5;
+                                let cmin = value_at_level(crit_min, ability.level);
+                                let cmax = value_at_level(crit_max, ability.level);
+                                crit_params = Some((chance, cmin, cmax));
+                            }
+                            Payload::Lifesteal { pct } => {
+                                ls_val = value_at_level(pct, ability.level);
+                            }
+                            _ => {}
+                        }
+                    }
+                    if let Some((chance, cmin, cmax)) = crit_params
+                        && (best.is_none() || chance > best.unwrap().0)
+                    {
+                        best = Some((chance, cmin, cmax, ls_val));
                     }
                 }
             }
@@ -640,15 +660,24 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::ChaosStrike {
-                    proc_chance: vec![1.0], // guaranteed crit
-                    crit_min: vec![200.0],
-                    crit_max: vec![200.0],
-                    lifesteal: vec![0.0],
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![aa2_data::EffectSpec {
+                    trigger: Trigger::OnAttack,
+                    targeting: TargetingSpec::AttackTarget,
+                    delivery: Delivery::Instant,
+                    payload: vec![
+                        Payload::Crit {
+                            proc_chance: vec![1.0], // guaranteed crit
+                            crit_min: vec![200.0],
+                            crit_max: vec![200.0],
+                        },
+                        Payload::Lifesteal { pct: vec![0.0] },
+                    ],
+                    illusion_interaction: aa2_data::IllusionInteraction::Full,
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 1,
@@ -669,7 +698,7 @@ mod tests {
 
     #[test]
     fn test_chaos_strike_lifesteal() {
-        use aa2_data::{AbilityDef, TargetType};
+        use aa2_data::{AbilityDef, TargetType, EffectSpec, Trigger, TargetingSpec, Delivery, Payload};
         use crate::cast::AbilityState;
 
         let mut rng = Rng::new(42);
@@ -684,15 +713,24 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::ChaosStrike {
-                    proc_chance: vec![1.0], // guaranteed
-                    crit_min: vec![200.0],
-                    crit_max: vec![200.0],
-                    lifesteal: vec![50.0], // 50%
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![EffectSpec {
+                    trigger: Trigger::OnAttack,
+                    targeting: TargetingSpec::AttackTarget,
+                    delivery: Delivery::Instant,
+                    payload: vec![
+                        Payload::Crit {
+                            proc_chance: vec![1.0], // guaranteed
+                            crit_min: vec![200.0],
+                            crit_max: vec![200.0],
+                        },
+                        Payload::Lifesteal { pct: vec![50.0] }, // 50%
+                    ],
+                    illusion_interaction: aa2_data::IllusionInteraction::Full,
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 1,

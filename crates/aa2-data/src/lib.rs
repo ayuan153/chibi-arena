@@ -334,6 +334,27 @@ pub enum Payload {
         /// Stack duration in seconds, per ability level.
         stack_duration: Vec<f32>,
     },
+    /// PRD-based critical strike (pre-damage phase of OnAttack).
+    ///
+    /// Performs a pseudo-random distribution roll using the unit's PRD accumulator.
+    /// On proc, picks a random multiplier in `[crit_min, crit_max]` (percentage values,
+    /// divided by 100 at runtime) and applies it to the attack damage.
+    Crit {
+        /// Nominal proc chance per ability level (passed directly to PRD).
+        proc_chance: Vec<f32>,
+        /// Minimum crit multiplier percentage per ability level.
+        crit_min: Vec<f32>,
+        /// Maximum crit multiplier percentage per ability level.
+        crit_max: Vec<f32>,
+    },
+    /// Lifesteal on critical strike (post-damage phase of OnAttack).
+    ///
+    /// Heals the attacker for `pct[level] / 100` of the damage dealt,
+    /// but only when the attack was a critical strike.
+    Lifesteal {
+        /// Lifesteal percentage per ability level (divided by 100 at runtime).
+        pct: Vec<f32>,
+    },
 }
 
 /// A composable effect specification: trigger + targeting + delivery + payloads.
@@ -415,13 +436,6 @@ pub enum Effect {
     ApplyBuff { name: String, duration: f32 },
     Heal { base: Vec<f32> },
     Summon { unit: String, count: u32 },
-    /// Chaos Strike: PRD-based crit with lifesteal.
-    ChaosStrike {
-        proc_chance: Vec<f32>,
-        crit_min: Vec<f32>,
-        crit_max: Vec<f32>,
-        lifesteal: Vec<f32>,
-    },
     /// Essence Shift: steal stats on attack.
     EssenceShift {
         str_steal: Vec<f32>,
@@ -682,8 +696,6 @@ impl Effect {
     /// Whether this effect works on illusions.
     pub fn illusion_interaction(&self) -> IllusionInteraction {
         match self {
-            // Crits work on illusions
-            Effect::ChaosStrike { .. } => IllusionInteraction::Full,
             // Attack modifiers that do NOT work on illusions
             Effect::EssenceShift { .. } => IllusionInteraction::Disabled,
             Effect::GlaivesOfWisdom { .. } => IllusionInteraction::Disabled,

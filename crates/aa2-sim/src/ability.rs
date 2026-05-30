@@ -130,7 +130,7 @@ pub fn execute_ability(
                     });
                 }
                 Effect::Summon { .. } => {}
-                Effect::ChaosStrike { .. } | Effect::EssenceShift { .. } => {
+                Effect::EssenceShift { .. } => {
                     // Attack modifiers are handled in the attack pipeline, not ability execution
                 }
                 Effect::GlaivesOfWisdom { .. } => {
