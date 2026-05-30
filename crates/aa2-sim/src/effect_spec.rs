@@ -51,6 +51,7 @@ pub fn buff_from_def(def: &BuffDef, level: u8, source_id: u32) -> Buff {
             is_debuff: def.is_debuff,
             pierces_magic_immunity: def.pierces_magic_immunity,
             damage_reflection_pct: def.damage_reflection_pct,
+            on_death: def.on_death.clone(),
         };
     }
     let idx = (level.saturating_sub(1) as usize).min(def.duration.len().saturating_sub(1));
@@ -74,6 +75,7 @@ pub fn buff_from_def(def: &BuffDef, level: u8, source_id: u32) -> Buff {
         is_debuff: def.is_debuff,
         pierces_magic_immunity: def.pierces_magic_immunity,
         damage_reflection_pct: def.damage_reflection_pct,
+        on_death: def.on_death.clone(),
     }
 }
 
@@ -155,6 +157,10 @@ pub fn apply_payload_to_unit(
             // Self-damage is handled by the ComposablePulse step, not per-target.
             PayloadOutcome::Skipped
         }
+        Payload::DamageWithSourceMaxHp { .. } => {
+            // Handled by resolve_on_death_spec with source_max_hp context.
+            PayloadOutcome::Skipped
+        }
     }
 }
 
@@ -171,7 +177,7 @@ pub fn run_cast_effect_specs(
     caster_team: u8,
     caster_pos: Vec2,
     target_id: Option<u32>,
-    _target_pos: Option<Vec2>,
+    target_pos: Option<Vec2>,
     units: &mut [Unit],
     tick: u32,
     pending_effects: &mut Vec<PendingEffect>,
@@ -183,7 +189,7 @@ pub fn run_cast_effect_specs(
         }
         resolve_spec(
             spec, ability_name, level, caster_id, caster_team, caster_pos,
-            target_id, units, tick, pending_effects, &mut events,
+            target_id, target_pos, units, tick, pending_effects, &mut events,
         );
     }
     events
@@ -199,6 +205,7 @@ fn resolve_spec(
     caster_team: u8,
     caster_pos: Vec2,
     target_id: Option<u32>,
+    target_pos: Option<Vec2>,
     units: &mut [Unit],
     tick: u32,
     pending_effects: &mut Vec<PendingEffect>,
@@ -293,6 +300,172 @@ fn resolve_spec(
                 delay_ticks_remaining: (*delay * TICK_RATE) as u32,
             });
         }
+        Delivery::CasterTravel { width, speed, range } => {
+            debug_assert!(!range.is_empty(), "CasterTravel range must not be empty");
+            if range.is_empty() {
+                return;
+            }
+            let range_idx = (level.saturating_sub(1) as usize).min(range.len().saturating_sub(1));
+            let line_length = range[range_idx];
+            let end_point = if let Some(tpos) = target_pos {
+                let dir = (tpos - caster_pos).normalize();
+                let dir = if dir.length() < 1e-6 { Vec2::new(1.0, 0.0) } else { dir };
+                caster_pos + dir.scale(line_length)
+            } else {
+                caster_pos + Vec2::new(line_length, 0.0)
+            };
+
+            let travel_time_secs = line_length / *speed;
+            let travel_ticks = (travel_time_secs * TICK_RATE) as u32;
+
+            // Apply invuln buff to caster during travel
+            if let Some(caster_idx) = units.iter().position(|u| u.id == caster_id) {
+                let invuln_buff = Buff {
+                    name: "burrowstrike_invuln".to_string(),
+                    remaining_ticks: travel_ticks + 1,
+                    tick_effect: None,
+                    stacking: crate::buff::StackBehavior::RefreshDuration,
+                    dispel_type: crate::buff::DispelType::Undispellable,
+                    status: crate::buff::StatusFlags { invulnerable: true, stunned: true, ..crate::buff::StatusFlags::default() },
+                    stat_modifier: None,
+                    source_id: caster_id,
+                    is_debuff: false,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                    on_death: None,
+                };
+                apply_buff(&mut units[caster_idx].buffs, invuln_buff);
+            }
+
+            pending_effects.push(PendingEffect {
+                caster_id,
+                caster_team,
+                ability_name: ability_name.to_string(),
+                kind: PendingEffectKind::ComposableCasterTravel {
+                    start_pos: caster_pos,
+                    end_pos: end_point,
+                    travel_speed: *speed,
+                    current_distance: 0.0,
+                    max_distance: line_length,
+                    width: *width,
+                    already_hit: Vec::new(),
+                    pending_damage: Vec::new(),
+                    payload: spec.payload.clone(),
+                    level,
+                },
+                delay_ticks_remaining: 0,
+            });
+        }
+        Delivery::Aoe { radius } => {
+            debug_assert!(!radius.is_empty(), "Aoe radius must not be empty");
+            if radius.is_empty() {
+                return;
+            }
+            let radius_idx = (level.saturating_sub(1) as usize).min(radius.len().saturating_sub(1));
+            let r = radius[radius_idx];
+            // Hit enemies within radius of caster_pos (the delivery origin)
+            for &idx in &target_indices {
+                if caster_pos.distance(units[idx].position) <= r {
+                    apply_payloads(
+                        &spec.payload, ability_name, level, caster_id, caster_team,
+                        units, idx, tick, events, 0,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Resolve a buff-carried on-death EffectSpec.
+///
+/// Called from `check_deaths` when a dying unit has a buff with `on_death: Some(spec)`.
+/// Origin is the dead unit's position; caster is the buff's source_id.
+/// `source_max_hp` is the dead unit's max HP (for `DamageWithSourceMaxHp`).
+/// Bounded by `depth` to prevent infinite recursion.
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_on_death_spec(
+    spec: &EffectSpec,
+    ability_name: &str,
+    level: u8,
+    caster_id: u32,
+    caster_team: u8,
+    origin: Vec2,
+    source_max_hp: f32,
+    units: &mut [Unit],
+    tick: u32,
+    events: &mut Vec<CombatEvent>,
+    depth: usize,
+) {
+    if depth >= MAX_EFFECT_CHAIN_DEPTH {
+        return;
+    }
+    // For on-death specs, we resolve targeting relative to origin
+    let target_indices: Vec<usize> = match &spec.targeting {
+        TargetingSpec::EnemiesInDelivery => {
+            units.iter().enumerate()
+                .filter(|(_, u)| u.team != caster_team && u.is_alive())
+                .map(|(i, _)| i)
+                .collect()
+        }
+        _ => return,
+    };
+
+    match &spec.delivery {
+        Delivery::Aoe { radius } => {
+            if radius.is_empty() {
+                return;
+            }
+            let radius_idx = (level.saturating_sub(1) as usize).min(radius.len().saturating_sub(1));
+            let r = radius[radius_idx];
+            for &idx in &target_indices {
+                if origin.distance(units[idx].position) <= r {
+                    // Apply payloads, handling DamageWithSourceMaxHp specially
+                    for p in &spec.payload {
+                        match p {
+                            Payload::DamageWithSourceMaxHp { kind, base, max_hp_pct } => {
+                                let base_idx = (level.saturating_sub(1) as usize).min(base.len().saturating_sub(1));
+                                let raw = base[base_idx] + max_hp_pct * source_max_hp;
+                                let actual = match kind {
+                                    DamageType::Magical => {
+                                        if active_status(&units[idx].buffs).magic_immune { 0.0 }
+                                        else { apply_magic_resistance(raw, units[idx].magic_resistance) }
+                                    }
+                                    DamageType::Physical => apply_armor(raw, units[idx].armor),
+                                    DamageType::Pure => raw,
+                                };
+                                if actual > 0.0 {
+                                    units[idx].hp -= actual;
+                                }
+                            }
+                            _ => {
+                                let outcome = apply_payload_to_unit(p, level, caster_id, units, idx);
+                                if let PayloadOutcome::Damage { amount, damage_type } = outcome
+                                    && amount > 0.0
+                                {
+                                    events.push(CombatEvent::AbilityDamage {
+                                        tick,
+                                        caster_id,
+                                        target_id: units[idx].id,
+                                        ability_name: ability_name.to_string(),
+                                        damage: amount,
+                                        damage_type,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Delivery::Instant => {
+            for &idx in &target_indices {
+                apply_payloads(
+                    &spec.payload, ability_name, level, caster_id, caster_team,
+                    units, idx, tick, events, depth + 1,
+                );
+            }
+        }
+        _ => {}
     }
 }
 

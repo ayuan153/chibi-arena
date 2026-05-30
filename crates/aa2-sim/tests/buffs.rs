@@ -64,6 +64,7 @@ fn test_str_buff_heals_on_apply_preserves_on_expiry() {
         is_debuff: false,
         pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
     });
 
     let mut sim = Simulation::new(vec![unit, dummy]);
@@ -121,6 +122,7 @@ fn test_str_buff_heals_on_apply_preserves_on_expiry() {
         is_debuff: false,
         pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
     });
 
     let mut sim2 = Simulation::new(vec![unit2, dummy2]);

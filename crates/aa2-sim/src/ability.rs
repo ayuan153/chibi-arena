@@ -120,6 +120,7 @@ pub fn execute_ability(
                         is_debuff,
                         pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                     };
                     apply_buff(&mut units[idx].buffs, buff);
                     events.push(CombatEvent::BuffApplied {
@@ -135,9 +136,6 @@ pub fn execute_ability(
                 Effect::GlaivesOfWisdom { .. } => {
                     // Attack modifier — handled in the attack pipeline
                 }
-                Effect::Burrowstrike { .. } => {
-                    // Handled outside the per-target loop
-                }
                 Effect::SpearOfMars { .. } => {
                     // Handled outside the per-target loop
                 }
@@ -151,64 +149,6 @@ pub fn execute_ability(
     // Handle effects that don't iterate over targets
     for effect in &ability.effects {
         match effect {
-            Effect::Burrowstrike {
-                damage, stun_duration, range, width, travel_speed,
-                caustic_finale_damage, caustic_finale_radius,
-            } => {
-                let line_length = value_at_level(range, level);
-                let end_point = if let Some(tpos) = target_pos {
-                    let dir = (tpos - caster_pos).normalize();
-                    let dir = if dir.length() < 1e-6 { Vec2::new(1.0, 0.0) } else { dir };
-                    caster_pos + dir.scale(line_length)
-                } else {
-                    caster_pos + Vec2::new(line_length, 0.0)
-                };
-
-                let travel_time_secs = line_length / *travel_speed;
-                let travel_ticks = (travel_time_secs * 30.0) as u32;
-
-                // Apply invulnerable buff to caster during travel
-                if let Some(caster) = units.iter_mut().find(|u| u.id == caster_id) {
-                    let invuln_buff = Buff {
-                        name: "burrowstrike_invuln".to_string(),
-                        remaining_ticks: travel_ticks + 1,
-                        tick_effect: None,
-                        stacking: StackBehavior::RefreshDuration,
-                        dispel_type: DispelType::Undispellable,
-                        status: StatusFlags { invulnerable: true, stunned: true, ..StatusFlags::default() },
-                        stat_modifier: None,
-                        source_id: caster_id,
-                        is_debuff: false,
-                        pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                    };
-                    apply_buff(&mut caster.buffs, invuln_buff);
-                }
-
-                let cf_dmg = value_at_level(caustic_finale_damage, level);
-
-                pending_effects.push(PendingEffect {
-                    caster_id,
-                    caster_team,
-                    ability_name: ability.name.clone(),
-                    kind: PendingEffectKind::BurrowstrikeTravel {
-                        start_pos: caster_pos,
-                        end_pos: end_point,
-                        travel_speed: *travel_speed,
-                        current_distance: 0.0,
-                        max_distance: line_length,
-                        width: *width,
-                        damage: value_at_level(damage, level),
-                        stun_duration_secs: value_at_level(stun_duration, level),
-                        caustic_finale_damage: cf_dmg,
-                        caustic_finale_radius: *caustic_finale_radius,
-                        caustic_finale_duration_secs: 4.5,
-                        already_hit: Vec::new(),
-                        pending_damage: Vec::new(),
-                    },
-                    delay_ticks_remaining: 0,
-                });
-            }
             Effect::SpearOfMars {
                 damage, stun_duration, range, travel_speed, width,
                 fire_trail_dps, fire_trail_slow, fire_trail_duration, wall_bounces,
@@ -474,6 +414,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let hp_before = units[1].hp;
@@ -506,6 +447,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let hp_before = units[1].hp;
@@ -562,6 +504,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let units = vec![u0.clone(), u1];
@@ -591,6 +534,7 @@ mod tests {
             is_debuff: true,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
         assert_eq!(units[0].buffs.len(), 1);
 
@@ -623,6 +567,7 @@ mod tests {
                         is_debuff: false,
                         pierces_magic_immunity: false,
                         damage_reflection_pct: 0.0,
+                    on_death: None,
                     })),
                 ],
             }]),
@@ -658,6 +603,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         attacker.abilities.push(AbilityState {

@@ -1018,6 +1018,7 @@ impl Simulation {
                                 is_debuff: true,
                                 pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                             };
                             apply_buff(&mut self.units[target_idx].buffs, slow_buff);
                         }
@@ -1152,6 +1153,7 @@ impl Simulation {
                                 is_debuff: true,
                                 pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                             };
                             apply_buff(&mut u.buffs, drag_buff);
                             // Deal damage on impale
@@ -1212,6 +1214,7 @@ impl Simulation {
                                     is_debuff: true,
                                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                                 };
                                 apply_buff(&mut u.buffs, stun_buff);
                                 // Damage already applied on impale; wall-pin only adds stun
@@ -1265,6 +1268,7 @@ impl Simulation {
                                             is_debuff: true,
                                             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                                         };
                                         apply_buff(&mut u.buffs, trail_buff);
                                     }
@@ -1305,163 +1309,13 @@ impl Simulation {
                                         is_debuff: true,
                                         pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                                     };
                                     apply_buff(&mut u.buffs, trail_buff);
                                 }
                             }
                         }
                         true
-                    } else {
-                        false
-                    }
-                }
-                PendingEffectKind::BurrowstrikeTravel {
-                    start_pos,
-                    end_pos,
-                    travel_speed,
-                    current_distance,
-                    max_distance,
-                    width,
-                    damage,
-                    stun_duration_secs,
-                    caustic_finale_damage,
-                    caustic_finale_radius,
-                    caustic_finale_duration_secs,
-                    already_hit,
-                    pending_damage,
-                } => {
-                    let sp = *start_pos;
-                    let ep = *end_pos;
-                    let spd = *travel_speed;
-                    let dmg = *damage;
-                    let stun_secs = *stun_duration_secs;
-                    let w = *width;
-                    let cf_dmg = *caustic_finale_damage;
-                    let _cf_radius = *caustic_finale_radius;
-                    let cf_dur_secs = *caustic_finale_duration_secs;
-                    let max_dist = *max_distance;
-
-                    // Advance wave
-                    *current_distance += spd * TICK_DURATION;
-                    let cur_dist = *current_distance;
-
-                    // Move caster proportionally along the line
-                    let t = (cur_dist / max_dist).min(1.0);
-                    let caster_new_pos = Vec2::new(
-                        sp.x + (ep.x - sp.x) * t,
-                        sp.y + (ep.y - sp.y) * t,
-                    );
-                    if let Some(caster) = self.units.iter_mut().find(|u| u.id == caster_id) {
-                        let (cp, _) = clamp_to_arena(caster_new_pos);
-                        caster.position = cp;
-                    }
-
-                    // Current wave front position
-                    let wave_front = Vec2::new(
-                        sp.x + (ep.x - sp.x) * (cur_dist / max_dist).min(1.0),
-                        sp.y + (ep.y - sp.y) * (cur_dist / max_dist).min(1.0),
-                    );
-
-                    // Check enemies: capsule hit detection (point to segment distance)
-                    use crate::vec2::point_to_segment_distance;
-                    for u in self.units.iter_mut() {
-                        if u.team == caster_team || !u.is_alive() || u.id == caster_id {
-                            continue;
-                        }
-                        if already_hit.contains(&u.id) {
-                            continue;
-                        }
-                        // Capsule check: distance from unit to segment [start_pos, wave_front]
-                        if point_to_segment_distance(u.position, sp, wave_front) <= w {
-                            already_hit.push(u.id);
-                            // Skip stun and damage on magic immune units
-                            if active_status(&u.buffs).magic_immune {
-                                continue;
-                            }
-                            // Apply stun immediately (full duration includes 0.52s airborne)
-                            let stun_ticks = (stun_secs * 30.0) as u32;
-                            let stun_buff = Buff {
-                                name: "stun".to_string(),
-                                remaining_ticks: stun_ticks,
-                                tick_effect: None,
-                                stacking: StackBehavior::RefreshDuration,
-                                dispel_type: DispelType::StrongDispel,
-                                status: StatusFlags { stunned: true, ..StatusFlags::default() },
-                                stat_modifier: None,
-                                source_id: caster_id,
-                                is_debuff: true,
-                                pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                            };
-                            apply_buff(&mut u.buffs, stun_buff);
-                            // Schedule damage after 0.52s (16 ticks)
-                            let actual_dmg = apply_magic_resistance(dmg, u.magic_resistance);
-                            pending_damage.push((u.id, 16, actual_dmg));
-                            // Apply Caustic Finale debuff
-                            if cf_dmg > 0.0 {
-                                let cf_buff = Buff {
-                                    name: "caustic_finale".to_string(),
-                                    remaining_ticks: (cf_dur_secs * 30.0) as u32,
-                                    tick_effect: None,
-                                    stacking: StackBehavior::RefreshDuration,
-                                    dispel_type: DispelType::BasicDispel,
-                                    status: StatusFlags::default(),
-                                    stat_modifier: None,
-                                    source_id: caster_id,
-                                    is_debuff: true,
-                                    pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                                };
-                                apply_buff(&mut u.buffs, cf_buff);
-                            }
-                            events.push(CombatEvent::WaveHit {
-                                tick,
-                                target_id: u.id,
-                                damage: 0.0, // damage applied later
-                                stun_duration: stun_secs,
-                            });
-                        }
-                    }
-
-                    // Tick pending damage (0.52s delay)
-                    let mut damage_to_apply: Vec<(u32, f32)> = Vec::new();
-                    pending_damage.retain_mut(|(uid, ticks_left, dmg_amount)| {
-                        *ticks_left -= 1;
-                        if *ticks_left == 0 {
-                            damage_to_apply.push((*uid, *dmg_amount));
-                            false
-                        } else {
-                            true
-                        }
-                    });
-                    for (uid, actual) in &damage_to_apply {
-                        if let Some(u) = self.units.iter_mut().find(|u| u.id == *uid && u.is_alive()) {
-                            u.hp -= actual;
-                            events.push(CombatEvent::AbilityDamage {
-                                tick,
-                                caster_id,
-                                target_id: *uid,
-                                ability_name: ability_name.clone(),
-                                damage: *actual,
-                                damage_type: DamageType::Magical,
-                            });
-                        }
-                    }
-
-                    // Check if wave reached end AND all pending damage delivered
-                    if cur_dist >= max_dist && pending_damage.is_empty() {
-                        // Set caster to end pos and remove invuln
-                        if let Some(caster) = self.units.iter_mut().find(|u| u.id == caster_id) {
-                            caster.position = ep;
-                            caster.buffs.retain(|b| b.name != "burrowstrike_invuln");
-                        }
-                        true
-                    } else if cur_dist >= max_dist {
-                        // Wave done but still waiting on damage ticks — keep caster at end
-                        if let Some(caster) = self.units.iter_mut().find(|u| u.id == caster_id) {
-                            caster.position = ep;
-                        }
-                        false
                     } else {
                         false
                     }
@@ -1623,6 +1477,145 @@ impl Simulation {
 
                     cr >= mr
                 }
+                PendingEffectKind::ComposableCasterTravel {
+                    start_pos,
+                    end_pos,
+                    travel_speed,
+                    current_distance,
+                    max_distance,
+                    width,
+                    already_hit,
+                    pending_damage,
+                    payload,
+                    level,
+                } => {
+                    let sp = *start_pos;
+                    let ep = *end_pos;
+                    let spd = *travel_speed;
+                    let w = *width;
+                    let max_dist = *max_distance;
+                    let lvl = *level;
+                    let payload_clone = payload.clone();
+
+                    // Advance wave
+                    *current_distance += spd * TICK_DURATION;
+                    let cur_dist = *current_distance;
+
+                    // Move caster proportionally along the line
+                    let t = (cur_dist / max_dist).min(1.0);
+                    let caster_new_pos = Vec2::new(
+                        sp.x + (ep.x - sp.x) * t,
+                        sp.y + (ep.y - sp.y) * t,
+                    );
+                    if let Some(caster) = self.units.iter_mut().find(|u| u.id == caster_id) {
+                        let (cp, _) = clamp_to_arena(caster_new_pos);
+                        caster.position = cp;
+                    }
+
+                    // Current wave front position
+                    let wave_front = Vec2::new(
+                        sp.x + (ep.x - sp.x) * (cur_dist / max_dist).min(1.0),
+                        sp.y + (ep.y - sp.y) * (cur_dist / max_dist).min(1.0),
+                    );
+
+                    // Check enemies: capsule hit detection (point to segment distance)
+                    use crate::vec2::point_to_segment_distance;
+                    for u in self.units.iter_mut() {
+                        if u.team == caster_team || !u.is_alive() || u.id == caster_id {
+                            continue;
+                        }
+                        if already_hit.contains(&u.id) {
+                            continue;
+                        }
+                        // Capsule check: distance from unit to segment [start_pos, wave_front]
+                        if point_to_segment_distance(u.position, sp, wave_front) <= w {
+                            already_hit.push(u.id);
+                            // Skip stun and damage on magic immune units
+                            if active_status(&u.buffs).magic_immune {
+                                continue;
+                            }
+                            // Apply payloads: buffs immediately, damage delayed 16 ticks (0.52s)
+                            let mut dmg_amount = 0.0f32;
+                            let mut stun_secs = 0.0f32;
+                            for p in &payload_clone {
+                                match p {
+                                    aa2_data::Payload::Damage { kind, base } => {
+                                        let idx = (lvl.saturating_sub(1) as usize).min(base.len().saturating_sub(1));
+                                        let raw = base[idx];
+                                        let actual = match kind {
+                                            DamageType::Magical => apply_magic_resistance(raw, u.magic_resistance),
+                                            DamageType::Physical => combat::apply_armor(raw, u.armor),
+                                            DamageType::Pure => raw,
+                                        };
+                                        dmg_amount = actual;
+                                    }
+                                    aa2_data::Payload::ApplyBuff(def) => {
+                                        if def.is_debuff && !def.pierces_magic_immunity && active_status(&u.buffs).magic_immune {
+                                            continue;
+                                        }
+                                        let buff = crate::effect_spec::buff_from_def(def, lvl, caster_id);
+                                        if buff.status.stunned {
+                                            stun_secs = buff.remaining_ticks as f32 / TICK_RATE;
+                                        }
+                                        apply_buff(&mut u.buffs, buff);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            // Schedule damage after 0.52s (16 ticks)
+                            pending_damage.push((u.id, 16, dmg_amount));
+                            events.push(CombatEvent::WaveHit {
+                                tick,
+                                target_id: u.id,
+                                damage: 0.0, // damage applied later
+                                stun_duration: stun_secs,
+                            });
+                        }
+                    }
+
+                    // Tick pending damage (0.52s delay)
+                    let mut damage_to_apply: Vec<(u32, f32)> = Vec::new();
+                    pending_damage.retain_mut(|(uid, ticks_left, dmg_amount)| {
+                        *ticks_left -= 1;
+                        if *ticks_left == 0 {
+                            damage_to_apply.push((*uid, *dmg_amount));
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    for (uid, actual) in &damage_to_apply {
+                        if let Some(u) = self.units.iter_mut().find(|u| u.id == *uid && u.is_alive()) {
+                            u.hp -= actual;
+                            events.push(CombatEvent::AbilityDamage {
+                                tick,
+                                caster_id,
+                                target_id: *uid,
+                                ability_name: ability_name.clone(),
+                                damage: *actual,
+                                damage_type: DamageType::Magical,
+                            });
+                        }
+                    }
+
+                    // Check if wave reached end AND all pending damage delivered
+                    if cur_dist >= max_dist && pending_damage.is_empty() {
+                        // Set caster to end pos and remove invuln
+                        if let Some(caster) = self.units.iter_mut().find(|u| u.id == caster_id) {
+                            caster.position = ep;
+                            caster.buffs.retain(|b| b.name != "burrowstrike_invuln");
+                        }
+                        true
+                    } else if cur_dist >= max_dist {
+                        // Wave done but still waiting on damage ticks — keep caster at end
+                        if let Some(caster) = self.units.iter_mut().find(|u| u.id == caster_id) {
+                            caster.position = ep;
+                        }
+                        false
+                    } else {
+                        false
+                    }
+                }
             };
 
             if remove {
@@ -1645,42 +1638,41 @@ impl Simulation {
         for &(_, uid) in &newly_dead {
             self.combat_log.push(CombatEvent::Death { tick: self.tick, unit_id: uid });
         }
-        // Caustic Finale: on-death explosion
+        // Buff-carried on-death triggers (composable replacement for bespoke hooks)
         for &(dead_idx, _) in &newly_dead {
             let dead_pos = self.units[dead_idx].position;
             let dead_team = self.units[dead_idx].team;
             let dead_max_hp = self.units[dead_idx].max_hp;
-            // Check if dead unit has caustic_finale buff
-            if let Some(cf_buff) = self.units[dead_idx].buffs.iter().find(|b| b.name == "caustic_finale") {
-                let source_id = cf_buff.source_id;
-                // Find the source's caustic finale params from their abilities
-                let mut cf_flat_dmg = 0.0_f32;
-                let mut cf_radius = 0.0_f32;
-                for u in self.units.iter() {
-                    if u.id != source_id { continue; }
-                    for ability in &u.abilities {
-                        if ability.level == 0 { continue; }
-                        for effect in &ability.def.effects {
-                            if let aa2_data::Effect::Burrowstrike { caustic_finale_damage, caustic_finale_radius, .. } = effect {
-                                cf_flat_dmg = aa2_data::value_at_level(caustic_finale_damage, ability.level);
-                                cf_radius = *caustic_finale_radius;
-                            }
-                        }
-                    }
-                }
-                if cf_flat_dmg > 0.0 {
-                    // Dota2 formula: (17 + 3*level) + (0.025 + 0.005*level) * max_hp
-                    // Approximate caster_level=12 for Super tier
-                    let explosion_damage = cf_flat_dmg + 0.085 * dead_max_hp;
-                    // Deal magical damage to enemies of the source (same team as dead unit's enemies)
-                    for u in self.units.iter_mut() {
-                        if u.team == dead_team || !u.is_alive() { continue; }
-                        if dead_pos.distance(u.position) <= cf_radius {
-                            let actual = combat::apply_magic_resistance(explosion_damage, u.magic_resistance);
-                            u.hp -= actual;
-                        }
-                    }
-                }
+            // Collect on_death specs from the dead unit's buffs
+            let on_death_specs: Vec<(Box<aa2_data::EffectSpec>, u32)> = self.units[dead_idx].buffs.iter()
+                .filter_map(|b| b.on_death.as_ref().map(|spec| (spec.clone(), b.source_id)))
+                .collect();
+            for (spec, source_id) in on_death_specs {
+                // Find source's team (opposite of dead unit for enemy-targeting)
+                let source_team = self.units.iter()
+                    .find(|u| u.id == source_id)
+                    .map(|u| u.team)
+                    .unwrap_or(if dead_team == 0 { 1 } else { 0 });
+                // Find source's ability level for the spec
+                let level = self.units.iter()
+                    .find(|u| u.id == source_id)
+                    .and_then(|u| u.abilities.iter().find(|a| a.level > 0).map(|a| a.level))
+                    .unwrap_or(1);
+                let mut events = Vec::new();
+                crate::effect_spec::resolve_on_death_spec(
+                    &spec,
+                    "Caustic Finale",
+                    level,
+                    source_id,
+                    source_team,
+                    dead_pos,
+                    dead_max_hp,
+                    &mut self.units,
+                    self.tick,
+                    &mut events,
+                    0,
+                );
+                self.combat_log.extend(events);
             }
         }
         // Glaives INT steal on kill
@@ -2034,6 +2026,7 @@ mod tests {
             is_debuff: true,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2207,6 +2200,7 @@ mod tests {
             is_debuff: true,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2307,6 +2301,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2339,6 +2334,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2374,6 +2370,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2407,6 +2404,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);
@@ -2446,6 +2444,7 @@ mod tests {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
 
         let mut sim = Simulation::new(vec![u0, u1]);

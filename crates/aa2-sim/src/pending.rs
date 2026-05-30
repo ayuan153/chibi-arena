@@ -23,23 +23,6 @@ pub enum PendingEffectKind {
         bounces_remaining: u32,
         already_hit: Vec<u32>,
     },
-    /// Burrowstrike: wave travels at speed, hitting units as it reaches them (capsule shape).
-    BurrowstrikeTravel {
-        start_pos: Vec2,
-        end_pos: Vec2,
-        travel_speed: f32,
-        current_distance: f32,
-        max_distance: f32,
-        width: f32,
-        damage: f32,
-        stun_duration_secs: f32,
-        caustic_finale_damage: f32,
-        caustic_finale_radius: f32,
-        caustic_finale_duration_secs: f32,
-        already_hit: Vec<u32>,
-        /// Pending damage: (unit_id, ticks_remaining, damage_amount)
-        pending_damage: Vec<(u32, u32, f32)>,
-    },
     /// Generic composable pulsing AoE: fires multiple pulses from caster position,
     /// applying data-driven payloads to enemies in radius and self-damage/dispel to caster.
     ComposablePulse {
@@ -88,6 +71,31 @@ pub enum PendingEffectKind {
         speed: f32,
         /// Unit IDs already hit by this wave.
         already_hit: Vec<u32>,
+        /// Payloads to apply to each hit unit.
+        payload: Vec<Payload>,
+        /// Ability level (for per-level payload values).
+        level: u8,
+    },
+    /// Composable caster-travel: caster moves along a line, hitting enemies
+    /// within capsule width as the wave front reaches them. Payloads applied
+    /// per-hit with a configurable damage delay.
+    ComposableCasterTravel {
+        /// Start position of the travel line.
+        start_pos: Vec2,
+        /// End position of the travel line.
+        end_pos: Vec2,
+        /// Travel speed in units/sec.
+        travel_speed: f32,
+        /// Current distance traveled.
+        current_distance: f32,
+        /// Maximum travel distance.
+        max_distance: f32,
+        /// Capsule half-width for hit detection.
+        width: f32,
+        /// Unit IDs already hit by this travel.
+        already_hit: Vec<u32>,
+        /// Pending damage: (unit_id, ticks_remaining, damage_amount).
+        pending_damage: Vec<(u32, u32, f32)>,
         /// Payloads to apply to each hit unit.
         payload: Vec<Payload>,
         /// Ability level (for per-level payload values).

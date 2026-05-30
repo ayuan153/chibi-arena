@@ -188,6 +188,10 @@ pub struct BuffDef {
     /// Percentage of autoattack damage reflected back to attacker (0.0 to 1.0).
     #[serde(default)]
     pub damage_reflection_pct: f32,
+    /// If set, this child EffectSpec fires when the buffed unit dies.
+    /// Bounded by `MAX_EFFECT_CHAIN_DEPTH` to prevent infinite recursion.
+    #[serde(default)]
+    pub on_death: Option<Box<EffectSpec>>,
 }
 
 /// When an effect fires.
@@ -235,6 +239,23 @@ pub enum Delivery {
         /// AoE radius per ability level.
         radius: Vec<f32>,
     },
+    /// Caster travels a straight line toward the target, hitting enemies within
+    /// `width` of the travel path (capsule hit detection). Payloads applied to
+    /// each hit enemy as the wave front reaches them.
+    CasterTravel {
+        /// Capsule half-width for hit detection.
+        width: f32,
+        /// Travel speed in units/sec.
+        speed: f32,
+        /// Travel range per ability level.
+        range: Vec<f32>,
+    },
+    /// Instant AoE around the delivery origin. Hits enemies within radius;
+    /// applies payloads to each.
+    Aoe {
+        /// AoE radius per ability level.
+        radius: Vec<f32>,
+    },
 }
 
 /// What happens to each affected unit.
@@ -264,6 +285,16 @@ pub enum Payload {
         pct: f32,
         /// If true, self-damage cannot reduce caster below 1 HP.
         non_lethal: bool,
+    },
+    /// Deal damage = `base[level] + max_hp_pct * source_unit_max_hp`.
+    /// Used for on-death explosions where damage scales with the dying unit's max HP.
+    DamageWithSourceMaxHp {
+        /// Damage type.
+        kind: DamageType,
+        /// Flat base damage per ability level.
+        base: Vec<f32>,
+        /// Fraction of the source (dead) unit's max HP added to damage.
+        max_hp_pct: f32,
     },
 }
 
@@ -374,17 +405,6 @@ pub enum Effect {
         steal_int_on_kill: Vec<f32>,      // permanent INT on kill (0 base, 1 at Super)
         steal_radius: f32,
         bounce_radius: Vec<f32>,
-    },
-    /// Burrowstrike: line AoE stun + damage, caster travels at speed to end point.
-    /// During travel, caster is invulnerable and untargetable.
-    Burrowstrike {
-        damage: Vec<f32>,
-        stun_duration: Vec<f32>,
-        range: Vec<f32>,
-        width: f32,
-        travel_speed: f32,              // units/sec (2000)
-        caustic_finale_damage: Vec<f32>, // on-death explosion damage (0 = none, >0 at Super+)
-        caustic_finale_radius: f32,      // explosion radius (400)
     },
     /// Spirit Lance: projectile that damages, slows, and spawns an illusion at target.
     SpiritLance {

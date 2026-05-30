@@ -43,6 +43,8 @@ pub struct Buff {
     pub pierces_magic_immunity: bool,
     /// Percentage of autoattack damage reflected back to attacker (0.0 to 1.0).
     pub damage_reflection_pct: f32,
+    /// If set, this child EffectSpec fires when the buffed unit dies.
+    pub on_death: Option<Box<aa2_data::EffectSpec>>,
 }
 
 /// Create a damage reflection buff (undispellable, permanent).
@@ -59,6 +61,7 @@ pub fn damage_reflection(name: &str, reflection_pct: f32) -> Buff {
         is_debuff: false,
         pierces_magic_immunity: true,
         damage_reflection_pct: reflection_pct,
+        on_death: None,
     }
 }
 
@@ -249,6 +252,7 @@ mod tests {
             is_debuff: true,
             pierces_magic_immunity: false,
             damage_reflection_pct: 0.0,
+            on_death: None,
         }
     }
 

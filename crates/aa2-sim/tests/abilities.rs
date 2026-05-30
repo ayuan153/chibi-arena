@@ -1,7 +1,7 @@
 //! Ability casting, execution, interactions, and scaling tests.
 //! Covers Dark Pact, Heavenly Grace, Ravage, and their interactions.
 
-use aa2_data::{AbilityDef, Attribute, DamageType, Effect, HeroDef, TargetType, UnitConfig};
+use aa2_data::{AbilityDef, Attribute, BuffDef, DamageType, Delivery, Effect, EffectSpec, HeroDef, Payload, TargetType, TargetingSpec, Trigger, UnitConfig};
 use aa2_sim::buff::{Buff, DispelType, StackBehavior, StatusFlags};
 use aa2_sim::cast::AbilityState;
 use aa2_sim::unit::Unit;
@@ -98,6 +98,7 @@ fn heavenly_grace_ability() -> AbilityDef {
                     is_debuff: false,
                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                 })),
             ],
         }]),
@@ -136,6 +137,7 @@ fn ravage_ability() -> AbilityDef {
                     is_debuff: true,
                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                 })),
             ],
         }]),
@@ -307,6 +309,7 @@ fn test_dark_pact_dispel() {
         is_debuff: true,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
     });
 
     assert!(sim.units[0].buffs.iter().any(|b| b.name == "test_stun"));
@@ -454,6 +457,7 @@ fn test_expanding_wave() {
                     is_debuff: true,
                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                 })),
             ],
             level: 1,
@@ -526,6 +530,7 @@ fn test_status_resistance() {
                     is_debuff: true,
                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                 })),
             ],
             level: 1,
@@ -607,6 +612,7 @@ fn test_hg_dispels_on_cast() {
         is_debuff: true,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
     });
 
     let mut units = vec![u0, u1];
@@ -642,6 +648,7 @@ fn test_hg_dispels_on_cast() {
                     is_debuff: false,
                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
                 })),
             ],
         }]),
@@ -1460,6 +1467,7 @@ fn test_essence_shift_stats_floor_at_one() {
             is_debuff: true,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
     }
 
@@ -1489,6 +1497,7 @@ fn test_essence_shift_stats_floor_at_one() {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
     }
 
@@ -1528,6 +1537,7 @@ fn test_hg_protects_base_from_es() {
         is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
     });
 
     // 30 ES debuffs: -1 STR each
@@ -1549,6 +1559,7 @@ fn test_hg_protects_base_from_es() {
             is_debuff: true,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
     }
 
@@ -1621,6 +1632,7 @@ fn test_agi_hero_damage_increases_with_es_buff() {
             is_debuff: false,
             pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
         });
     }
 
@@ -1912,6 +1924,53 @@ fn make_test_hero() -> HeroDef {
     }
 }
 
+/// Build burrowstrike effect_specs for tests.
+fn burrowstrike_specs(damage: Vec<f32>, stun_duration: Vec<f32>, range: Vec<f32>, width: f32, travel_speed: f32, caustic_finale_damage: Vec<f32>, caustic_finale_radius: f32) -> Option<Vec<EffectSpec>> {
+    Some(vec![
+        EffectSpec {
+            trigger: Trigger::OnCast,
+            targeting: TargetingSpec::EnemiesInDelivery,
+            delivery: Delivery::CasterTravel { width, speed: travel_speed, range },
+            payload: vec![
+                Payload::Damage { kind: DamageType::Magical, base: damage },
+                Payload::ApplyBuff(Box::new(BuffDef {
+                    name: "stun".to_string(),
+                    duration: stun_duration,
+                    status: StatusFlags { stunned: true, ..StatusFlags::default() },
+                    stat_modifier: None,
+                    tick_effect: None,
+                    stacking: StackBehavior::RefreshDuration,
+                    dispel_type: DispelType::StrongDispel,
+                    is_debuff: true,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                    on_death: None,
+                })),
+                Payload::ApplyBuff(Box::new(BuffDef {
+                    name: "caustic_finale".to_string(),
+                    duration: vec![4.5],
+                    status: StatusFlags::default(),
+                    stat_modifier: None,
+                    tick_effect: None,
+                    stacking: StackBehavior::RefreshDuration,
+                    dispel_type: DispelType::BasicDispel,
+                    is_debuff: true,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                    on_death: Some(Box::new(EffectSpec {
+                        trigger: Trigger::OnCast,
+                        targeting: TargetingSpec::EnemiesInDelivery,
+                        delivery: Delivery::Aoe { radius: vec![caustic_finale_radius] },
+                        payload: vec![
+                            Payload::DamageWithSourceMaxHp { kind: DamageType::Magical, base: caustic_finale_damage, max_hp_pct: 0.085 },
+                        ],
+                    })),
+                })),
+            ],
+        },
+    ])
+}
+
 #[test]
 fn test_lazy_targeting_no_walk() {
     // Unit with Lazy ability, enemy out of range — should NOT walk toward enemy
@@ -1964,20 +2023,13 @@ fn test_burrowstrike_line_stun() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Burrowstrike {
-            damage: vec![80.0],
-            stun_duration: vec![1.2],
-            range: vec![550.0],
-            width: 150.0,
-            travel_speed: 2000.0,
-            caustic_finale_damage: vec![0.0],
-            caustic_finale_radius: 400.0,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None, effect_specs: None,
+        max_charges: None,
+        effect_specs: burrowstrike_specs(vec![80.0], vec![1.2], vec![550.0], 150.0, 2000.0, vec![0.0], 400.0),
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2036,20 +2088,13 @@ fn test_burrowstrike_teleport() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Burrowstrike {
-            damage: vec![80.0],
-            stun_duration: vec![1.2],
-            range: vec![550.0],
-            width: 150.0,
-            travel_speed: 2000.0,
-            caustic_finale_damage: vec![0.0],
-            caustic_finale_radius: 400.0,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None, effect_specs: None,
+        max_charges: None,
+        effect_specs: burrowstrike_specs(vec![80.0], vec![1.2], vec![550.0], 150.0, 2000.0, vec![0.0], 400.0),
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2127,20 +2172,13 @@ fn test_burrowstrike_wave_hits_closer_first() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Burrowstrike {
-            damage: vec![80.0],
-            stun_duration: vec![1.2],
-            range: vec![550.0],
-            width: 150.0,
-            travel_speed: 2000.0,
-            caustic_finale_damage: vec![0.0],
-            caustic_finale_radius: 400.0,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None, effect_specs: None,
+        max_charges: None,
+        effect_specs: burrowstrike_specs(vec![80.0], vec![1.2], vec![550.0], 150.0, 2000.0, vec![0.0], 400.0),
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2188,20 +2226,13 @@ fn test_burrowstrike_invulnerable_during_travel() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Burrowstrike {
-            damage: vec![80.0],
-            stun_duration: vec![1.2],
-            range: vec![550.0],
-            width: 150.0,
-            travel_speed: 2000.0,
-            caustic_finale_damage: vec![0.0],
-            caustic_finale_radius: 400.0,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None, effect_specs: None,
+        max_charges: None,
+        effect_specs: burrowstrike_specs(vec![80.0], vec![1.2], vec![550.0], 150.0, 2000.0, vec![0.0], 400.0),
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2239,20 +2270,13 @@ fn test_caustic_finale_explosion_on_death() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Burrowstrike {
-            damage: vec![500.0], // high damage to kill quickly
-            stun_duration: vec![1.2],
-            range: vec![550.0],
-            width: 150.0,
-            travel_speed: 2000.0,
-            caustic_finale_damage: vec![150.0], // Super level
-            caustic_finale_radius: 400.0,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None, effect_specs: None,
+        max_charges: None,
+        effect_specs: burrowstrike_specs(vec![500.0], vec![1.2], vec![550.0], 150.0, 2000.0, vec![150.0], 400.0),
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2336,6 +2360,7 @@ fn test_glaives_blocked_by_magic_immunity() {
         is_debuff: false,
         pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
     });
 
     let target_hp_before = target.hp;
@@ -2604,6 +2629,7 @@ fn test_spear_blocked_by_magic_immunity() {
         is_debuff: false,
         pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
+                    on_death: None,
     });
     let target_pos_before = target.position;
 
@@ -2839,6 +2865,7 @@ fn test_seek_walks_past_spell_immune() {
         is_debuff: false,
         pierces_magic_immunity: false,
         damage_reflection_pct: 0.0,
+                    on_death: None,
     });
 
     // Non-immune enemy at 1200 range (stationary)
