@@ -11,21 +11,31 @@ AbilityDef(
     mana_cost: [80.0, 90.0, 100.0, 100.0, 100.0, 110.0, 110.0, 110.0, 120.0],
     cast_point: 0.25,
     targeting: SingleAllyHG,
-    effects: [
-        BuffTargetAndSelf(
-            name: "Heavenly Grace",
-            // Duration: 10s all levels
-            duration: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
-            // HP Regen: L1=8, L2=12, L3=16, L4-5=16, L6(Super)=36, L7-8=36, L9(Gaben)=36
-            hp_regen: [8.0, 12.0, 16.0, 16.0, 16.0, 36.0, 36.0, 36.0, 36.0],
-            // Strength: L1=8, L2=18, L3=28, L4-5=28, L6(Super)=28, L7-8=28, L9(Gaben)=78
-            strength: [8.0, 18.0, 28.0, 28.0, 28.0, 28.0, 28.0, 28.0, 78.0],
-            // Status Resistance: 50% base, Super=100%, Gaben=100%
-            status_resistance: [0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
-            dispel_on_cast: true,
-        ),
-    ],
+    effects: [],
     description: "Blesses a target ally and self with HP regen, strength, and status resistance.",
     aoe_shape: None,
     cast_range: 500.0,
+    effect_specs: Some([
+        EffectSpec(
+            trigger: OnCast,
+            targeting: TargetAndCaster,
+            delivery: Instant,
+            payload: [
+                Dispel(strength: StrongDispel),
+                ApplyBuff(BuffDef(
+                    name: "Heavenly Grace",
+                    duration: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
+                    status: StatusFlags(),
+                    stat_modifier: Some(StatModifierSpec(
+                        bonus_hp_regen: [8.0, 12.0, 16.0, 16.0, 16.0, 36.0, 36.0, 36.0, 36.0],
+                        bonus_strength: [8.0, 18.0, 28.0, 28.0, 28.0, 28.0, 28.0, 28.0, 78.0],
+                        status_resistance: [0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
+                    )),
+                    stacking: RefreshDuration,
+                    dispel_type: BasicDispel,
+                    is_debuff: false,
+                )),
+            ],
+        ),
+    ]),
 )

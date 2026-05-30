@@ -46,7 +46,7 @@ pub fn buff_from_def(def: &BuffDef, level: u8, source_id: u32) -> Buff {
             stacking: def.stacking.clone(),
             dispel_type: def.dispel_type,
             status: def.status,
-            stat_modifier: def.stat_modifier.clone(),
+            stat_modifier: def.stat_modifier.as_ref().map(|s| s.resolve(level)),
             source_id,
             is_debuff: def.is_debuff,
             pierces_magic_immunity: def.pierces_magic_immunity,
@@ -69,7 +69,7 @@ pub fn buff_from_def(def: &BuffDef, level: u8, source_id: u32) -> Buff {
         stacking: def.stacking.clone(),
         dispel_type: def.dispel_type,
         status: def.status,
-        stat_modifier: def.stat_modifier.clone(),
+        stat_modifier: def.stat_modifier.as_ref().map(|s| s.resolve(level)),
         source_id,
         is_debuff: def.is_debuff,
         pierces_magic_immunity: def.pierces_magic_immunity,
@@ -125,6 +125,12 @@ pub fn apply_payload_to_unit(
                 return PayloadOutcome::Skipped;
             }
             let buff = buff_from_def(def, level, caster_id);
+            // Persistent status_resistance: add to unit field on apply (no reversal on expiry)
+            if let Some(ref m) = buff.stat_modifier
+                && m.status_resistance != 0.0
+            {
+                units[target_idx].status_resistance += m.status_resistance;
+            }
             // Apply status resistance to debuff duration
             let buff = if is_debuff && units[target_idx].status_resistance > 0.0 {
                 let actual_ticks = (buff.remaining_ticks as f32 * (1.0 - units[target_idx].status_resistance)) as u32;
@@ -160,6 +166,8 @@ pub fn run_cast_effect_specs(
     caster_id: u32,
     caster_team: u8,
     caster_pos: Vec2,
+    target_id: Option<u32>,
+    _target_pos: Option<Vec2>,
     units: &mut [Unit],
     tick: u32,
     pending_effects: &mut Vec<PendingEffect>,
@@ -171,7 +179,7 @@ pub fn run_cast_effect_specs(
         }
         resolve_spec(
             spec, ability_name, level, caster_id, caster_team, caster_pos,
-            units, tick, pending_effects, &mut events,
+            target_id, units, tick, pending_effects, &mut events,
         );
     }
     events
@@ -186,6 +194,7 @@ fn resolve_spec(
     caster_id: u32,
     caster_team: u8,
     caster_pos: Vec2,
+    target_id: Option<u32>,
     units: &mut [Unit],
     tick: u32,
     pending_effects: &mut Vec<PendingEffect>,
@@ -206,6 +215,16 @@ fn resolve_spec(
                 .filter(|(_, u)| u.team != caster_team && u.is_alive())
                 .map(|(i, _)| i)
                 .collect()
+        }
+        TargetingSpec::TargetAndCaster => {
+            let caster_idx = units.iter().position(|u| u.id == caster_id);
+            let target_idx = target_id.and_then(|tid| units.iter().position(|u| u.id == tid && u.is_alive()));
+            match (target_idx, caster_idx) {
+                (Some(ti), Some(ci)) if ti != ci => vec![ti, ci],
+                (Some(ti), _) => vec![ti],
+                (None, Some(ci)) => vec![ci],
+                _ => return,
+            }
         }
     };
 

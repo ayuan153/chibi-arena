@@ -96,6 +96,56 @@ pub struct StatModifier {
     pub status_resistance: f32,
 }
 
+/// Per-level scaling stat modifiers for data-driven buffs.
+///
+/// Each field is a `Vec<f32>` indexed by ability level (empty vec ⇒ 0.0 at any level).
+/// Resolved to a runtime `StatModifier` via `buff_from_def` in aa2-sim.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub struct StatModifierSpec {
+    #[serde(default)]
+    pub bonus_armor: Vec<f32>,
+    #[serde(default)]
+    pub bonus_attack_speed: Vec<f32>,
+    #[serde(default)]
+    pub bonus_move_speed: Vec<f32>,
+    #[serde(default)]
+    pub bonus_damage: Vec<f32>,
+    #[serde(default)]
+    pub bonus_magic_resistance: Vec<f32>,
+    #[serde(default)]
+    pub bonus_hp_regen: Vec<f32>,
+    #[serde(default)]
+    pub bonus_strength: Vec<f32>,
+    #[serde(default)]
+    pub bonus_agi: Vec<f32>,
+    #[serde(default)]
+    pub bonus_int: Vec<f32>,
+    #[serde(default)]
+    pub status_resistance: Vec<f32>,
+}
+
+impl StatModifierSpec {
+    /// Resolve per-level Vecs into a concrete `StatModifier` for the given ability level.
+    /// Empty vec ⇒ 0.0.
+    pub fn resolve(&self, level: u8) -> StatModifier {
+        let at = |v: &[f32]| -> f32 {
+            if v.is_empty() { 0.0 } else { value_at_level(v, level) }
+        };
+        StatModifier {
+            bonus_armor: at(&self.bonus_armor),
+            bonus_attack_speed: at(&self.bonus_attack_speed),
+            bonus_move_speed: at(&self.bonus_move_speed),
+            bonus_damage: at(&self.bonus_damage),
+            bonus_magic_resistance: at(&self.bonus_magic_resistance),
+            bonus_hp_regen: at(&self.bonus_hp_regen),
+            bonus_strength: at(&self.bonus_strength),
+            bonus_agi: at(&self.bonus_agi),
+            bonus_int: at(&self.bonus_int),
+            status_resistance: at(&self.status_resistance),
+        }
+    }
+}
+
 // ─── Composable effect schema (data-only; resolvers live in aa2-sim) ───
 
 /// Data definition for a periodic tick effect (DoT or HoT).
@@ -119,9 +169,9 @@ pub struct BuffDef {
     pub duration: Vec<f32>,
     /// Status effects this buff applies.
     pub status: StatusFlags,
-    /// Stat modifiers this buff applies.
+    /// Per-level scaling stat modifiers this buff applies (resolved at runtime).
     #[serde(default)]
-    pub stat_modifier: Option<StatModifier>,
+    pub stat_modifier: Option<StatModifierSpec>,
     /// Periodic tick effect (DoT/HoT).
     #[serde(default)]
     pub tick_effect: Option<TickEffectDef>,
@@ -156,6 +206,8 @@ pub enum TargetingSpec {
     Caster,
     /// Targets enemies within the delivery area.
     EnemiesInDelivery,
+    /// Targets the cast target AND the caster (dedup if equal; caster-only if no target).
+    TargetAndCaster,
 }
 
 /// How the effect reaches affected units.
@@ -183,7 +235,7 @@ pub enum Payload {
         base: Vec<f32>,
     },
     /// Apply a buff/debuff.
-    ApplyBuff(BuffDef),
+    ApplyBuff(Box<BuffDef>),
     /// Dispel debuffs up to the given strength.
     Dispel {
         /// Maximum dispel strength to remove.
@@ -282,16 +334,6 @@ pub enum Effect {
         pulse_interval: f32,
         dispel_self: bool,
         non_lethal: bool,
-    },
-    /// Buff applied to target AND caster (Heavenly Grace self-cast mechanic).
-    BuffTargetAndSelf {
-        name: String,
-        duration: Vec<f32>,
-        hp_regen: Vec<f32>,
-        strength: Vec<f32>,
-        status_resistance: Vec<f32>,
-        #[serde(default)]
-        dispel_on_cast: bool,
     },
     /// Fury Swipes: per-target stacking flat damage, added post-crit.
     FurySwipes {

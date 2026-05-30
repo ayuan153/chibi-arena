@@ -68,17 +68,34 @@ fn heavenly_grace_ability() -> AbilityDef {
         mana_cost: vec![50.0],
         cast_point: 0.0,
         targeting: TargetType::SingleAlly,
-        effects: vec![Effect::BuffTargetAndSelf {
-            name: "Heavenly Grace".to_string(),
-            duration: vec![10.0],
-            hp_regen: vec![20.0],
-            strength: vec![30.0],
-            status_resistance: vec![0.5],
-            dispel_on_cast: false,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        effect_specs: Some(vec![aa2_data::EffectSpec {
+            trigger: aa2_data::Trigger::OnCast,
+            targeting: aa2_data::TargetingSpec::TargetAndCaster,
+            delivery: aa2_data::Delivery::Instant,
+            payload: vec![
+                aa2_data::Payload::ApplyBuff(Box::new(aa2_data::BuffDef {
+                    name: "Heavenly Grace".to_string(),
+                    duration: vec![10.0],
+                    status: aa2_data::StatusFlags::default(),
+                    stat_modifier: Some(aa2_data::StatModifierSpec {
+                        bonus_hp_regen: vec![20.0],
+                        bonus_strength: vec![30.0],
+                        status_resistance: vec![0.5],
+                        ..Default::default()
+                    }),
+                    tick_effect: None,
+                    stacking: aa2_data::StackBehavior::RefreshDuration,
+                    dispel_type: aa2_data::DispelType::BasicDispel,
+                    is_debuff: false,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                })),
+            ],
+        }]),
     }
 }
 
@@ -103,7 +120,7 @@ fn ravage_ability() -> AbilityDef {
             },
             payload: vec![
                 aa2_data::Payload::Damage { kind: aa2_data::DamageType::Magical, base: vec![250.0] },
-                aa2_data::Payload::ApplyBuff(aa2_data::BuffDef {
+                aa2_data::Payload::ApplyBuff(Box::new(aa2_data::BuffDef {
                     name: "stun".to_string(),
                     duration: vec![2.0],
                     status: aa2_data::StatusFlags { stunned: true, ..Default::default() },
@@ -114,7 +131,7 @@ fn ravage_ability() -> AbilityDef {
                     is_debuff: true,
                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
-                }),
+                })),
             ],
         }]),
     }
@@ -414,7 +431,7 @@ fn test_expanding_wave() {
             already_hit: Vec::new(),
             payload: vec![
                 aa2_data::Payload::Damage { kind: aa2_data::DamageType::Magical, base: vec![250.0] },
-                aa2_data::Payload::ApplyBuff(aa2_data::BuffDef {
+                aa2_data::Payload::ApplyBuff(Box::new(aa2_data::BuffDef {
                     name: "stun".to_string(),
                     duration: vec![2.0],
                     status: aa2_data::StatusFlags { stunned: true, ..Default::default() },
@@ -425,7 +442,7 @@ fn test_expanding_wave() {
                     is_debuff: true,
                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
-                }),
+                })),
             ],
             level: 1,
         },
@@ -486,7 +503,7 @@ fn test_status_resistance() {
             already_hit: Vec::new(),
             payload: vec![
                 aa2_data::Payload::Damage { kind: aa2_data::DamageType::Magical, base: vec![100.0] },
-                aa2_data::Payload::ApplyBuff(aa2_data::BuffDef {
+                aa2_data::Payload::ApplyBuff(Box::new(aa2_data::BuffDef {
                     name: "stun".to_string(),
                     duration: vec![2.0],
                     status: aa2_data::StatusFlags { stunned: true, ..Default::default() },
@@ -497,7 +514,7 @@ fn test_status_resistance() {
                     is_debuff: true,
                     pierces_magic_immunity: false,
                     damage_reflection_pct: 0.0,
-                }),
+                })),
             ],
             level: 1,
         },
@@ -587,17 +604,35 @@ fn test_hg_dispels_on_cast() {
         mana_cost: vec![50.0],
         cast_point: 0.0,
         targeting: TargetType::SingleAlly,
-        effects: vec![Effect::BuffTargetAndSelf {
-            name: "Heavenly Grace".to_string(),
-            duration: vec![10.0],
-            hp_regen: vec![20.0],
-            strength: vec![30.0],
-            status_resistance: vec![0.5],
-            dispel_on_cast: true,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        effect_specs: Some(vec![aa2_data::EffectSpec {
+            trigger: aa2_data::Trigger::OnCast,
+            targeting: aa2_data::TargetingSpec::TargetAndCaster,
+            delivery: aa2_data::Delivery::Instant,
+            payload: vec![
+                aa2_data::Payload::Dispel { strength: aa2_data::DispelType::StrongDispel },
+                aa2_data::Payload::ApplyBuff(Box::new(aa2_data::BuffDef {
+                    name: "Heavenly Grace".to_string(),
+                    duration: vec![10.0],
+                    status: aa2_data::StatusFlags::default(),
+                    stat_modifier: Some(aa2_data::StatModifierSpec {
+                        bonus_hp_regen: vec![20.0],
+                        bonus_strength: vec![30.0],
+                        status_resistance: vec![0.5],
+                        ..Default::default()
+                    }),
+                    tick_effect: None,
+                    stacking: aa2_data::StackBehavior::RefreshDuration,
+                    dispel_type: aa2_data::DispelType::BasicDispel,
+                    is_debuff: false,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                })),
+            ],
+        }]),
     };
 
     execute_ability(

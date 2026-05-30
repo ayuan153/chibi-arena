@@ -2,7 +2,7 @@
 
 use aa2_data::{AbilityDef, DamageType, Effect, TargetType};
 use crate::aoe::find_aoe_targets;
-use crate::buff::{active_status, apply_buff, Buff, DispelType, StackBehavior, StatModifier, StatusFlags};
+use crate::buff::{active_status, apply_buff, Buff, DispelType, StackBehavior, StatusFlags};
 use crate::combat::{apply_armor, apply_magic_resistance};
 use crate::pending::{PendingEffect, PendingEffectKind};
 use crate::unit::Unit;
@@ -28,6 +28,7 @@ pub fn execute_ability(
     if let Some(specs) = ability.effect_specs.as_ref() {
         return crate::effect_spec::run_cast_effect_specs(
             specs, &ability.name, level, caster_id, caster_team, caster_pos,
+            target_id, target_pos,
             units, tick, pending_effects,
         );
     }
@@ -128,7 +129,7 @@ pub fn execute_ability(
                     });
                 }
                 Effect::Summon { .. } => {}
-                Effect::DarkPact { .. } | Effect::BuffTargetAndSelf { .. } => {
+                Effect::DarkPact { .. } => {
                     // These are handled outside the per-target loop
                 }
                 Effect::FurySwipes { .. } | Effect::ChaosStrike { .. } | Effect::EssenceShift { .. } => {
@@ -177,50 +178,6 @@ pub fn execute_ability(
                     },
                     delay_ticks_remaining: (*delay * 30.0) as u32,
                 });
-            }
-            Effect::BuffTargetAndSelf {
-                name, duration, hp_regen, strength, status_resistance, dispel_on_cast,
-            } => {
-                let dur_ticks = (value_at_level(duration, level) * 30.0) as u32;
-                let modifier = StatModifier {
-                    bonus_hp_regen: value_at_level(hp_regen, level),
-                    bonus_strength: value_at_level(strength, level),
-                    status_resistance: value_at_level(status_resistance, level),
-                    ..StatModifier::default()
-                };
-                let make_buff = || Buff {
-                    name: name.clone(),
-                    remaining_ticks: dur_ticks,
-                    tick_effect: None,
-                    stacking: StackBehavior::RefreshDuration,
-                    dispel_type: DispelType::BasicDispel,
-                    status: StatusFlags::default(),
-                    stat_modifier: Some(modifier.clone()),
-                    source_id: caster_id,
-                    is_debuff: false,
-                    pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                };
-                // Apply to target
-                if let Some(tid) = target_id
-                    && let Some(target) = units.iter_mut().find(|u| u.id == tid && u.is_alive())
-                {
-                    if *dispel_on_cast {
-                        crate::buff::dispel(&mut target.buffs, DispelType::StrongDispel);
-                    }
-                    target.status_resistance += modifier.status_resistance;
-                    apply_buff(&mut target.buffs, make_buff());
-                    events.push(CombatEvent::BuffApplied { tick, target_id: tid, name: name.clone() });
-                }
-                // Apply to caster
-                if let Some(caster) = units.iter_mut().find(|u| u.id == caster_id && u.is_alive()) {
-                    if *dispel_on_cast {
-                        crate::buff::dispel(&mut caster.buffs, DispelType::StrongDispel);
-                    }
-                    caster.status_resistance += modifier.status_resistance;
-                    apply_buff(&mut caster.buffs, make_buff());
-                    events.push(CombatEvent::BuffApplied { tick, target_id: caster_id, name: name.clone() });
-                }
             }
             Effect::Burrowstrike {
                 damage, stun_duration, range, width, travel_speed,
@@ -683,7 +640,7 @@ mod tests {
                 delivery: aa2_data::Delivery::Instant,
                 payload: vec![
                     aa2_data::Payload::Dispel { strength: aa2_data::DispelType::BasicDispel },
-                    aa2_data::Payload::ApplyBuff(aa2_data::BuffDef {
+                    aa2_data::Payload::ApplyBuff(Box::new(aa2_data::BuffDef {
                         name: "rage".to_string(),
                         duration: vec![4.0],
                         status: aa2_data::StatusFlags { magic_immune: true, ..Default::default() },
@@ -694,7 +651,7 @@ mod tests {
                         is_debuff: false,
                         pierces_magic_immunity: false,
                         damage_reflection_pct: 0.0,
-                    }),
+                    })),
                 ],
             }]),
         };
