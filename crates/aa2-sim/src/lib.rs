@@ -1466,13 +1466,11 @@ impl Simulation {
                         false
                     }
                 }
-                PendingEffectKind::DarkPactPulse {
-                    damage_per_pulse,
+                PendingEffectKind::ComposablePulse {
+                    payload,
+                    level,
                     radius,
-                    self_damage_pct,
                     damage_type,
-                    dispel_self,
-                    non_lethal,
                     pulses_remaining,
                     pulse_interval_ticks,
                     ticks_until_next_pulse,
@@ -1482,17 +1480,23 @@ impl Simulation {
                         i += 1;
                         continue;
                     }
-                    let dmg = *damage_per_pulse;
                     let r = *radius;
-                    let self_pct = *self_damage_pct;
                     let dt = damage_type.clone();
-                    let do_dispel = *dispel_self;
-                    let is_non_lethal = *non_lethal;
+                    let lvl = *level;
                     let interval = *pulse_interval_ticks;
+                    let payload_clone = payload.clone();
 
                     *pulses_remaining -= 1;
                     let done = *pulses_remaining == 0;
                     *ticks_until_next_pulse = interval;
+
+                    // Resolve per-pulse damage from the Damage payload
+                    let dmg = payload_clone.iter().find_map(|p| {
+                        if let aa2_data::Payload::Damage { base, .. } = p {
+                            let idx = (lvl.saturating_sub(1) as usize).min(base.len().saturating_sub(1));
+                            Some(base[idx])
+                        } else { None }
+                    }).unwrap_or(0.0);
 
                     // Find caster position
                     let caster_pos = self.units.iter()
@@ -1522,23 +1526,29 @@ impl Simulation {
                         }
                     }
 
-                    // Self-damage
+                    // Self-damage and dispel (from SelfDamage/Dispel payloads)
                     let mut self_damage = 0.0;
                     if let Some(caster) = self.units.iter_mut().find(|u| u.id == caster_id) {
-                        let raw_self = dmg * self_pct;
-                        let actual_self = match &dt {
-                            DamageType::Magical => apply_magic_resistance(raw_self, caster.magic_resistance),
-                            DamageType::Physical => combat::apply_armor(raw_self, caster.armor),
-                            DamageType::Pure => raw_self,
-                        };
-                        caster.hp -= actual_self;
-                        if is_non_lethal && caster.hp < 1.0 {
-                            caster.hp = 1.0;
-                        }
-                        self_damage = actual_self;
-
-                        if do_dispel {
-                            dispel(&mut caster.buffs, DispelType::StrongDispel);
+                        for p in &payload_clone {
+                            match p {
+                                aa2_data::Payload::SelfDamage { pct, non_lethal } => {
+                                    let raw_self = dmg * pct;
+                                    let actual_self = match &dt {
+                                        DamageType::Magical => apply_magic_resistance(raw_self, caster.magic_resistance),
+                                        DamageType::Physical => combat::apply_armor(raw_self, caster.armor),
+                                        DamageType::Pure => raw_self,
+                                    };
+                                    caster.hp -= actual_self;
+                                    if *non_lethal && caster.hp < 1.0 {
+                                        caster.hp = 1.0;
+                                    }
+                                    self_damage = actual_self;
+                                }
+                                aa2_data::Payload::Dispel { strength } => {
+                                    dispel(&mut caster.buffs, *strength);
+                                }
+                                _ => {}
+                            }
                         }
                     }
 

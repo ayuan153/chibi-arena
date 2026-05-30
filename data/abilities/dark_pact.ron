@@ -15,21 +15,24 @@ AbilityDef(
     mana_cost: [65.0],
     cast_point: 0.0,  // Instant cast - no animation
     targeting: NoTarget,
-    effects: [
-        DarkPact(
-            kind: Magical,
-            // Total damage: L1=70, L2=150, L3=300, L4-5=300, L6(Super)=450, L7-8=450, L9(Gaben)=600
-            total_damage: [70.0, 150.0, 300.0, 300.0, 300.0, 450.0, 450.0, 450.0, 600.0],
-            // Radius: L1-3=325, L4-5=325, L6(Super)=475, L7-8=475, L9(Gaben)=675
-            radius: [325.0, 325.0, 325.0, 325.0, 325.0, 475.0, 475.0, 475.0, 675.0],
-            self_damage_pct: 0.3,
-            delay: 1.5,
-            pulse_count: 10,
-            pulse_interval: 0.1,
-            dispel_self: true,
-            non_lethal: true,
+    effects: [],
+    effect_specs: Some([
+        EffectSpec(
+            trigger: OnCast,
+            targeting: EnemiesInDelivery,
+            delivery: DelayedPulse(
+                delay: 1.5,
+                pulse_count: 10,
+                pulse_interval: 0.1,
+                radius: [325.0, 325.0, 325.0, 325.0, 325.0, 475.0, 475.0, 475.0, 675.0],
+            ),
+            payload: [
+                Damage(kind: Magical, base: [7.0, 15.0, 30.0, 30.0, 30.0, 45.0, 45.0, 45.0, 60.0]),
+                SelfDamage(pct: 0.3, non_lethal: true),
+                Dispel(strength: StrongDispel),
+            ],
         ),
-    ],
+    ]),
     description: "After a short delay, purges debuffs and damages nearby enemies. Deals 30% to self.",
     aoe_shape: None,
     cast_range: 0.0,  // Self-cast, no range needed

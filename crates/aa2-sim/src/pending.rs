@@ -40,20 +40,17 @@ pub enum PendingEffectKind {
         /// Pending damage: (unit_id, ticks_remaining, damage_amount)
         pending_damage: Vec<(u32, u32, f32)>,
     },
-    /// Dark Pact: pulsing AoE damage + self-damage + self-dispel.
-    DarkPactPulse {
-        /// Damage dealt to each enemy per pulse.
-        damage_per_pulse: f32,
+    /// Generic composable pulsing AoE: fires multiple pulses from caster position,
+    /// applying data-driven payloads to enemies in radius and self-damage/dispel to caster.
+    ComposablePulse {
+        /// Payloads to apply per pulse.
+        payload: Vec<Payload>,
+        /// Ability level (for per-level payload values).
+        level: u8,
         /// AoE radius around caster.
         radius: f32,
-        /// Fraction of pulse damage dealt to self.
-        self_damage_pct: f32,
-        /// Damage type for the pulses.
+        /// Damage type used for self-damage calculation.
         damage_type: DamageType,
-        /// Whether each pulse applies strong dispel to self.
-        dispel_self: bool,
-        /// Whether self-damage cannot kill the caster.
-        non_lethal: bool,
         /// Number of pulses remaining.
         pulses_remaining: u32,
         /// Ticks between pulses.

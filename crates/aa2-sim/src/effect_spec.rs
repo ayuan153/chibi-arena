@@ -151,6 +151,10 @@ pub fn apply_payload_to_unit(
             // Chain is a scaffold — Rage/Ravage don't use it.
             PayloadOutcome::Skipped
         }
+        Payload::SelfDamage { .. } => {
+            // Self-damage is handled by the ComposablePulse step, not per-target.
+            PayloadOutcome::Skipped
+        }
     }
 }
 
@@ -259,6 +263,34 @@ fn resolve_spec(
                     level,
                 },
                 delay_ticks_remaining: 0,
+            });
+        }
+        Delivery::DelayedPulse { delay, pulse_count, pulse_interval, radius } => {
+            debug_assert!(!radius.is_empty(), "DelayedPulse radius must not be empty");
+            if radius.is_empty() {
+                return;
+            }
+            let radius_idx = (level.saturating_sub(1) as usize).min(radius.len().saturating_sub(1));
+            let r = radius[radius_idx];
+            // Determine damage type from the first Damage payload (for self-damage calc).
+            let damage_type = spec.payload.iter().find_map(|p| {
+                if let Payload::Damage { kind, .. } = p { Some(kind.clone()) } else { None }
+            }).unwrap_or(DamageType::Pure);
+            let interval_ticks = (*pulse_interval * TICK_RATE) as u32;
+            pending_effects.push(PendingEffect {
+                caster_id,
+                caster_team,
+                ability_name: ability_name.to_string(),
+                kind: PendingEffectKind::ComposablePulse {
+                    payload: spec.payload.clone(),
+                    level,
+                    radius: r,
+                    damage_type,
+                    pulses_remaining: *pulse_count,
+                    pulse_interval_ticks: interval_ticks,
+                    ticks_until_next_pulse: 0,
+                },
+                delay_ticks_remaining: (*delay * TICK_RATE) as u32,
             });
         }
     }

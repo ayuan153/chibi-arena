@@ -13,7 +13,8 @@ fn load_dark_pact() {
     let ability = aa2_data::load_ability_def(Path::new("../../data/abilities/dark_pact.ron")).unwrap();
     assert_eq!(ability.name, "Dark Pact");
     assert_eq!(ability.cast_point, 0.0);
-    assert_eq!(ability.effects.len(), 1);
+    assert_eq!(ability.effects.len(), 0);
+    assert_eq!(ability.effect_specs.as_ref().unwrap().len(), 1);
 }
 
 #[test]

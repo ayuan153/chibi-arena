@@ -222,6 +222,19 @@ pub enum Delivery {
         /// Expansion speed (units/sec).
         speed: f32,
     },
+    /// Fires multiple pulses from the caster's position after an initial delay.
+    /// Each pulse applies payloads to enemies within radius, plus any `SelfDamage`
+    /// payloads to the caster.
+    DelayedPulse {
+        /// Delay before first pulse (seconds).
+        delay: f32,
+        /// Number of pulses to fire.
+        pulse_count: u32,
+        /// Time between pulses (seconds).
+        pulse_interval: f32,
+        /// AoE radius per ability level.
+        radius: Vec<f32>,
+    },
 }
 
 /// What happens to each affected unit.
@@ -244,6 +257,14 @@ pub enum Payload {
     /// Trigger a chained sub-effect. Recursion is bounded by
     /// `MAX_EFFECT_CHAIN_DEPTH` (enforced in aa2-sim, added later).
     Chain(Box<EffectSpec>),
+    /// Deal damage to the CASTER as a fraction of the pulse's base damage.
+    /// Uses the same `DamageType` as the spec's `Damage` payload.
+    SelfDamage {
+        /// Fraction of pulse damage dealt to self.
+        pct: f32,
+        /// If true, self-damage cannot reduce caster below 1 HP.
+        non_lethal: bool,
+    },
 }
 
 /// A composable effect specification: trigger + targeting + delivery + payloads.
@@ -322,19 +343,6 @@ pub enum Effect {
     ApplyBuff { name: String, duration: f32 },
     Heal { base: Vec<f32> },
     Summon { unit: String, count: u32 },
-    /// Dark Pact style: delayed pulsing AoE around self with self-damage and per-pulse dispel.
-    /// Caster can act freely during delay. Each pulse independently dispels.
-    DarkPact {
-        kind: DamageType,
-        total_damage: Vec<f32>,
-        radius: Vec<f32>,
-        self_damage_pct: f32,
-        delay: f32,
-        pulse_count: u32,
-        pulse_interval: f32,
-        dispel_self: bool,
-        non_lethal: bool,
-    },
     /// Fury Swipes: per-target stacking flat damage, added post-crit.
     FurySwipes {
         damage_per_stack: Vec<f32>,

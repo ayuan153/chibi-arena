@@ -44,20 +44,25 @@ fn dark_pact_ability() -> AbilityDef {
         mana_cost: vec![50.0],
         cast_point: 0.0,
         targeting: TargetType::NoTarget,
-        effects: vec![Effect::DarkPact {
-            kind: DamageType::Magical,
-            total_damage: vec![300.0],
-            radius: vec![400.0],
-            self_damage_pct: 0.3,
-            delay: 1.5,
-            pulse_count: 10,
-            pulse_interval: 0.1,
-            dispel_self: true,
-            non_lethal: true,
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        effect_specs: Some(vec![aa2_data::EffectSpec {
+            trigger: aa2_data::Trigger::OnCast,
+            targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
+            delivery: aa2_data::Delivery::DelayedPulse {
+                delay: 1.5,
+                pulse_count: 10,
+                pulse_interval: 0.1,
+                radius: vec![400.0],
+            },
+            payload: vec![
+                aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![30.0] },
+                aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
+                aa2_data::Payload::Dispel { strength: aa2_data::DispelType::StrongDispel },
+            ],
+        }]),
     }
 }
 
@@ -165,13 +170,15 @@ fn test_dark_pact_delay() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Dark Pact".to_string(),
-        kind: PendingEffectKind::DarkPactPulse {
-            damage_per_pulse: 30.0,
+        kind: PendingEffectKind::ComposablePulse {
+            payload: vec![
+                aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![30.0] },
+                aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
+                aa2_data::Payload::Dispel { strength: aa2_data::DispelType::StrongDispel },
+            ],
+            level: 1,
             radius: 10000.0, // large radius to hit distant enemy
-            self_damage_pct: 0.3,
             damage_type: DamageType::Magical,
-            dispel_self: true,
-            non_lethal: true,
             pulses_remaining: 10,
             pulse_interval_ticks: 3,
             ticks_until_next_pulse: 0,
@@ -211,13 +218,14 @@ fn test_dark_pact_pulses() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Dark Pact".to_string(),
-        kind: PendingEffectKind::DarkPactPulse {
-            damage_per_pulse: 30.0,
+        kind: PendingEffectKind::ComposablePulse {
+            payload: vec![
+                aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![30.0] },
+                aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
+            ],
+            level: 1,
             radius: 10000.0, // large radius to hit distant enemy
-            self_damage_pct: 0.3,
             damage_type: DamageType::Magical,
-            dispel_self: false,
-            non_lethal: true,
             pulses_remaining: 10,
             pulse_interval_ticks: 3,
             ticks_until_next_pulse: 0,
@@ -253,13 +261,14 @@ fn test_dark_pact_self_damage() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Dark Pact".to_string(),
-        kind: PendingEffectKind::DarkPactPulse {
-            damage_per_pulse: 30.0,
+        kind: PendingEffectKind::ComposablePulse {
+            payload: vec![
+                aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![30.0] },
+                aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
+            ],
+            level: 1,
             radius: 400.0,
-            self_damage_pct: 0.3,
             damage_type: DamageType::Magical,
-            dispel_self: false,
-            non_lethal: true,
             pulses_remaining: 1,
             pulse_interval_ticks: 3,
             ticks_until_next_pulse: 0,
@@ -307,13 +316,15 @@ fn test_dark_pact_dispel() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Dark Pact".to_string(),
-        kind: PendingEffectKind::DarkPactPulse {
-            damage_per_pulse: 30.0,
+        kind: PendingEffectKind::ComposablePulse {
+            payload: vec![
+                aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![30.0] },
+                aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
+                aa2_data::Payload::Dispel { strength: aa2_data::DispelType::StrongDispel },
+            ],
+            level: 1,
             radius: 400.0,
-            self_damage_pct: 0.3,
             damage_type: DamageType::Magical,
-            dispel_self: true,
-            non_lethal: true,
             pulses_remaining: 1,
             pulse_interval_ticks: 3,
             ticks_until_next_pulse: 0,
@@ -342,13 +353,14 @@ fn test_dark_pact_non_lethal() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Dark Pact".to_string(),
-        kind: PendingEffectKind::DarkPactPulse {
-            damage_per_pulse: 100.0, // high damage
+        kind: PendingEffectKind::ComposablePulse {
+            payload: vec![
+                aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![100.0] },
+                aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
+            ],
+            level: 1,
             radius: 400.0,
-            self_damage_pct: 0.3,
             damage_type: DamageType::Magical,
-            dispel_self: false,
-            non_lethal: true,
             pulses_remaining: 10,
             pulse_interval_ticks: 3,
             ticks_until_next_pulse: 0,
@@ -780,18 +792,21 @@ fn test_aoe_radius_scaling_gaben_vs_level3() {
     let dark_pact = load_ability_def(&data_path("abilities/dark_pact.ron")).unwrap();
     let hero = make_hero();
 
-    // Extract radius values from the loaded ability data to verify correctness
-    let effect = &dark_pact.effects[0];
-    let (radius_l9, radius_l3, total_dmg_l9, total_dmg_l3) = match effect {
-        Effect::DarkPact { radius, total_damage, pulse_count, .. } => {
-            (
-                aa2_data::value_at_level(radius, 9),
-                aa2_data::value_at_level(radius, 3),
-                aa2_data::value_at_level(total_damage, 9) / *pulse_count as f32,
-                aa2_data::value_at_level(total_damage, 3) / *pulse_count as f32,
-            )
+    // Extract radius and damage values from the loaded ability data to verify correctness
+    let spec = &dark_pact.effect_specs.as_ref().unwrap()[0];
+    let (radius_l9, radius_l3, dmg_per_pulse_l9, dmg_per_pulse_l3) = match &spec.delivery {
+        aa2_data::Delivery::DelayedPulse { radius, .. } => {
+            let r9 = aa2_data::value_at_level(radius, 9);
+            let r3 = aa2_data::value_at_level(radius, 3);
+            // Get per-pulse damage from the Damage payload
+            let base = spec.payload.iter().find_map(|p| {
+                if let aa2_data::Payload::Damage { base, .. } = p { Some(base) } else { None }
+            }).unwrap();
+            let d9 = aa2_data::value_at_level(base, 9);
+            let d3 = aa2_data::value_at_level(base, 3);
+            (r9, r3, d9, d3)
         }
-        _ => panic!("Expected DarkPact effect"),
+        _ => panic!("Expected DelayedPulse delivery"),
     };
     assert_eq!(radius_l9, 675.0);
     assert_eq!(radius_l3, 325.0);
@@ -807,13 +822,15 @@ fn test_aoe_radius_scaling_gaben_vs_level3() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Dark Pact".to_string(),
-        kind: aa2_sim::pending::PendingEffectKind::DarkPactPulse {
-            damage_per_pulse: total_dmg_l9,
+        kind: aa2_sim::pending::PendingEffectKind::ComposablePulse {
+            payload: vec![
+                aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![dmg_per_pulse_l9] },
+                aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
+                aa2_data::Payload::Dispel { strength: aa2_data::DispelType::StrongDispel },
+            ],
+            level: 1,
             radius: radius_l9,
-            self_damage_pct: 0.3,
             damage_type: DamageType::Magical,
-            dispel_self: true,
-            non_lethal: true,
             pulses_remaining: 1,
             pulse_interval_ticks: 3,
             ticks_until_next_pulse: 0,
@@ -828,13 +845,15 @@ fn test_aoe_radius_scaling_gaben_vs_level3() {
         caster_id: 0,
         caster_team: 0,
         ability_name: "Dark Pact".to_string(),
-        kind: aa2_sim::pending::PendingEffectKind::DarkPactPulse {
-            damage_per_pulse: total_dmg_l3,
+        kind: aa2_sim::pending::PendingEffectKind::ComposablePulse {
+            payload: vec![
+                aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![dmg_per_pulse_l3] },
+                aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
+                aa2_data::Payload::Dispel { strength: aa2_data::DispelType::StrongDispel },
+            ],
+            level: 1,
             radius: radius_l3,
-            self_damage_pct: 0.3,
             damage_type: DamageType::Magical,
-            dispel_self: true,
-            non_lethal: true,
             pulses_remaining: 1,
             pulse_interval_ticks: 3,
             ticks_until_next_pulse: 0,

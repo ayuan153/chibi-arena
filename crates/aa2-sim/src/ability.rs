@@ -48,7 +48,7 @@ pub fn execute_ability(
             find_aoe_targets(shape, origin, direction, units, caster_id, caster_team, hit_enemies)
         }
         TargetType::NoTarget => {
-            // No target needed — effects handled in the second loop (DarkPact, etc.)
+            // No target needed — effects handled in the second loop (Burrowstrike, etc.)
             vec![]
         }
         _ => {
@@ -129,9 +129,6 @@ pub fn execute_ability(
                     });
                 }
                 Effect::Summon { .. } => {}
-                Effect::DarkPact { .. } => {
-                    // These are handled outside the per-target loop
-                }
                 Effect::FurySwipes { .. } | Effect::ChaosStrike { .. } | Effect::EssenceShift { .. } => {
                     // Attack modifiers are handled in the attack pipeline, not ability execution
                 }
@@ -154,31 +151,6 @@ pub fn execute_ability(
     // Handle effects that don't iterate over targets
     for effect in &ability.effects {
         match effect {
-            Effect::DarkPact {
-                kind, total_damage, radius, self_damage_pct,
-                delay, pulse_count, pulse_interval, dispel_self, non_lethal,
-            } => {
-                let dmg_total = value_at_level(total_damage, level);
-                let r = value_at_level(radius, level);
-                let interval_ticks = (*pulse_interval * 30.0) as u32;
-                pending_effects.push(PendingEffect {
-                    caster_id,
-                    caster_team,
-                    ability_name: ability.name.clone(),
-                    kind: PendingEffectKind::DarkPactPulse {
-                        damage_per_pulse: dmg_total / *pulse_count as f32,
-                        radius: r,
-                        self_damage_pct: *self_damage_pct,
-                        damage_type: kind.clone(),
-                        dispel_self: *dispel_self,
-                        non_lethal: *non_lethal,
-                        pulses_remaining: *pulse_count,
-                        pulse_interval_ticks: interval_ticks,
-                        ticks_until_next_pulse: 0,
-                    },
-                    delay_ticks_remaining: (*delay * 30.0) as u32,
-                });
-            }
             Effect::Burrowstrike {
                 damage, stun_duration, range, width, travel_speed,
                 caustic_finale_damage, caustic_finale_radius,
