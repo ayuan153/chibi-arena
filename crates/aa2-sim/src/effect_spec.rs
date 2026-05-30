@@ -173,6 +173,10 @@ pub fn apply_payload_to_unit(
             // Handled directly by the attack pipeline (post_attack_effects via lifesteal_pct).
             PayloadOutcome::Skipped
         }
+        Payload::StatSteal { .. } => {
+            // Handled directly by the attack pipeline (post_attack_effects).
+            PayloadOutcome::Skipped
+        }
     }
 }
 

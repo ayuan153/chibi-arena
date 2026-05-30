@@ -130,9 +130,6 @@ pub fn execute_ability(
                     });
                 }
                 Effect::Summon { .. } => {}
-                Effect::EssenceShift { .. } => {
-                    // Attack modifiers are handled in the attack pipeline, not ability execution
-                }
                 Effect::GlaivesOfWisdom { .. } => {
                     // Attack modifier — handled in the attack pipeline
                 }
@@ -568,19 +565,25 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::EssenceShift {
-                    str_steal: vec![1.0],
-                    agi_steal: vec![1.0],
-                    int_steal: vec![1.0],
-                    agi_gain: vec![3.0],
-                    duration: vec![30.0],
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
                 cast_range: 0.0,
                 cast_behavior: aa2_data::CastBehavior::default(),
                 max_charges: None,
-                effect_specs: None,
+                effect_specs: Some(vec![aa2_data::EffectSpec {
+                    trigger: aa2_data::Trigger::OnAttack,
+                    targeting: aa2_data::TargetingSpec::AttackTarget,
+                    delivery: aa2_data::Delivery::Instant,
+                    payload: vec![aa2_data::Payload::StatSteal {
+                        str_steal: vec![1.0],
+                        agi_steal: vec![1.0],
+                        int_steal: vec![1.0],
+                        agi_gain: vec![3.0],
+                        duration: vec![30.0],
+                    }],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 1,

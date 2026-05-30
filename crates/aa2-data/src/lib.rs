@@ -355,6 +355,23 @@ pub enum Payload {
         /// Lifesteal percentage per ability level (divided by 100 at runtime).
         pct: Vec<f32>,
     },
+    /// Stat steal on attack (post-damage phase of OnAttack).
+    ///
+    /// Applies an undispellable, pierces-magic-immunity debuff on the target reducing
+    /// STR/AGI/INT, and grants the attacker AGI via an undispellable buff.
+    /// Each attack creates independent stacks (StackBehavior::Independent).
+    StatSteal {
+        /// STR stolen from target per attack, per ability level.
+        str_steal: Vec<f32>,
+        /// AGI stolen from target per attack, per ability level.
+        agi_steal: Vec<f32>,
+        /// INT stolen from target per attack, per ability level.
+        int_steal: Vec<f32>,
+        /// AGI gained by attacker per attack, per ability level.
+        agi_gain: Vec<f32>,
+        /// Duration of both debuff and buff in seconds, per ability level.
+        duration: Vec<f32>,
+    },
 }
 
 /// A composable effect specification: trigger + targeting + delivery + payloads.
@@ -436,14 +453,6 @@ pub enum Effect {
     ApplyBuff { name: String, duration: f32 },
     Heal { base: Vec<f32> },
     Summon { unit: String, count: u32 },
-    /// Essence Shift: steal stats on attack.
-    EssenceShift {
-        str_steal: Vec<f32>,
-        agi_steal: Vec<f32>,
-        int_steal: Vec<f32>,
-        agi_gain: Vec<f32>,
-        duration: Vec<f32>,
-    },
     /// Glaives of Wisdom: mana-cost attack modifier dealing bonus magical damage based on INT.
     /// Does not pierce debuff immunity. Super steals INT on kill. Gaben bounces.
     GlaivesOfWisdom {
@@ -697,7 +706,6 @@ impl Effect {
     pub fn illusion_interaction(&self) -> IllusionInteraction {
         match self {
             // Attack modifiers that do NOT work on illusions
-            Effect::EssenceShift { .. } => IllusionInteraction::Disabled,
             Effect::GlaivesOfWisdom { .. } => IllusionInteraction::Disabled,
             // All other effects: disabled by default for illusions
             _ => IllusionInteraction::Disabled,

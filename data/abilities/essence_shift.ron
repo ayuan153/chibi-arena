@@ -12,19 +12,27 @@ AbilityDef(
     mana_cost: [0.0],
     cast_point: 0.0,
     targeting: Passive,
-    effects: [
-        EssenceShift(
-            // Stats stolen per attack (always 1 each)
-            str_steal: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            agi_steal: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            int_steal: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            // AGI gained by attacker per attack (always 3)
-            agi_gain: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0],
-            // Duration: L1=5s, L2=10s, L3=20s, L4-5=20s, L6-8=20s, L9(Gaben)=90s
-            duration: [5.0, 10.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 90.0],
-        ),
-    ],
+    effects: [],
     description: "Each attack steals attributes from the target, gaining agility.",
     aoe_shape: None,
     cast_range: 0.0,
+    effect_specs: Some([
+        EffectSpec(
+            trigger: OnAttack,
+            targeting: AttackTarget,
+            delivery: Instant,
+            payload: [
+                StatSteal(
+                    // Stats stolen per attack (always 1 each)
+                    str_steal: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                    agi_steal: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                    int_steal: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                    // AGI gained by attacker per attack (always 3)
+                    agi_gain: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0],
+                    // Duration: L1=5s, L2=10s, L3=20s, L4-5=20s, L6-8=20s, L9(Gaben)=90s
+                    duration: [5.0, 10.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 90.0],
+                ),
+            ],
+        ),
+    ]),
 )

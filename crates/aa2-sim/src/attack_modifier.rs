@@ -185,69 +185,6 @@ pub fn post_attack_effects(
         attacker.hp = (attacker.hp + heal).min(attacker.max_hp);
     }
 
-    // Essence Shift
-    let ability_count = attacker.abilities.len();
-    for ai in 0..ability_count {
-        let level = attacker.abilities[ai].level;
-        if level == 0 { continue; }
-        let effects = attacker.abilities[ai].def.effects.clone();
-        for effect in &effects {
-            if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
-                continue;
-            }
-            if let Effect::EssenceShift { str_steal, agi_steal, int_steal, agi_gain, duration } = effect {
-                let dur_secs = value_at_level(duration, level);
-                let dur_ticks = (dur_secs * TICK_RATE) as u32;
-                let s_steal = value_at_level(str_steal, level);
-                let a_steal = value_at_level(agi_steal, level);
-                let _i_steal = value_at_level(int_steal, level);
-                let a_gain = value_at_level(agi_gain, level);
-
-                // Debuff on target: lose stats
-                let debuff = Buff {
-                    name: "essence_shift_debuff".to_string(),
-                    remaining_ticks: dur_ticks,
-                    tick_effect: None,
-                    stacking: StackBehavior::Independent,
-                    dispel_type: DispelType::Undispellable,
-                    status: StatusFlags::default(),
-                    stat_modifier: Some(StatModifier {
-                        bonus_strength: -s_steal,
-                        bonus_agi: -a_steal,
-                        bonus_int: -_i_steal,
-                        ..StatModifier::default()
-                    }),
-                    source_id: attacker.id,
-                    is_debuff: true,
-                    pierces_magic_immunity: true,
-                    damage_reflection_pct: 0.0,
-                    on_death: None,
-                };
-                target.buffs.push(debuff);
-
-                // Buff on attacker: gain AGI
-                let buff = Buff {
-                    name: "essence_shift_buff".to_string(),
-                    remaining_ticks: dur_ticks,
-                    tick_effect: None,
-                    stacking: StackBehavior::Independent,
-                    dispel_type: DispelType::Undispellable,
-                    status: StatusFlags::default(),
-                    stat_modifier: Some(StatModifier {
-                        bonus_agi: a_gain,
-                        ..StatModifier::default()
-                    }),
-                    source_id: attacker.id,
-                    is_debuff: false,
-                    pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                    on_death: None,
-                };
-                attacker.buffs.push(buff);
-            }
-        }
-    }
-
     // Composable OnAttack post-damage: apply buff payloads (armor reduction, etc.)
     let ability_count2 = attacker.abilities.len();
     for ai in 0..ability_count2 {
@@ -282,6 +219,56 @@ pub fn post_attack_effects(
                         }
                         let buff = crate::effect_spec::buff_from_def(def, level, attacker.id);
                         target.buffs.push(buff);
+                    }
+                    if let Payload::StatSteal { str_steal, agi_steal, int_steal, agi_gain, duration } = payload {
+                        let dur_secs = value_at_level(duration, level);
+                        let dur_ticks = (dur_secs * TICK_RATE) as u32;
+                        let s_steal = value_at_level(str_steal, level);
+                        let a_steal = value_at_level(agi_steal, level);
+                        let i_steal = value_at_level(int_steal, level);
+                        let a_gain = value_at_level(agi_gain, level);
+
+                        // Debuff on target: lose stats (pierces magic immunity)
+                        let debuff = Buff {
+                            name: "essence_shift_debuff".to_string(),
+                            remaining_ticks: dur_ticks,
+                            tick_effect: None,
+                            stacking: StackBehavior::Independent,
+                            dispel_type: DispelType::Undispellable,
+                            status: StatusFlags::default(),
+                            stat_modifier: Some(StatModifier {
+                                bonus_strength: -s_steal,
+                                bonus_agi: -a_steal,
+                                bonus_int: -i_steal,
+                                ..StatModifier::default()
+                            }),
+                            source_id: attacker.id,
+                            is_debuff: true,
+                            pierces_magic_immunity: true,
+                            damage_reflection_pct: 0.0,
+                            on_death: None,
+                        };
+                        target.buffs.push(debuff);
+
+                        // Buff on attacker: gain AGI
+                        let buff = Buff {
+                            name: "essence_shift_buff".to_string(),
+                            remaining_ticks: dur_ticks,
+                            tick_effect: None,
+                            stacking: StackBehavior::Independent,
+                            dispel_type: DispelType::Undispellable,
+                            status: StatusFlags::default(),
+                            stat_modifier: Some(StatModifier {
+                                bonus_agi: a_gain,
+                                ..StatModifier::default()
+                            }),
+                            source_id: attacker.id,
+                            is_debuff: false,
+                            pierces_magic_immunity: false,
+                            damage_reflection_pct: 0.0,
+                            on_death: None,
+                        };
+                        attacker.buffs.push(buff);
                     }
                 }
             }
@@ -764,16 +751,23 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::EssenceShift {
-                    str_steal: vec![1.0],
-                    agi_steal: vec![1.0],
-                    int_steal: vec![1.0],
-                    agi_gain: vec![3.0],
-                    duration: vec![30.0],
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![aa2_data::EffectSpec {
+                    trigger: aa2_data::Trigger::OnAttack,
+                    targeting: aa2_data::TargetingSpec::AttackTarget,
+                    delivery: aa2_data::Delivery::Instant,
+                    payload: vec![aa2_data::Payload::StatSteal {
+                        str_steal: vec![1.0],
+                        agi_steal: vec![1.0],
+                        int_steal: vec![1.0],
+                        agi_gain: vec![3.0],
+                        duration: vec![30.0],
+                    }],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 1,
