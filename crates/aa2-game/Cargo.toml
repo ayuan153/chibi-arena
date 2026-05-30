@@ -2,7 +2,6 @@
 name = "aa2-game"
 version.workspace = true
 edition.workspace = true
-authors.workspace = true
 license.workspace = true
 description = "AA2 game loop: economy, shop, draft, rounds, and state management"
 
