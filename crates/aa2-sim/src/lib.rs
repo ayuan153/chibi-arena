@@ -929,7 +929,7 @@ impl Simulation {
     fn step_pending_effects(&mut self) {
         use pending::PendingEffectKind;
         use pending::PendingEffect;
-        use combat::{apply_armor, apply_magic_resistance};
+        use combat::apply_magic_resistance;
         use buff::{apply_buff, dispel, Buff, DispelType, StackBehavior, StatModifier, StatusFlags, TickEffect};
 
         let tick = self.tick;
@@ -1590,39 +1590,17 @@ impl Simulation {
                         let mut total_damage = 0.0f32;
                         let mut stun_duration_actual = 0.0f32;
                         for p in &payload_clone {
-                            match p {
-                                aa2_data::Payload::Damage { kind, base } => {
-                                    let idx = (lvl.saturating_sub(1) as usize).min(base.len().saturating_sub(1));
-                                    let raw = base[idx];
-                                    let actual = match kind {
-                                        aa2_data::DamageType::Physical => apply_armor(raw, self.units[target_idx].armor),
-                                        aa2_data::DamageType::Magical => {
-                                            apply_magic_resistance(raw, self.units[target_idx].magic_resistance)
-                                        }
-                                        aa2_data::DamageType::Pure => raw,
-                                    };
-                                    if actual > 0.0 {
-                                        self.units[target_idx].hp -= actual;
-                                        total_damage += actual;
-                                    }
+                            let outcome = crate::effect_spec::apply_payload_to_unit(
+                                p, lvl, caster_id, &mut self.units, target_idx,
+                            );
+                            match outcome {
+                                crate::effect_spec::PayloadOutcome::Damage { amount, .. } => {
+                                    total_damage += amount;
                                 }
-                                aa2_data::Payload::ApplyBuff(def) => {
-                                    let buff = crate::effect_spec::buff_from_def(def, lvl, caster_id);
-                                    let base_ticks = buff.remaining_ticks;
-                                    let sr = self.units[target_idx].status_resistance;
-                                    let actual_ticks = if def.is_debuff && sr > 0.0 {
-                                        (base_ticks as f32 * (1.0 - sr)) as u32
-                                    } else {
-                                        base_ticks
-                                    };
-                                    stun_duration_actual = actual_ticks as f32 / 30.0;
-                                    let buff = Buff { remaining_ticks: actual_ticks, ..buff };
-                                    apply_buff(&mut self.units[target_idx].buffs, buff);
+                                crate::effect_spec::PayloadOutcome::BuffApplied { duration_secs, .. } => {
+                                    stun_duration_actual = duration_secs;
                                 }
-                                aa2_data::Payload::Dispel { strength } => {
-                                    dispel(&mut self.units[target_idx].buffs, *strength);
-                                }
-                                aa2_data::Payload::Chain(_) => {}
+                                _ => {}
                             }
                         }
                         events.push(CombatEvent::WaveHit {

@@ -14,12 +14,45 @@ use crate::{CombatEvent, TICK_RATE};
 /// Maximum recursion depth for `Payload::Chain` sub-effects.
 pub const MAX_EFFECT_CHAIN_DEPTH: usize = 2;
 
+/// Outcome of applying a single payload to a unit.
+///
+/// Returned by `apply_payload_to_unit` so callers can emit the appropriate event
+/// (AbilityDamage for Instant, aggregated WaveHit for ExpandingWave) without
+/// duplicating mutation logic.
+pub enum PayloadOutcome {
+    /// Damage was dealt (after armor/MR/magic-immunity gating). `amount` may be 0 if gated.
+    Damage { amount: f32, damage_type: DamageType },
+    /// A buff/debuff was applied. `duration_secs` is the actual (status-resistance-adjusted) duration.
+    BuffApplied { name: String, duration_secs: f32 },
+    /// A dispel was performed.
+    Dispel,
+    /// Payload was skipped (magic-immune gate on debuff, empty vec, chain scaffold).
+    Skipped,
+}
+
 /// Construct a runtime `Buff` from a data-driven `BuffDef`.
 ///
 /// Picks the duration for the given ability level (1-indexed, clamped to last element).
 /// Converts seconds to ticks via `TICK_RATE` (30 Hz), truncating to match the sim-wide
 /// `(secs * 30.0) as u32` convention used by every other buff/pending duration.
 pub fn buff_from_def(def: &BuffDef, level: u8, source_id: u32) -> Buff {
+    debug_assert!(!def.duration.is_empty(), "BuffDef.duration must not be empty");
+    if def.duration.is_empty() {
+        // Safe no-op: zero-duration buff that will expire immediately
+        return Buff {
+            name: def.name.clone(),
+            remaining_ticks: 0,
+            tick_effect: None,
+            stacking: def.stacking.clone(),
+            dispel_type: def.dispel_type,
+            status: def.status,
+            stat_modifier: def.stat_modifier.clone(),
+            source_id,
+            is_debuff: def.is_debuff,
+            pierces_magic_immunity: def.pierces_magic_immunity,
+            damage_reflection_pct: def.damage_reflection_pct,
+        };
+    }
     let idx = (level.saturating_sub(1) as usize).min(def.duration.len().saturating_sub(1));
     let duration_secs = def.duration[idx];
     let remaining_ticks = (duration_secs * TICK_RATE) as u32;
@@ -41,6 +74,77 @@ pub fn buff_from_def(def: &BuffDef, level: u8, source_id: u32) -> Buff {
         is_debuff: def.is_debuff,
         pierces_magic_immunity: def.pierces_magic_immunity,
         damage_reflection_pct: def.damage_reflection_pct,
+    }
+}
+
+/// Apply a single payload to a target unit, performing the mutation (HP subtraction,
+/// buff application, dispel) and returning a `PayloadOutcome` describing what happened.
+///
+/// This is the single source of truth for payload math — both the Instant delivery path
+/// and the ExpandingWave path call this, differing only in how they emit events from the
+/// returned outcome.
+///
+/// Magic-immunity gating: Magical damage is zeroed; non-piercing debuffs are skipped.
+/// Status resistance: debuff duration is reduced by `(1 - status_resistance)`.
+/// Rounding: `(secs * 30.0) as u32` truncation (sim-wide convention).
+pub fn apply_payload_to_unit(
+    payload: &Payload,
+    level: u8,
+    caster_id: u32,
+    units: &mut [Unit],
+    target_idx: usize,
+) -> PayloadOutcome {
+    match payload {
+        Payload::Damage { kind, base } => {
+            debug_assert!(!base.is_empty(), "Payload::Damage base must not be empty");
+            if base.is_empty() {
+                return PayloadOutcome::Damage { amount: 0.0, damage_type: kind.clone() };
+            }
+            let idx = (level.saturating_sub(1) as usize).min(base.len().saturating_sub(1));
+            let raw = base[idx];
+            let actual = match kind {
+                DamageType::Physical => apply_armor(raw, units[target_idx].armor),
+                DamageType::Magical => {
+                    if active_status(&units[target_idx].buffs).magic_immune {
+                        0.0
+                    } else {
+                        apply_magic_resistance(raw, units[target_idx].magic_resistance)
+                    }
+                }
+                DamageType::Pure => raw,
+            };
+            if actual > 0.0 {
+                units[target_idx].hp -= actual;
+            }
+            PayloadOutcome::Damage { amount: actual, damage_type: kind.clone() }
+        }
+        Payload::ApplyBuff(def) => {
+            let is_debuff = def.is_debuff;
+            // Skip non-piercing debuffs on magic immune units
+            if is_debuff && !def.pierces_magic_immunity && active_status(&units[target_idx].buffs).magic_immune {
+                return PayloadOutcome::Skipped;
+            }
+            let buff = buff_from_def(def, level, caster_id);
+            // Apply status resistance to debuff duration
+            let buff = if is_debuff && units[target_idx].status_resistance > 0.0 {
+                let actual_ticks = (buff.remaining_ticks as f32 * (1.0 - units[target_idx].status_resistance)) as u32;
+                Buff { remaining_ticks: actual_ticks, ..buff }
+            } else {
+                buff
+            };
+            let name = buff.name.clone();
+            let duration_secs = buff.remaining_ticks as f32 / TICK_RATE;
+            apply_buff(&mut units[target_idx].buffs, buff);
+            PayloadOutcome::BuffApplied { name, duration_secs }
+        }
+        Payload::Dispel { strength } => {
+            dispel(&mut units[target_idx].buffs, *strength);
+            PayloadOutcome::Dispel
+        }
+        Payload::Chain(_child_spec) => {
+            // Chain is a scaffold — Rage/Ravage don't use it.
+            PayloadOutcome::Skipped
+        }
     }
 }
 
@@ -116,6 +220,10 @@ fn resolve_spec(
             }
         }
         Delivery::ExpandingWave { max_radius, speed } => {
+            debug_assert!(!max_radius.is_empty(), "ExpandingWave max_radius must not be empty");
+            if max_radius.is_empty() {
+                return;
+            }
             let radius_idx = (level.saturating_sub(1) as usize).min(max_radius.len().saturating_sub(1));
             let mr = max_radius[radius_idx];
             pending_effects.push(PendingEffect {
@@ -155,65 +263,35 @@ pub fn apply_payloads(
     depth: usize,
 ) {
     for payload in payloads {
-        match payload {
-            Payload::Damage { kind, base } => {
-                let idx = (level.saturating_sub(1) as usize).min(base.len().saturating_sub(1));
-                let raw = base[idx];
-                let actual = match kind {
-                    DamageType::Physical => apply_armor(raw, units[target_idx].armor),
-                    DamageType::Magical => {
-                        if active_status(&units[target_idx].buffs).magic_immune {
-                            0.0
-                        } else {
-                            apply_magic_resistance(raw, units[target_idx].magic_resistance)
-                        }
-                    }
-                    DamageType::Pure => raw,
-                };
-                if actual > 0.0 {
-                    units[target_idx].hp -= actual;
+        if let Payload::Chain(_child_spec) = payload {
+            if depth + 1 > MAX_EFFECT_CHAIN_DEPTH {
+                continue;
+            }
+            // Chain is a scaffold — Rage/Ravage don't use it.
+            continue;
+        }
+        let outcome = apply_payload_to_unit(payload, level, caster_id, units, target_idx);
+        match outcome {
+            PayloadOutcome::Damage { amount, damage_type } => {
+                if amount > 0.0 {
                     events.push(CombatEvent::AbilityDamage {
                         tick,
                         caster_id,
                         target_id: units[target_idx].id,
                         ability_name: ability_name.to_string(),
-                        damage: actual,
-                        damage_type: kind.clone(),
+                        damage: amount,
+                        damage_type,
                     });
                 }
             }
-            Payload::ApplyBuff(def) => {
-                let is_debuff = def.is_debuff;
-                // Skip non-piercing debuffs on magic immune units
-                if is_debuff && !def.pierces_magic_immunity && active_status(&units[target_idx].buffs).magic_immune {
-                    continue;
-                }
-                let buff = buff_from_def(def, level, caster_id);
-                // Apply status resistance to debuff duration
-                let buff = if is_debuff && units[target_idx].status_resistance > 0.0 {
-                    let actual_ticks = (buff.remaining_ticks as f32 * (1.0 - units[target_idx].status_resistance)) as u32;
-                    Buff { remaining_ticks: actual_ticks, ..buff }
-                } else {
-                    buff
-                };
-                let name = buff.name.clone();
-                apply_buff(&mut units[target_idx].buffs, buff);
+            PayloadOutcome::BuffApplied { name, .. } => {
                 events.push(CombatEvent::BuffApplied {
                     tick,
                     target_id: units[target_idx].id,
                     name,
                 });
             }
-            Payload::Dispel { strength } => {
-                dispel(&mut units[target_idx].buffs, *strength);
-            }
-            Payload::Chain(child_spec) => {
-                if depth + 1 > MAX_EFFECT_CHAIN_DEPTH {
-                    continue;
-                }
-                // Chain is a scaffold — Rage/Ravage don't use it.
-                let _ = child_spec;
-            }
+            PayloadOutcome::Dispel | PayloadOutcome::Skipped => {}
         }
     }
 }
