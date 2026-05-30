@@ -2,19 +2,23 @@
 
 ## Starter Prompt
 
-> Read these docs in order: `AGENTS.md`, `docs/design/architecture.md`, `docs/design/networking.md`,
+> Read these docs in order: `AGENTS.md`, `docs/design/architecture.md`,
+> `docs/design/composable-effects.md` (the design for your task), `docs/design/networking.md`,
 > `docs/handoffs/post-networking-handoff.md`, `docs/specs/mechanics-reference.md`. Confirm a green
 > baseline by running the gate steps **separately** (`cargo clippy --all-targets -- -D warnings`;
-> `cargo test`; `./dev test`). Then begin the **composable ability effects DESIGN NOTE** (in the style
-> of `docs/design/networking.md`) — check in with me before implementing.
+> `cargo test`; `./dev test`). Your task is **composable ability effects**: the design note is
+> written — get my sign-off on it first, then implement per its **§8 migration** (start with the
+> Rage + one-damage-ability proof, tests green at each step). Check in after the proof before
+> porting the rest.
 
 ---
 
 ## TL;DR
 
 Networking is **done**. Server-authoritative dumb-client state-sync over WebSocket is working
-end-to-end: lobby, bots, full game loop to `GameOver`. Your job: write the design note for
-**composable ability effects**, then implement it. Everything below is committed on `main`.
+end-to-end: lobby, bots, full game loop to `GameOver`. Your job: get sign-off on the
+**composable ability effects** design note (`docs/design/composable-effects.md`), then implement it.
+Everything below is committed on `main`.
 
 ---
 
@@ -112,6 +116,7 @@ cargo test                                   # 271 Rust tests
 | `AGENTS.md` | Dev process, commit convention, Definition of Done, Test Failure Protocol |
 | `docs/design/architecture.md` | System architecture (updated for networking) |
 | `docs/design/networking.md` | Networking design; **§10 lists deferred items** |
+| `docs/design/composable-effects.md` | **Composable ability effects design — your next task** |
 | `docs/runbooks/networked-smoke.md` | Smoke test + manual playtest runbook |
 | `docs/specs/mechanics-reference.md` | Engine formulas & combat mechanics |
 | `docs/project-plan.md` | Phased development plan |
@@ -120,15 +125,20 @@ cargo test                                   # 271 Rust tests
 
 ## Remaining Tracks
 
-### 1. Composable Ability Effects (next — needs design note first)
+### 1. Composable Ability Effects (next — design note written, awaiting sign-off)
 
-Today each ability is a bespoke `Effect` enum variant in `aa2-data`. This won't scale: abilities
-can't be added by data alone, and every new effect requires a Rust code change. The goal is a
-composable effect system where new abilities are defined purely in data (RON files).
+Today each ability is a bespoke `Effect` enum variant in `aa2-data` (15 variants; all 11 abilities
+are bespoke, none data-only). This won't scale: every new ability needs a Rust change across 3–6
+files. The goal is a composable, data-driven effect system (abilities authored in RON alone).
 
-**First step:** write a design note in `docs/design/` (in the style of `docs/design/networking.md`)
-covering: the effect DSL/composition model, how it maps to the existing sim, migration path from
-bespoke variants, and what it deliberately defers. Get sign-off before implementing.
+**The design note is written:** `docs/design/composable-effects.md` — four orthogonal axes
+(Trigger × Targeting × Delivery × Payload[]), reusing the already-composable buff system as the
+payload primitive, with an incremental migration that keeps the ~140 sim tests green.
+
+**Next step:** get sign-off on the design note, then implement per its **§8 migration** — add the
+composable types alongside the existing enum, port **Rage + one damage ability** as the proof, then
+port the remaining abilities one at a time (deleting each bespoke variant as it is ported). Do NOT
+big-bang it.
 
 ### 2. Networking Hardening (deferred — only if pushing toward production)
 
@@ -161,4 +171,5 @@ Add winner/survivors to the wire only if a future combat-summary overlay needs t
 
 1. Read the docs listed in the Starter Prompt section above.
 2. Confirm a green baseline: run the gate steps separately.
-3. Write the **composable ability effects design note** — check in before implementing.
+3. Get sign-off on `docs/design/composable-effects.md`, then implement per its §8 — port
+   Rage + one damage ability as the proof first, and check in before porting the rest.
