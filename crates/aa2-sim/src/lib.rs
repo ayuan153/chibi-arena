@@ -1667,46 +1667,51 @@ impl Simulation {
                 self.combat_log.extend(events);
             }
         }
-        // Glaives INT steal on kill
+        // Composable OnKill: proximity-attributed permanent effects (Glaives INT steal on kill)
         for &(dead_idx, _) in &newly_dead {
             let dead_pos = self.units[dead_idx].position;
             let dead_team = self.units[dead_idx].team;
-            // Find killer with Glaives steal
-            let mut killer_idx = None;
-            let mut steal_amount = 0.0_f32;
             'outer: for ki in 0..self.units.len() {
                 if ki == dead_idx || !self.units[ki].is_alive() || self.units[ki].team == dead_team { continue; }
-                for ability in &self.units[ki].abilities {
-                    if ability.level == 0 { continue; }
-                    for effect in &ability.def.effects {
-                        if let aa2_data::Effect::GlaivesOfWisdom { steal_int_on_kill, steal_radius: sr, .. } = effect {
-                            let s = aa2_data::value_at_level(steal_int_on_kill, ability.level);
-                            if s > 0.0 && self.units[ki].position.distance(dead_pos) <= *sr {
-                                killer_idx = Some(ki);
-                                steal_amount = s;
-                                break 'outer;
+                let ability_count = self.units[ki].abilities.len();
+                for ai in 0..ability_count {
+                    let level = self.units[ki].abilities[ai].level;
+                    if level == 0 { continue; }
+                    if let Some(ref specs) = self.units[ki].abilities[ai].def.effect_specs {
+                        for spec in specs {
+                            if spec.trigger != aa2_data::Trigger::OnKill { continue; }
+                            for payload in &spec.payload {
+                                if let aa2_data::Payload::PermanentIntSteal { amount, radius } = payload {
+                                    let s = aa2_data::value_at_level(amount, level);
+                                    if s > 0.0 && self.units[ki].position.distance(dead_pos) <= *radius {
+                                        let actual_steal = s.min(self.units[dead_idx].base_int - 1.0).max(0.0);
+                                        self.units[dead_idx].base_int -= actual_steal;
+                                        self.units[ki].base_int += s;
+                                        break 'outer;
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
-            if let Some(ki) = killer_idx {
-                let actual_steal = steal_amount.min(self.units[dead_idx].base_int - 1.0).max(0.0);
-                self.units[dead_idx].base_int -= actual_steal;
-                self.units[ki].base_int += steal_amount;
             }
         }
     }
 
     /// Apply Glaives bounce: a full attack at 50% physical damage + all modifiers on nearest enemy.
     fn apply_glaives_bounce(&mut self, attacker_idx: usize, target_idx: usize, _bonus_magical_damage: f32) {
-        // Find bounce_radius from attacker's Glaives ability
+        // Find bounce_radius from attacker's composable AttackBounce payload
         let mut bounce_radius = 0.0_f32;
         for ability in &self.units[attacker_idx].abilities {
             if ability.level == 0 { continue; }
-            for effect in &ability.def.effects {
-                if let aa2_data::Effect::GlaivesOfWisdom { bounce_radius: br, .. } = effect {
-                    bounce_radius = aa2_data::value_at_level(br, ability.level);
+            if let Some(ref specs) = ability.def.effect_specs {
+                for spec in specs {
+                    if spec.trigger != aa2_data::Trigger::OnAttack { continue; }
+                    for payload in &spec.payload {
+                        if let aa2_data::Payload::AttackBounce { radius } = payload {
+                            bounce_radius = aa2_data::value_at_level(radius, ability.level);
+                        }
+                    }
                 }
             }
         }

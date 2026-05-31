@@ -4,8 +4,8 @@
 //! and Essence Shift (stat steal). Integrates into the damage pipeline between
 //! base damage roll and armor reduction.
 
-use aa2_data::{Effect, Payload, Trigger, value_at_level};
-use crate::buff::{Buff, StackBehavior, DispelType, StatusFlags, StatModifier, active_status};
+use aa2_data::{Payload, Trigger, value_at_level};
+use crate::buff::{Buff, StackBehavior, DispelType, StatusFlags, StatModifier};
 use crate::unit::Unit;
 use crate::TICK_RATE;
 
@@ -95,6 +95,16 @@ pub(crate) fn process_attack_modifiers(
             }
             for spec in &specs {
                 if spec.trigger != Trigger::OnAttack { continue; }
+                // Mana cost gate: check and spend once per spec before any payloads
+                if !spec.mana_cost.is_empty() {
+                    // Magic-immune target blocks the entire spec (Glaives behavior)
+                    if target_is_magic_immune { continue; }
+                    let cost = value_at_level(&spec.mana_cost, level);
+                    if attacker.mana < cost {
+                        continue; // Can't afford — skip entire spec
+                    }
+                    attacker.mana -= cost;
+                }
                 for payload in &spec.payload {
                     match payload {
                         Payload::StackingBonusDamage { damage_per_stack, stack_duration } => {
@@ -123,33 +133,23 @@ pub(crate) fn process_attack_modifiers(
                                 }
                             }
                         }
+                        Payload::IntScaledDamage { factor }
+                            if !target_is_magic_immune => {
+                            // INT-scaled bonus magical damage (blocked by magic immunity)
+                            let total_int = crate::unit::effective_stat(attacker.base_int, 0.0);
+                            let f = value_at_level(factor, level);
+                            bonus_magical_damage += total_int * f;
+                            glaives_active = true;
+                        }
+                        Payload::AttackBounce { .. } => {
+                            // Bounce is handled post-damage; just mark glaives_active
+                            // (already set by IntScaledDamage above if mana was spent)
+                        }
                         _ => {}
                     }
                 }
             }
             continue;
-        }
-        let effects = attacker.abilities[ai].def.effects.clone();
-        for effect in &effects {
-            // Illusions skip effects that don't work on them
-            if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
-                continue;
-            }
-            if let Effect::GlaivesOfWisdom { int_damage_factor, mana_cost, .. } = effect {
-                // Glaives is totally blocked by magic immunity — becomes regular attack
-                if target_is_magic_immune { continue; }
-                let cost = value_at_level(mana_cost, level);
-                if attacker.mana < cost {
-                    continue; // Can't afford — skip
-                }
-                // TODO: check debuff immunity on target
-                attacker.mana -= cost;
-                // Total INT = base_int (floored at 1)
-                let total_int = crate::unit::effective_stat(attacker.base_int, 0.0);
-                let factor = value_at_level(int_damage_factor, level);
-                bonus_magical_damage += total_int * factor;
-                glaives_active = true;
-            }
         }
     }
 
@@ -198,6 +198,11 @@ pub fn post_attack_effects(
             }
             for spec in &specs {
                 if spec.trigger != Trigger::OnAttack { continue; }
+                // Mana cost gate (post-damage): check remaining mana matches pre-damage gate
+                if !spec.mana_cost.is_empty() {
+                    let cost = value_at_level(&spec.mana_cost, level);
+                    if attacker.mana < cost { continue; }
+                }
                 for payload in &spec.payload {
                     if let Payload::ApplyBuff(def) = payload {
                         // Skip zero-effect buffs (e.g. armor reduction = 0 at lower levels)
@@ -270,74 +275,6 @@ pub fn post_attack_effects(
                         };
                         attacker.buffs.push(buff);
                     }
-                }
-            }
-        }
-    }
-
-    // Glaives of Wisdom per-attack INT steal
-    // Only applies if target is NOT magic immune (already checked at process_attack_modifiers level via glaives_active)
-    let target_magic_immune = active_status(&target.buffs).magic_immune;
-    if !target_magic_immune {
-        let ability_count = attacker.abilities.len();
-        for ai in 0..ability_count {
-            let level = attacker.abilities[ai].level;
-            if level == 0 { continue; }
-            let effects = attacker.abilities[ai].def.effects.clone();
-            for effect in &effects {
-                if attacker.is_illusion && effect.illusion_interaction() == aa2_data::IllusionInteraction::Disabled {
-                    continue;
-                }
-                if let Effect::GlaivesOfWisdom { int_steal_per_attack, steal_duration, mana_cost, .. } = effect {
-                    let steal = value_at_level(int_steal_per_attack, level);
-                    if steal <= 0.0 { continue; }
-                    // Check mana (same cost as the damage portion)
-                    let cost = value_at_level(mana_cost, level);
-                    if attacker.mana < cost { continue; }
-                    // Note: mana already deducted in process_attack_modifiers
-
-                    let dur_secs = value_at_level(steal_duration, level);
-                    let dur_ticks = (dur_secs * TICK_RATE) as u32;
-
-                    // Debuff on target: lose INT (undispellable, does not pierce immunity)
-                    let debuff = Buff {
-                        name: "glaives_int_debuff".to_string(),
-                        remaining_ticks: dur_ticks,
-                        tick_effect: None,
-                        stacking: StackBehavior::Independent,
-                        dispel_type: DispelType::Undispellable,
-                        status: StatusFlags::default(),
-                        stat_modifier: Some(StatModifier {
-                            bonus_int: -steal,
-                            ..StatModifier::default()
-                        }),
-                        source_id: attacker.id,
-                        is_debuff: true,
-                        pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                    on_death: None,
-                    };
-                    target.buffs.push(debuff);
-
-                    // Buff on attacker: gain INT (undispellable)
-                    let buff = Buff {
-                        name: "glaives_int_buff".to_string(),
-                        remaining_ticks: dur_ticks,
-                        tick_effect: None,
-                        stacking: StackBehavior::Independent,
-                        dispel_type: DispelType::Undispellable,
-                        status: StatusFlags::default(),
-                        stat_modifier: Some(StatModifier {
-                            bonus_int: steal,
-                            ..StatModifier::default()
-                        }),
-                        source_id: attacker.id,
-                        is_debuff: false,
-                        pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                    on_death: None,
-                    };
-                    attacker.buffs.push(buff);
                 }
             }
         }
@@ -573,7 +510,7 @@ mod tests {
                             stack_duration: vec![15.0],
                         },
                     ],
-                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
                 }]),
             },
             cooldown_remaining: 0.0,
@@ -633,7 +570,7 @@ mod tests {
                             stack_duration: vec![15.0],
                         },
                     ],
-                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
                 }]),
             },
             cooldown_remaining: 0.0,
@@ -663,7 +600,7 @@ mod tests {
                         },
                         Payload::Lifesteal { pct: vec![0.0] },
                     ],
-                    illusion_interaction: aa2_data::IllusionInteraction::Full,
+                    illusion_interaction: aa2_data::IllusionInteraction::Full, mana_cost: vec![],
                 }]),
             },
             cooldown_remaining: 0.0,
@@ -716,7 +653,7 @@ mod tests {
                         },
                         Payload::Lifesteal { pct: vec![50.0] }, // 50%
                     ],
-                    illusion_interaction: aa2_data::IllusionInteraction::Full,
+                    illusion_interaction: aa2_data::IllusionInteraction::Full, mana_cost: vec![],
                 }]),
             },
             cooldown_remaining: 0.0,
@@ -766,7 +703,7 @@ mod tests {
                         agi_gain: vec![3.0],
                         duration: vec![30.0],
                     }],
-                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
                 }]),
             },
             cooldown_remaining: 0.0,
@@ -821,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_glaives_bonus_damage() {
-        use aa2_data::{AbilityDef, TargetType};
+        use aa2_data::{AbilityDef, TargetType, EffectSpec, Trigger, TargetingSpec, Delivery, Payload};
         use crate::cast::AbilityState;
 
         let mut rng = Rng::new(42);
@@ -836,23 +773,27 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::GlaivesOfWisdom {
-                    int_damage_factor: vec![0.8],
-                    mana_cost: vec![15.0],
-                    int_steal_per_attack: vec![2.0],
-                    steal_duration: vec![10.0],
-                    steal_int_on_kill: vec![0.0],
-                    steal_radius: 900.0,
-                    bounce_radius: vec![0.0],
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![EffectSpec {
+                    trigger: Trigger::OnAttack,
+                    targeting: TargetingSpec::AttackTarget,
+                    delivery: Delivery::Instant,
+                    payload: vec![
+                        Payload::IntScaledDamage { factor: vec![0.8] },
+                        Payload::AttackBounce { radius: vec![0.0] },
+                    ],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    mana_cost: vec![15.0],
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 1,
             casts: 0,
-            charges: None,        });
+            charges: None,
+        });
 
         let result = process_attack_modifiers(&mut attacker, 1, 50.0, 0, &mut rng, None, false);
         // 80% of 40 INT = 32 bonus magical damage
@@ -863,7 +804,7 @@ mod tests {
 
     #[test]
     fn test_glaives_mana_cost() {
-        use aa2_data::{AbilityDef, TargetType};
+        use aa2_data::{AbilityDef, TargetType, EffectSpec, Trigger, TargetingSpec, Delivery, Payload};
         use crate::cast::AbilityState;
 
         let mut rng = Rng::new(42);
@@ -878,23 +819,27 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::GlaivesOfWisdom {
-                    int_damage_factor: vec![0.8],
-                    mana_cost: vec![15.0],
-                    int_steal_per_attack: vec![2.0],
-                    steal_duration: vec![10.0],
-                    steal_int_on_kill: vec![0.0],
-                    steal_radius: 900.0,
-                    bounce_radius: vec![0.0],
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![EffectSpec {
+                    trigger: Trigger::OnAttack,
+                    targeting: TargetingSpec::AttackTarget,
+                    delivery: Delivery::Instant,
+                    payload: vec![
+                        Payload::IntScaledDamage { factor: vec![0.8] },
+                        Payload::AttackBounce { radius: vec![0.0] },
+                    ],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    mana_cost: vec![15.0],
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 1,
             casts: 0,
-            charges: None,        });
+            charges: None,
+        });
 
         let result = process_attack_modifiers(&mut attacker, 1, 50.0, 0, &mut rng, None, false);
         // No mana = no bonus damage
@@ -905,7 +850,7 @@ mod tests {
 
     #[test]
     fn test_glaives_bounce() {
-        use aa2_data::{AbilityDef, TargetType, Attribute, HeroDef};
+        use aa2_data::{AbilityDef, TargetType, Attribute, HeroDef, EffectSpec, Trigger, TargetingSpec, Delivery, Payload};
         use crate::cast::AbilityState;
         use crate::vec2::Vec2;
         use crate::{Simulation, CombatEvent};
@@ -941,23 +886,32 @@ mod tests {
                 mana_cost: vec![0.0],
                 cast_point: 0.0,
                 targeting: TargetType::Passive,
-                effects: vec![Effect::GlaivesOfWisdom {
-                    int_damage_factor: vec![1.0],
-                    mana_cost: vec![15.0],
-                    int_steal_per_attack: vec![2.0],
-                    steal_duration: vec![10.0],
-                    steal_int_on_kill: vec![0.0],
-                    steal_radius: 900.0,
-                    bounce_radius: vec![500.0], // Gaben bounce
-                }],
+                effects: vec![],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![EffectSpec {
+                    trigger: Trigger::OnAttack,
+                    targeting: TargetingSpec::AttackTarget,
+                    delivery: Delivery::Instant,
+                    payload: vec![
+                        Payload::IntScaledDamage { factor: vec![1.0] },
+                        Payload::StatSteal {
+                            str_steal: vec![0.0], agi_steal: vec![0.0],
+                            int_steal: vec![2.0], agi_gain: vec![0.0],
+                            duration: vec![10.0],
+                        },
+                        Payload::AttackBounce { radius: vec![500.0] },
+                    ],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    mana_cost: vec![15.0],
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 9,
             casts: 0,
-            charges: None,        });
+            charges: None,
+        });
 
         // Target at 100 units, secondary enemy at 200 units (within 500 of target)
         let target = Unit::from_hero_def(&hero, 1, 1, Vec2::new(100.0, 0.0));

@@ -202,6 +202,8 @@ pub enum Trigger {
     OnCast,
     /// Fires when the owning unit lands an auto-attack (passive on-hit modifier).
     OnAttack,
+    /// Fires when a nearby enemy dies (proximity-attributed, index-order scan).
+    OnKill,
 }
 
 /// Who/where the effect targets.
@@ -372,6 +374,31 @@ pub enum Payload {
         /// Duration of both debuff and buff in seconds, per ability level.
         duration: Vec<f32>,
     },
+    /// INT-scaled bonus magical damage (pre-damage phase of OnAttack).
+    ///
+    /// Deals `factor[level] * caster_INT` bonus magical damage. Blocked by magic immunity.
+    IntScaledDamage {
+        /// Damage factor per ability level (multiplied by caster's effective INT).
+        factor: Vec<f32>,
+    },
+    /// Attack bounce: a secondary 50%-physical full attack on the nearest enemy within radius.
+    ///
+    /// Fires a projectile from the primary target's position to the bounce target.
+    /// `glaives_active = false` on the bounce prevents recursive bouncing.
+    AttackBounce {
+        /// Bounce search radius per ability level (0 = no bounce).
+        radius: Vec<f32>,
+    },
+    /// Permanent stat steal on nearby kill (OnKill trigger).
+    ///
+    /// When an enemy dies within `radius`, the ability owner permanently gains INT
+    /// and the victim permanently loses it (clamped to base_int - 1).
+    PermanentIntSteal {
+        /// INT stolen per kill, per ability level.
+        amount: Vec<f32>,
+        /// Search radius (scalar, same for all levels).
+        radius: f32,
+    },
 }
 
 /// A composable effect specification: trigger + targeting + delivery + payloads.
@@ -388,6 +415,10 @@ pub struct EffectSpec {
     /// How this effect interacts with illusions (default: Disabled).
     #[serde(default)]
     pub illusion_interaction: IllusionInteraction,
+    /// Mana cost that gates the entire spec (empty = free). Checked and spent once
+    /// before any payloads fire. If the unit lacks sufficient mana, the spec is skipped.
+    #[serde(default)]
+    pub mana_cost: Vec<f32>,
 }
 
 /// How an effect interacts with illusions.
@@ -453,17 +484,6 @@ pub enum Effect {
     ApplyBuff { name: String, duration: f32 },
     Heal { base: Vec<f32> },
     Summon { unit: String, count: u32 },
-    /// Glaives of Wisdom: mana-cost attack modifier dealing bonus magical damage based on INT.
-    /// Does not pierce debuff immunity. Super steals INT on kill. Gaben bounces.
-    GlaivesOfWisdom {
-        int_damage_factor: Vec<f32>,
-        mana_cost: Vec<f32>,
-        int_steal_per_attack: Vec<f32>,  // INT stolen per hit (2/3/5)
-        steal_duration: Vec<f32>,         // duration of temp steal in seconds (10/20/40)
-        steal_int_on_kill: Vec<f32>,      // permanent INT on kill (0 base, 1 at Super)
-        steal_radius: f32,
-        bounce_radius: Vec<f32>,
-    },
     /// Spirit Lance: projectile that damages, slows, and spawns an illusion at target.
     SpiritLance {
         damage: Vec<f32>,
@@ -704,11 +724,6 @@ pub fn resolve_loadout(loadout: &Loadout, data_dir: &std::path::Path) -> Result<
 impl Effect {
     /// Whether this effect works on illusions.
     pub fn illusion_interaction(&self) -> IllusionInteraction {
-        match self {
-            // Attack modifiers that do NOT work on illusions
-            Effect::GlaivesOfWisdom { .. } => IllusionInteraction::Disabled,
-            // All other effects: disabled by default for illusions
-            _ => IllusionInteraction::Disabled,
-        }
+        IllusionInteraction::Disabled
     }
 }

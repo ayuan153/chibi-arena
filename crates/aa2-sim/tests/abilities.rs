@@ -62,7 +62,7 @@ fn dark_pact_ability() -> AbilityDef {
                 aa2_data::Payload::SelfDamage { pct: 0.3, non_lethal: true },
                 aa2_data::Payload::Dispel { strength: aa2_data::DispelType::StrongDispel },
             ],
-            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
         }]),
     }
 }
@@ -102,7 +102,7 @@ fn heavenly_grace_ability() -> AbilityDef {
                     on_death: None,
                 })),
             ],
-            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
         }]),
     }
 }
@@ -142,7 +142,7 @@ fn ravage_ability() -> AbilityDef {
                     on_death: None,
                 })),
             ],
-            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
         }]),
     }
 }
@@ -654,7 +654,7 @@ fn test_hg_dispels_on_cast() {
                     on_death: None,
                 })),
             ],
-            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
         }]),
     };
 
@@ -1739,18 +1739,25 @@ fn test_glaives_bounce_applies_modifiers() {
             mana_cost: vec![0.0],
             cast_point: 0.0,
             targeting: TargetType::Passive,
-            effects: vec![Effect::GlaivesOfWisdom {
-                int_damage_factor: vec![1.0],
-                int_steal_per_attack: vec![2.0],
-                steal_duration: vec![10.0],
-                mana_cost: vec![15.0],
-                steal_int_on_kill: vec![0.0],
-                steal_radius: 900.0,
-                bounce_radius: vec![500.0],
-            }],
+            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            effect_specs: Some(vec![aa2_data::EffectSpec {
+                trigger: aa2_data::Trigger::OnAttack,
+                targeting: aa2_data::TargetingSpec::AttackTarget,
+                delivery: aa2_data::Delivery::Instant,
+                payload: vec![
+                    aa2_data::Payload::IntScaledDamage { factor: vec![1.0] },
+                    aa2_data::Payload::StatSteal {
+                        str_steal: vec![0.0], agi_steal: vec![0.0],
+                        int_steal: vec![2.0], agi_gain: vec![0.0],
+                        duration: vec![10.0],
+                    },
+                    aa2_data::Payload::AttackBounce { radius: vec![500.0] },
+                ],
+                illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![15.0],
+            }]),
         },
         cooldown_remaining: 0.0,
         level: 9,
@@ -1778,7 +1785,7 @@ fn test_glaives_bounce_applies_modifiers() {
                         stack_duration: vec![15.0],
                     },
                 ],
-                illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
             }]),
         },
         cooldown_remaining: 0.0,
@@ -1848,18 +1855,25 @@ fn test_glaives_bounce_50_percent_physical() {
             mana_cost: vec![0.0],
             cast_point: 0.0,
             targeting: TargetType::Passive,
-            effects: vec![Effect::GlaivesOfWisdom {
-                int_damage_factor: vec![1.0],
-                int_steal_per_attack: vec![2.0],
-                steal_duration: vec![10.0],
-                mana_cost: vec![15.0],
-                steal_int_on_kill: vec![0.0],
-                steal_radius: 900.0,
-                bounce_radius: vec![500.0],
-            }],
+            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+            cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+            effect_specs: Some(vec![aa2_data::EffectSpec {
+                trigger: aa2_data::Trigger::OnAttack,
+                targeting: aa2_data::TargetingSpec::AttackTarget,
+                delivery: aa2_data::Delivery::Instant,
+                payload: vec![
+                    aa2_data::Payload::IntScaledDamage { factor: vec![1.0] },
+                    aa2_data::Payload::StatSteal {
+                        str_steal: vec![0.0], agi_steal: vec![0.0],
+                        int_steal: vec![2.0], agi_gain: vec![0.0],
+                        duration: vec![10.0],
+                    },
+                    aa2_data::Payload::AttackBounce { radius: vec![500.0] },
+                ],
+                illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![15.0],
+            }]),
         },
         cooldown_remaining: 0.0,
         level: 9,
@@ -1976,11 +1990,11 @@ fn burrowstrike_specs(damage: Vec<f32>, stun_duration: Vec<f32>, range: Vec<f32>
                         payload: vec![
                             Payload::DamageWithSourceMaxHp { kind: DamageType::Magical, base: caustic_finale_damage, max_hp_pct: 0.085 },
                         ],
-                        illusion_interaction: IllusionInteraction::Disabled,
+                        illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![],
                     })),
                 })),
             ],
-            illusion_interaction: IllusionInteraction::Disabled,
+            illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![],
         },
     ])
 }
@@ -2338,20 +2352,22 @@ fn test_glaives_blocked_by_magic_immunity() {
         mana_cost: vec![0.0],
         cast_point: 0.0,
         targeting: TargetType::Passive,
-        effects: vec![Effect::GlaivesOfWisdom {
-            int_damage_factor: vec![0.8],
-                int_steal_per_attack: vec![2.0],
-                steal_duration: vec![10.0],
-            mana_cost: vec![15.0],
-            steal_int_on_kill: vec![0.0],
-            steal_radius: 900.0,
-            bounce_radius: vec![0.0],
-        }],
+        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 0.0,
         cast_behavior: aa2_data::CastBehavior::default(),
-        max_charges: None, effect_specs: None,
+        max_charges: None,
+        effect_specs: Some(vec![aa2_data::EffectSpec {
+            trigger: aa2_data::Trigger::OnAttack,
+            targeting: aa2_data::TargetingSpec::AttackTarget,
+            delivery: aa2_data::Delivery::Instant,
+            payload: vec![
+                aa2_data::Payload::IntScaledDamage { factor: vec![0.8] },
+                aa2_data::Payload::AttackBounce { radius: vec![0.0] },
+            ],
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![15.0],
+        }]),
     };
 
     let mut attacker = Unit::from_hero_def(&hero, 0, 0, Vec2::new(0.0, 0.0));

@@ -130,9 +130,6 @@ pub fn execute_ability(
                     });
                 }
                 Effect::Summon { .. } => {}
-                Effect::GlaivesOfWisdom { .. } => {
-                    // Attack modifier — handled in the attack pipeline
-                }
                 Effect::SpiritLance { .. } => {
                     // Handled outside the per-target loop
                 }
@@ -521,7 +518,7 @@ mod tests {
                     on_death: None,
                     })),
                 ],
-                illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
             }]),
         };
         execute_ability(&ability, 1, 0, 0, Vec2::new(0.0, 0.0), None, None, &mut units, 10, &mut Vec::new());
@@ -582,7 +579,7 @@ mod tests {
                         agi_gain: vec![3.0],
                         duration: vec![30.0],
                     }],
-                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled, mana_cost: vec![],
                 }]),
             },
             cooldown_remaining: 0.0,

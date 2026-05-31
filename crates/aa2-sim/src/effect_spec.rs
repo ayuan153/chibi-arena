@@ -177,6 +177,18 @@ pub fn apply_payload_to_unit(
             // Handled directly by the attack pipeline (post_attack_effects).
             PayloadOutcome::Skipped
         }
+        Payload::IntScaledDamage { .. } => {
+            // Handled directly by the attack pipeline (process_attack_modifiers).
+            PayloadOutcome::Skipped
+        }
+        Payload::AttackBounce { .. } => {
+            // Handled directly by the attack pipeline (apply_glaives_bounce).
+            PayloadOutcome::Skipped
+        }
+        Payload::PermanentIntSteal { .. } => {
+            // Handled by OnKill dispatch in check_deaths.
+            PayloadOutcome::Skipped
+        }
     }
 }
 
