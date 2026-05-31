@@ -284,6 +284,12 @@ pub enum Delivery {
         fire_trail_duration: Vec<f32>,
         /// Stun duration on wall-pin per ability level (seconds).
         stun_duration: Vec<f32>,
+        /// Homing bounce radius per ability level (0 = no bounce). Used by Spirit Lance.
+        #[serde(default)]
+        bounce_radius: Vec<f32>,
+        /// Homing bounce count per ability level (0 = no bounce). Used by Spirit Lance.
+        #[serde(default)]
+        bounce_count: Vec<u32>,
     },
 }
 
@@ -399,6 +405,18 @@ pub enum Payload {
         /// Search radius (scalar, same for all levels).
         radius: f32,
     },
+    /// Spawn an illusion of the caster at the target's position.
+    ///
+    /// Reuses `Unit::spawn_illusion` with the given parameters.
+    /// Illusion abilities are filtered by `illusion_interaction`.
+    Spawn {
+        /// Illusion damage dealt multiplier per ability level (e.g. 0.20 = 20%).
+        damage_dealt: Vec<f32>,
+        /// Illusion damage taken multiplier (scalar, same for all levels).
+        damage_taken: f32,
+        /// Illusion duration in seconds per ability level.
+        duration: Vec<f32>,
+    },
 }
 
 /// A composable effect specification: trigger + targeting + delivery + payloads.
@@ -484,18 +502,6 @@ pub enum Effect {
     ApplyBuff { name: String, duration: f32 },
     Heal { base: Vec<f32> },
     Summon { unit: String, count: u32 },
-    /// Spirit Lance: projectile that damages, slows, and spawns an illusion at target.
-    SpiritLance {
-        damage: Vec<f32>,
-        slow_pct: Vec<f32>,
-        slow_duration: Vec<f32>,
-        projectile_speed: f32,
-        illusion_damage_dealt: Vec<f32>,
-        illusion_damage_taken: f32,
-        illusion_duration: Vec<f32>,
-        bounce_radius: Vec<f32>,
-        bounce_count: Vec<u32>,
-    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -4,7 +4,7 @@ use aa2_data::{AbilityDef, DamageType, Effect, TargetType};
 use crate::aoe::find_aoe_targets;
 use crate::buff::{active_status, apply_buff, Buff, DispelType, StackBehavior, StatusFlags};
 use crate::combat::{apply_armor, apply_magic_resistance};
-use crate::pending::{PendingEffect, PendingEffectKind};
+use crate::pending::PendingEffect;
 use crate::unit::Unit;
 use crate::vec2::Vec2;
 use crate::CombatEvent;
@@ -130,55 +130,7 @@ pub fn execute_ability(
                     });
                 }
                 Effect::Summon { .. } => {}
-                Effect::SpiritLance { .. } => {
-                    // Handled outside the per-target loop
-                }
             }
-        }
-    }
-
-    // Handle effects that don't iterate over targets
-    for effect in &ability.effects {
-        if let Effect::SpiritLance {
-            damage, slow_pct, slow_duration, projectile_speed,
-            illusion_damage_dealt, illusion_damage_taken, illusion_duration,
-            bounce_radius, bounce_count,
-        } = effect
-            && let Some(tid) = target_id
-        {
-            let dmg = value_at_level(damage, level);
-            let slow = value_at_level(slow_pct, level);
-            let slow_dur = value_at_level(slow_duration, level);
-            let ill_dealt = value_at_level(illusion_damage_dealt, level);
-            let ill_taken = *illusion_damage_taken;
-            let ill_dur_ticks = (value_at_level(illusion_duration, level) * 30.0) as u32;
-            let br = value_at_level(bounce_radius, level);
-            let bc = {
-                let idx = (level.saturating_sub(1) as usize).min(bounce_count.len().saturating_sub(1));
-                bounce_count[idx]
-            };
-            pending_effects.push(PendingEffect {
-                caster_id,
-                caster_team,
-                ability_name: ability.name.clone(),
-                kind: PendingEffectKind::SpiritLanceProjectile {
-                    target_id: tid,
-                    caster_id,
-                    caster_team,
-                    position: caster_pos,
-                    speed: *projectile_speed,
-                    damage: dmg,
-                    slow_pct: slow,
-                    slow_duration_secs: slow_dur,
-                    illusion_damage_dealt_pct: ill_dealt,
-                    illusion_damage_taken_pct: ill_taken,
-                    illusion_duration_ticks: ill_dur_ticks,
-                    bounce_radius: br,
-                    bounces_remaining: bc,
-                    already_hit: vec![tid],
-                },
-                delay_ticks_remaining: 0,
-            });
         }
     }
 

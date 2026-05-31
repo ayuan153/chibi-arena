@@ -6,21 +6,28 @@ use crate::vec2::Vec2;
 /// The kind of pending effect currently active.
 #[derive(Debug, Clone)]
 pub enum PendingEffectKind {
-    /// Spirit Lance: homing projectile that damages, slows, and spawns illusion.
-    SpiritLanceProjectile {
+    /// Composable homing projectile: tracks a target, applies payloads on hit,
+    /// optionally bounces to nearest not-yet-hit enemy within bounce_radius.
+    ComposableHomingProjectile {
+        /// Current target unit id.
         target_id: u32,
+        /// Caster unit id (for illusion spawn).
         caster_id: u32,
+        /// Caster team.
         caster_team: u8,
+        /// Current projectile position.
         position: Vec2,
+        /// Travel speed in units/sec.
         speed: f32,
-        damage: f32,
-        slow_pct: f32,
-        slow_duration_secs: f32,
-        illusion_damage_dealt_pct: f32,
-        illusion_damage_taken_pct: f32,
-        illusion_duration_ticks: u32,
+        /// Payloads to apply on hit.
+        payload: Vec<Payload>,
+        /// Ability level (for per-level payload values).
+        level: u8,
+        /// Bounce search radius (0 = no bounce).
         bounce_radius: f32,
+        /// Remaining bounces.
         bounces_remaining: u32,
+        /// IDs of units already hit (no double-hit).
         already_hit: Vec<u32>,
     },
     /// Generic composable pulsing AoE: fires multiple pulses from caster position,

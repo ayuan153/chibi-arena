@@ -947,34 +947,26 @@ impl Simulation {
             let ability_name = self.pending_effects[i].ability_name.clone();
 
             let remove = match &mut self.pending_effects[i].kind {
-                PendingEffectKind::SpiritLanceProjectile {
+                PendingEffectKind::ComposableHomingProjectile {
                     target_id,
                     caster_id: proj_caster_id,
                     caster_team: proj_caster_team,
                     position,
                     speed,
-                    damage,
-                    slow_pct,
-                    slow_duration_secs,
-                    illusion_damage_dealt_pct,
-                    illusion_damage_taken_pct,
-                    illusion_duration_ticks,
+                    payload,
+                    level,
                     bounce_radius,
                     bounces_remaining,
                     already_hit,
                 } => {
                     let tid = *target_id;
                     let spd = *speed;
-                    let dmg = *damage;
-                    let slow_p = *slow_pct;
-                    let slow_dur = *slow_duration_secs;
-                    let ill_dealt = *illusion_damage_dealt_pct;
-                    let ill_taken = *illusion_damage_taken_pct;
-                    let ill_dur = *illusion_duration_ticks;
+                    let lvl = *level;
                     let br = *bounce_radius;
                     let bc = *bounces_remaining;
                     let pcaster_id = *proj_caster_id;
                     let pcaster_team = *proj_caster_team;
+                    let payloads = payload.clone();
 
                     // Find target
                     let target_opt = self.units.iter().find(|u| u.id == tid && u.is_alive());
@@ -991,80 +983,86 @@ impl Simulation {
                         let target_idx = self.units.iter().position(|u| u.id == tid).unwrap();
                         let is_magic_immune = active_status(&self.units[target_idx].buffs).magic_immune;
 
+                        // Apply non-Spawn payloads (damage, slow)
                         if !is_magic_immune {
-                            // Deal magical damage
-                            let actual = apply_magic_resistance(dmg, self.units[target_idx].magic_resistance);
-                            self.units[target_idx].hp -= actual;
-                            events.push(CombatEvent::AbilityDamage {
-                                tick, caster_id: pcaster_id, target_id: tid,
-                                ability_name: ability_name.clone(),
-                                damage: actual, damage_type: DamageType::Magical,
-                            });
-
-                            // Apply slow debuff
-                            let slow_ticks = (slow_dur * 30.0) as u32;
-                            let slow_buff = Buff {
-                                name: "spirit_lance_slow".to_string(),
-                                remaining_ticks: slow_ticks,
-                                tick_effect: None,
-                                stacking: StackBehavior::RefreshDuration,
-                                dispel_type: DispelType::BasicDispel,
-                                status: StatusFlags::default(),
-                                stat_modifier: Some(StatModifier {
-                                    bonus_move_speed: -self.units[target_idx].move_speed * slow_p / 100.0,
-                                    ..StatModifier::default()
-                                }),
-                                source_id: pcaster_id,
-                                is_debuff: true,
-                                pierces_magic_immunity: false,
-                    damage_reflection_pct: 0.0,
-                    on_death: None,
-                            };
-                            apply_buff(&mut self.units[target_idx].buffs, slow_buff);
+                            for p in &payloads {
+                                match p {
+                                    aa2_data::Payload::Spawn { .. } => {} // handled below
+                                    aa2_data::Payload::ApplyBuff(def) => {
+                                        // Percentage-based move speed slow: bonus_move_speed
+                                        // stores the slow percentage, compute actual flat value
+                                        // from target's current move_speed.
+                                        let mut buff = crate::effect_spec::buff_from_def(def, lvl, pcaster_id);
+                                        if let Some(ref mut m) = buff.stat_modifier
+                                            && m.bonus_move_speed != 0.0
+                                        {
+                                            m.bonus_move_speed = -self.units[target_idx].move_speed * m.bonus_move_speed.abs() / 100.0;
+                                        }
+                                        apply_buff(&mut self.units[target_idx].buffs, buff);
+                                    }
+                                    _ => {
+                                        let outcome = crate::effect_spec::apply_payload_to_unit(
+                                            p, lvl, pcaster_id, &mut self.units, target_idx,
+                                        );
+                                        if let crate::effect_spec::PayloadOutcome::Damage { amount, damage_type } = outcome
+                                            && amount > 0.0
+                                        {
+                                            events.push(CombatEvent::AbilityDamage {
+                                                tick, caster_id: pcaster_id, target_id: tid,
+                                                ability_name: ability_name.clone(),
+                                                damage: amount, damage_type,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Spawn illusion of caster at target position
-                        let next_id = self.units.iter().map(|u| u.id).max().unwrap_or(0) + 1
-                            + self.units_to_spawn.len() as u32;
-                        if let Some(caster_unit) = self.units.iter().find(|u| u.id == pcaster_id) {
-                            let illusion = Unit::spawn_illusion(
-                                caster_unit, next_id, target_pos,
-                                ill_dealt, ill_taken, ill_dur, tick,
-                            );
-                            self.units_to_spawn.push(illusion);
+                        for p in &payloads {
+                            if let aa2_data::Payload::Spawn { damage_dealt, damage_taken, duration } = p {
+                                let ill_dealt = aa2_data::value_at_level(damage_dealt, lvl);
+                                let ill_taken = *damage_taken;
+                                let ill_dur_ticks = (aa2_data::value_at_level(duration, lvl) * 30.0) as u32;
+                                let next_id = self.units.iter().map(|u| u.id).max().unwrap_or(0) + 1
+                                    + self.units_to_spawn.len() as u32;
+                                if let Some(caster_unit) = self.units.iter().find(|u| u.id == pcaster_id) {
+                                    let illusion = Unit::spawn_illusion(
+                                        caster_unit, next_id, target_pos,
+                                        ill_dealt, ill_taken, ill_dur_ticks, tick,
+                                    );
+                                    self.units_to_spawn.push(illusion);
+                                }
+                            }
                         }
 
                         // Bounce logic
                         if bc > 0 && br > 0.0 {
                             let mut ah = already_hit.clone();
                             // Find nearest enemy within bounce_radius not already hit
-                            let mut best: Option<(u32, f32, Vec2)> = None;
+                            let mut best: Option<(u32, f32)> = None;
                             for u in self.units.iter() {
                                 if u.team == pcaster_team || !u.is_alive() { continue; }
                                 if ah.contains(&u.id) { continue; }
                                 let d = target_pos.distance(u.position);
                                 if d <= br && (best.is_none() || d < best.unwrap().1) {
-                                    best = Some((u.id, d, u.position));
+                                    best = Some((u.id, d));
                                 }
                             }
-                            if let Some((next_tid, _, _)) = best {
+                            if let Some((next_tid, _)) = best {
                                 ah.push(next_tid);
                                 self.pending_effects.push(PendingEffect {
                                     caster_id: pcaster_id,
                                     caster_team: pcaster_team,
                                     ability_name: ability_name.clone(),
-                                    kind: PendingEffectKind::SpiritLanceProjectile {
+                                    kind: PendingEffectKind::ComposableHomingProjectile {
                                         target_id: next_tid,
                                         caster_id: pcaster_id,
                                         caster_team: pcaster_team,
                                         position: target_pos,
                                         speed: spd,
-                                        damage: dmg,
-                                        slow_pct: slow_p,
-                                        slow_duration_secs: slow_dur,
-                                        illusion_damage_dealt_pct: ill_dealt,
-                                        illusion_damage_taken_pct: ill_taken,
-                                        illusion_duration_ticks: ill_dur,
+                                        payload: payloads.clone(),
+                                        level: lvl,
                                         bounce_radius: br,
                                         bounces_remaining: bc - 1,
                                         already_hit: ah,

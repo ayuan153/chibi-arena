@@ -279,10 +279,10 @@ impl Unit {
                 charges,
             });
         }
-        // Gaben bonuses: check if any SpiritLance ability is at level >= 9
+        // Gaben bonuses: check if any Spirit Lance ability is at level >= 9
         for (ability_def, level) in &config.abilities {
             if *level >= 9 {
-                let has_spirit_lance = ability_def.effects.iter().any(|e| matches!(e, aa2_data::Effect::SpiritLance { .. }));
+                let has_spirit_lance = ability_def.name == "Spirit Lance";
                 if has_spirit_lance {
                     unit.cooldown_reduction = 0.25;
                     match unit.primary_attribute {
