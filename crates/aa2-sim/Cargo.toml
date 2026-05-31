@@ -11,5 +11,9 @@ serde = { workspace = true }
 name = "aa2-sim-dev"
 path = "src/bin/dev.rs"
 
+[[bin]]
+name = "validate-data"
+path = "src/bin/validate-data.rs"
+
 [dev-dependencies]
 serde_json = { workspace = true }

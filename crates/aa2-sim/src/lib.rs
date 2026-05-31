@@ -1773,6 +1773,68 @@ impl Simulation {
     }
 }
 
+/// Validate all game data in the given directory.
+///
+/// Loads all data via `load_game_data`, runs `validate_ability_def` on each ability,
+/// cross-checks for duplicate `BuffDef.name` across abilities, and smoke-resolves each
+/// ability's effect_specs at every level. Returns an empty Vec if all data is valid.
+#[must_use = "returns validation errors that should be checked"]
+pub fn validate_data_dir(dir: &std::path::Path) -> Vec<String> {
+    let data = match aa2_data::load_game_data(dir) {
+        Ok(d) => d,
+        Err(e) => return vec![format!("load_game_data failed: {e}")],
+    };
+
+    let mut errors = Vec::new();
+
+    // Per-ability validation (sorted for deterministic error order)
+    let mut ability_names: Vec<&String> = data.abilities.keys().collect();
+    ability_names.sort();
+    for name in &ability_names {
+        let def = &data.abilities[*name];
+        if let Err(problems) = aa2_data::validate_ability_def(def) {
+            errors.extend(problems);
+        }
+    }
+
+    // Smoke-resolve: run each ability's effect_specs with dummy units
+    let Some(first_hero) = data.heroes.values().next() else {
+        errors.push("No heroes loaded for smoke-resolve".to_string());
+        return errors;
+    };
+    for ability_name in &ability_names {
+        let def = &data.abilities[*ability_name];
+        if let Some(specs) = &def.effect_specs {
+            let level_count = def.cooldown.len();
+            for level in 1..=level_count as u8 {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let caster = Unit::from_hero_def(first_hero, 0, 0, vec2::Vec2::new(100.0, 100.0));
+                    let target = Unit::from_hero_def(first_hero, 1, 1, vec2::Vec2::new(200.0, 100.0));
+                    let mut units = vec![caster, target];
+                    let mut pending = Vec::new();
+                    effect_spec::run_cast_effect_specs(
+                        specs,
+                        ability_name,
+                        level,
+                        0, 0,
+                        vec2::Vec2::new(100.0, 100.0),
+                        Some(1),
+                        Some(vec2::Vec2::new(200.0, 100.0)),
+                        &mut units,
+                        0,
+                        &mut pending,
+                    );
+                }));
+                if result.is_err() {
+                    errors.push(format!("{ability_name}: panic at level {level} during smoke-resolve"));
+                }
+            }
+        }
+    }
+
+    errors
+}
+
 /// Compute shortest signed angle difference from `from` to `to` (in radians).
 fn angle_diff(from: f32, to: f32) -> f32 {
     let mut d = to - from;

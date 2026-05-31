@@ -42,27 +42,14 @@ struct Central {
 
 impl Central {
     fn new(data_dir: &Path, seed: u64) -> Self {
-        let mut hero_defs = HashMap::new();
-        if let Ok(heroes) = aa2_data::load_all_heroes(&data_dir.join("heroes")) {
-            for h in heroes {
-                hero_defs.insert(h.name.clone(), h);
-            }
-        }
-
-        let mut ability_defs = HashMap::new();
-        if let Ok(entries) = std::fs::read_dir(data_dir.join("abilities")) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "ron")
-                    && let Ok(def) = aa2_data::load_ability_def(&path)
-                {
-                    ability_defs.insert(def.name.clone(), def);
-                }
-            }
-        }
-
-        let gods = aa2_data::load_all_gods(&data_dir.join("gods"))
-            .unwrap_or_else(|_| aa2_game::god::all_gods());
+        let (hero_defs, ability_defs, gods) = match aa2_data::load_game_data(data_dir) {
+            Ok(data) => (data.heroes, data.abilities, data.gods),
+            Err(_) => (
+                HashMap::new(),
+                HashMap::new(),
+                aa2_game::god::all_gods(),
+            ),
+        };
 
         Self {
             conns: HashMap::new(),

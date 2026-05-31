@@ -711,6 +711,238 @@ pub fn load_loadout(path: &std::path::Path) -> Result<Loadout, String> {
     ron::from_str(&contents).map_err(|e| format!("{path:?}: {e}"))
 }
 
+/// All game data loaded from a data directory.
+#[derive(Debug, Clone)]
+pub struct GameData {
+    /// Hero definitions keyed by name.
+    pub heroes: std::collections::HashMap<String, HeroDef>,
+    /// Ability definitions keyed by name.
+    pub abilities: std::collections::HashMap<String, AbilityDef>,
+    /// God definitions (sorted by name for determinism).
+    pub gods: Vec<God>,
+}
+
+/// Load all game data (heroes, abilities, gods) from the given data directory.
+///
+/// Reuses the existing per-type loaders. Heroes are keyed by name (unsorted iteration
+/// order in the HashMap, but pool-build code sorts explicitly). Gods are sorted by name.
+pub fn load_game_data(dir: &std::path::Path) -> Result<GameData, String> {
+    let heroes_list = load_all_heroes(&dir.join("heroes"))?;
+    let mut heroes = std::collections::HashMap::new();
+    for h in heroes_list {
+        heroes.insert(h.name.clone(), h);
+    }
+
+    let mut abilities = std::collections::HashMap::new();
+    let entries = std::fs::read_dir(dir.join("abilities"))
+        .map_err(|e| format!("{:?}/abilities: {e}", dir))?;
+    for entry in entries {
+        let path = entry.map_err(|e| format!("{:?}/abilities: {e}", dir))?.path();
+        if path.extension().is_some_and(|e| e == "ron") {
+            let def = load_ability_def(&path)?;
+            abilities.insert(def.name.clone(), def);
+        }
+    }
+
+    let gods = load_all_gods(&dir.join("gods"))?;
+
+    Ok(GameData { heroes, abilities, gods })
+}
+
+/// Validate a single ability definition (pure, no I/O).
+///
+/// Checks:
+/// - Every EffectSpec has a non-empty payload
+/// - Per-level Vec<f32> fields are not shorter than the ability's level count
+/// - Chain/on_death recursion depth <= MAX_EFFECT_CHAIN_DEPTH (2)
+/// - No duplicate BuffDef.name within the ability
+///
+/// Returns `Ok(())` if valid, or `Err(problems)` with all detected issues.
+pub fn validate_ability_def(def: &AbilityDef) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    let name = &def.name;
+    let level_count = def.cooldown.len();
+
+    // Check effect_specs
+    if let Some(specs) = &def.effect_specs {
+        let mut buff_names: Vec<String> = Vec::new();
+        for (si, spec) in specs.iter().enumerate() {
+            if spec.payload.is_empty() {
+                errors.push(format!("{name}: effect_specs[{si}] has empty payload"));
+            }
+            // Check per-level vecs in spec
+            check_spec_vecs(spec, name, si, level_count, &mut errors);
+            // Check payloads for per-level vecs and chain depth
+            for (pi, payload) in spec.payload.iter().enumerate() {
+                check_payload_vecs(payload, name, &format!("effect_specs[{si}].payload[{pi}]"), level_count, &mut errors);
+                check_chain_depth(payload, name, &format!("effect_specs[{si}].payload[{pi}]"), 0, &mut errors);
+                collect_buff_names(payload, &mut buff_names);
+            }
+            // Check mana_cost vec if non-empty
+            if !spec.mana_cost.is_empty() && spec.mana_cost.len() < level_count {
+                errors.push(format!("{name}: effect_specs[{si}].mana_cost len {} < level_count {level_count}", spec.mana_cost.len()));
+            }
+        }
+        // Check duplicate buff names within ability
+        buff_names.sort();
+        for w in buff_names.windows(2) {
+            if w[0] == w[1] {
+                errors.push(format!("{name}: duplicate BuffDef.name '{}' within ability", w[0]));
+            }
+        }
+    }
+
+    if errors.is_empty() { Ok(()) } else { Err(errors) }
+}
+
+fn check_spec_vecs(spec: &EffectSpec, ability_name: &str, si: usize, level_count: usize, errors: &mut Vec<String>) {
+    match &spec.delivery {
+        Delivery::ExpandingWave { max_radius, .. } => {
+            check_vec_len(max_radius, ability_name, &format!("effect_specs[{si}].delivery.max_radius"), level_count, errors);
+        }
+        Delivery::DelayedPulse { radius, .. } => {
+            check_vec_len(radius, ability_name, &format!("effect_specs[{si}].delivery.radius"), level_count, errors);
+        }
+        Delivery::CasterTravel { range, .. } => {
+            check_vec_len(range, ability_name, &format!("effect_specs[{si}].delivery.range"), level_count, errors);
+        }
+        Delivery::Aoe { radius } => {
+            check_vec_len(radius, ability_name, &format!("effect_specs[{si}].delivery.radius"), level_count, errors);
+        }
+        Delivery::Projectile { range, wall_bounces, fire_trail_dps, fire_trail_slow, fire_trail_duration, stun_duration, bounce_radius, bounce_count, .. } => {
+            check_vec_len(range, ability_name, &format!("effect_specs[{si}].delivery.range"), level_count, errors);
+            check_vec_len_u32(wall_bounces, ability_name, &format!("effect_specs[{si}].delivery.wall_bounces"), level_count, errors);
+            check_vec_len(fire_trail_dps, ability_name, &format!("effect_specs[{si}].delivery.fire_trail_dps"), level_count, errors);
+            check_vec_len(fire_trail_slow, ability_name, &format!("effect_specs[{si}].delivery.fire_trail_slow"), level_count, errors);
+            check_vec_len(fire_trail_duration, ability_name, &format!("effect_specs[{si}].delivery.fire_trail_duration"), level_count, errors);
+            check_vec_len(stun_duration, ability_name, &format!("effect_specs[{si}].delivery.stun_duration"), level_count, errors);
+            if !bounce_radius.is_empty() {
+                check_vec_len(bounce_radius, ability_name, &format!("effect_specs[{si}].delivery.bounce_radius"), level_count, errors);
+            }
+            if !bounce_count.is_empty() {
+                check_vec_len_u32(bounce_count, ability_name, &format!("effect_specs[{si}].delivery.bounce_count"), level_count, errors);
+            }
+        }
+        Delivery::Instant => {}
+    }
+}
+
+fn check_payload_vecs(payload: &Payload, ability_name: &str, path: &str, level_count: usize, errors: &mut Vec<String>) {
+    match payload {
+        Payload::Damage { base, .. } => {
+            check_vec_len(base, ability_name, &format!("{path}.base"), level_count, errors);
+        }
+        Payload::Heal { base } => {
+            check_vec_len(base, ability_name, &format!("{path}.base"), level_count, errors);
+        }
+        Payload::ApplyBuff(def) => {
+            if !def.duration.is_empty() {
+                check_vec_len(&def.duration, ability_name, &format!("{path}.buff.duration"), level_count, errors);
+            }
+        }
+        Payload::Chain(spec) => {
+            for (pi, p) in spec.payload.iter().enumerate() {
+                check_payload_vecs(p, ability_name, &format!("{path}.chain.payload[{pi}]"), level_count, errors);
+            }
+        }
+        Payload::StackingBonusDamage { damage_per_stack, stack_duration } => {
+            check_vec_len(damage_per_stack, ability_name, &format!("{path}.damage_per_stack"), level_count, errors);
+            check_vec_len(stack_duration, ability_name, &format!("{path}.stack_duration"), level_count, errors);
+        }
+        Payload::Crit { proc_chance, crit_min, crit_max } => {
+            check_vec_len(proc_chance, ability_name, &format!("{path}.proc_chance"), level_count, errors);
+            check_vec_len(crit_min, ability_name, &format!("{path}.crit_min"), level_count, errors);
+            check_vec_len(crit_max, ability_name, &format!("{path}.crit_max"), level_count, errors);
+        }
+        Payload::Lifesteal { pct } => {
+            check_vec_len(pct, ability_name, &format!("{path}.pct"), level_count, errors);
+        }
+        Payload::StatSteal { str_steal, agi_steal, int_steal, agi_gain, duration } => {
+            check_vec_len(str_steal, ability_name, &format!("{path}.str_steal"), level_count, errors);
+            check_vec_len(agi_steal, ability_name, &format!("{path}.agi_steal"), level_count, errors);
+            check_vec_len(int_steal, ability_name, &format!("{path}.int_steal"), level_count, errors);
+            check_vec_len(agi_gain, ability_name, &format!("{path}.agi_gain"), level_count, errors);
+            check_vec_len(duration, ability_name, &format!("{path}.duration"), level_count, errors);
+        }
+        Payload::IntScaledDamage { factor } => {
+            check_vec_len(factor, ability_name, &format!("{path}.factor"), level_count, errors);
+        }
+        Payload::AttackBounce { radius } => {
+            check_vec_len(radius, ability_name, &format!("{path}.radius"), level_count, errors);
+        }
+        Payload::PermanentIntSteal { amount, .. } => {
+            check_vec_len(amount, ability_name, &format!("{path}.amount"), level_count, errors);
+        }
+        Payload::Spawn { damage_dealt, duration, .. } => {
+            check_vec_len(damage_dealt, ability_name, &format!("{path}.damage_dealt"), level_count, errors);
+            check_vec_len(duration, ability_name, &format!("{path}.duration"), level_count, errors);
+        }
+        Payload::DamageWithSourceMaxHp { base, .. } => {
+            check_vec_len(base, ability_name, &format!("{path}.base"), level_count, errors);
+        }
+        Payload::SelfDamage { .. } | Payload::Dispel { .. } => {}
+    }
+}
+
+const MAX_CHAIN_DEPTH: usize = 2;
+
+fn check_chain_depth(payload: &Payload, ability_name: &str, path: &str, depth: usize, errors: &mut Vec<String>) {
+    match payload {
+        Payload::Chain(spec) => {
+            if depth + 1 > MAX_CHAIN_DEPTH {
+                errors.push(format!("{ability_name}: {path} Chain depth exceeds {MAX_CHAIN_DEPTH}"));
+            } else {
+                for (pi, p) in spec.payload.iter().enumerate() {
+                    check_chain_depth(p, ability_name, &format!("{path}.chain.payload[{pi}]"), depth + 1, errors);
+                }
+            }
+        }
+        Payload::ApplyBuff(def) => {
+            if let Some(on_death) = &def.on_death {
+                if depth + 1 > MAX_CHAIN_DEPTH {
+                    errors.push(format!("{ability_name}: {path} on_death depth exceeds {MAX_CHAIN_DEPTH}"));
+                } else {
+                    for (pi, p) in on_death.payload.iter().enumerate() {
+                        check_chain_depth(p, ability_name, &format!("{path}.on_death.payload[{pi}]"), depth + 1, errors);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_buff_names(payload: &Payload, names: &mut Vec<String>) {
+    match payload {
+        Payload::ApplyBuff(def) => {
+            names.push(def.name.clone());
+            if let Some(on_death) = &def.on_death {
+                for p in &on_death.payload {
+                    collect_buff_names(p, names);
+                }
+            }
+        }
+        Payload::Chain(spec) => {
+            for p in &spec.payload {
+                collect_buff_names(p, names);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn check_vec_len(v: &[f32], ability_name: &str, field: &str, level_count: usize, errors: &mut Vec<String>) {
+    if v.len() > 1 && v.len() < level_count {
+        errors.push(format!("{ability_name}: {field} len {} < level_count {level_count}", v.len()));
+    }
+}
+
+fn check_vec_len_u32(v: &[u32], ability_name: &str, field: &str, level_count: usize, errors: &mut Vec<String>) {
+    if v.len() > 1 && v.len() < level_count {
+        errors.push(format!("{ability_name}: {field} len {} < level_count {level_count}", v.len()));
+    }
+}
+
 /// Resolve a `Loadout` into a `UnitConfig` by loading hero and ability files from `data_dir`.
 pub fn resolve_loadout(loadout: &Loadout, data_dir: &std::path::Path) -> Result<UnitConfig, String> {
     let hero_path = data_dir.join("heroes").join(format!("{}.ron", loadout.hero));

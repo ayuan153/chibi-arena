@@ -28,6 +28,17 @@ pub struct GameManager {
     last_phase: String,
     net: Option<net_client::NetClient>,
     net_state: net_client::NetState,
+    /// Data directory path for hot-reload (debug only).
+    #[cfg(debug_assertions)]
+    data_path: Option<std::path::PathBuf>,
+    /// Mtime snapshot of RON files for change detection (debug only).
+    #[cfg(debug_assertions)]
+    reload_mtime_snapshot: Vec<(std::path::PathBuf, std::time::SystemTime)>,
+    /// Accumulated time since last reload check (debug only).
+    #[cfg(debug_assertions)]
+    reload_timer: f32,
+    /// Staged reload data — applied at the start of the next game, never mid-match.
+    pending_reload: Option<aa2_data::GameData>,
 }
 
 #[godot_api]
@@ -40,24 +51,26 @@ impl GameManager {
         let data_path_str = data_path.to_string();
         let data_dir = std::path::Path::new(&data_path_str);
 
-        // Load hero defs
-        if let Ok(heroes) = aa2_data::load_all_heroes(&data_dir.join("heroes")) {
-            for h in heroes {
-                self.hero_defs.insert(h.name.clone(), h);
-            }
-        }
-
-        // Load ability defs
-        if let Ok(entries) = std::fs::read_dir(data_dir.join("abilities")) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "ron")
-                    && let Ok(def) = aa2_data::load_ability_def(&path)
-                {
-                    self.ability_defs.insert(def.name.clone(), def);
+        // Use staged reload if available, otherwise load fresh
+        let data = match self.pending_reload.take() {
+            Some(d) => d,
+            None => match aa2_data::load_game_data(data_dir) {
+                Ok(d) => d,
+                Err(e) => {
+                    godot_print!("[AA2] Failed to load game data: {e}");
+                    self.gods = god::all_gods();
+                    // Fall through with empty defs — pool/game still created below
+                    aa2_data::GameData {
+                        heroes: HashMap::new(),
+                        abilities: HashMap::new(),
+                        gods: god::all_gods(),
+                    }
                 }
-            }
-        }
+            },
+        };
+        self.hero_defs = data.heroes;
+        self.ability_defs = data.abilities;
+        self.gods = data.gods;
 
         // Build pool and ultimates
         let ultimates: HashSet<String> = self.ability_defs.iter()
@@ -69,9 +82,6 @@ impl GameManager {
             .collect();
         let pool = AbilityPool::from_counts(pool_counts);
 
-        // Load gods
-        self.gods = aa2_data::load_all_gods(&data_dir.join("gods")).unwrap_or_else(|_| god::all_gods());
-
         let config = GameConfig {
             auto_advance: false,
             ..GameConfig::default()
@@ -81,6 +91,14 @@ impl GameManager {
         self.game = Some(game);
         self.rng = Some(StdRng::seed_from_u64(seed as u64));
         self.last_phase.clear();
+
+        // Store data path for hot-reload
+        #[cfg(debug_assertions)]
+        {
+            self.data_path = Some(std::path::PathBuf::from(&data_path_str));
+            self.reload_mtime_snapshot = scan_ron_mtimes(data_dir);
+            self.reload_timer = 0.0;
+        }
 
         // Mark extra players as dead
         if let Some(ref mut game) = self.game {
@@ -259,6 +277,43 @@ impl GameManager {
             }
             return;
         }
+
+        // Hot-reload: poll RON file mtimes ~every 0.5s (debug + local only)
+        #[cfg(debug_assertions)]
+        {
+            self.reload_timer += dt;
+            if self.reload_timer >= 0.5 {
+                self.reload_timer = 0.0;
+                if let Some(ref data_path) = self.data_path {
+                    let current = scan_ron_mtimes(data_path);
+                    if current != self.reload_mtime_snapshot {
+                        match aa2_data::load_game_data(data_path) {
+                            Ok(data) => {
+                                // Validate all abilities before staging
+                                let mut valid = true;
+                                for def in data.abilities.values() {
+                                    if aa2_data::validate_ability_def(def).is_err() {
+                                        valid = false;
+                                        break;
+                                    }
+                                }
+                                if valid {
+                                    self.pending_reload = Some(data);
+                                    godot_print!("[AA2] RON reload staged — applies next game");
+                                } else {
+                                    godot_print!("[AA2] Reload rejected: validation errors in abilities");
+                                }
+                            }
+                            Err(e) => {
+                                godot_print!("[AA2] Reload failed: {e}");
+                            }
+                        }
+                        self.reload_mtime_snapshot = current;
+                    }
+                }
+            }
+        }
+
         let mut should_generate_draft = false;
 
         if let (Some(game), Some(rng)) = (&mut self.game, &mut self.rng) {
@@ -829,4 +884,27 @@ fn combat_event_to_dict(event: &aa2_sim::CombatEvent) -> VarDictionary {
         }
     }
     d
+}
+
+/// Scan all `.ron` files in the data directory (heroes/, abilities/, gods/) and return
+/// their paths + modification times. Used for hot-reload change detection.
+#[cfg(debug_assertions)]
+fn scan_ron_mtimes(data_dir: &std::path::Path) -> Vec<(std::path::PathBuf, std::time::SystemTime)> {
+    let mut result = Vec::new();
+    for subdir in &["heroes", "abilities", "gods"] {
+        let dir = data_dir.join(subdir);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "ron")
+                    && let Ok(meta) = std::fs::metadata(&path)
+                    && let Ok(mtime) = meta.modified()
+                {
+                    result.push((path, mtime));
+                }
+            }
+        }
+    }
+    result.sort_by(|a, b| a.0.cmp(&b.0));
+    result
 }
