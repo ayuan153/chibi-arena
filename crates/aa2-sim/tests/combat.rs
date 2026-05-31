@@ -72,7 +72,7 @@ fn test_io_instant_turn_rate_vs_slow_hero() {
     use aa2_sim::unit::Unit;
     use aa2_sim::cast::AbilityState;
     use aa2_sim::{Simulation, CombatEvent};
-    use aa2_data::{AbilityDef, DamageType, Effect, TargetType};
+    use aa2_data::{AbilityDef, DamageType, TargetType};
 
     // Create a simple targeted ability
     let ability = AbilityDef {
@@ -81,10 +81,17 @@ fn test_io_instant_turn_rate_vs_slow_hero() {
         mana_cost: vec![50.0],
         cast_point: 0.3,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
-        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+        cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+        effect_specs: Some(vec![aa2_data::EffectSpec {
+            trigger: aa2_data::Trigger::OnCast,
+            targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
+            delivery: aa2_data::Delivery::Instant,
+            payload: vec![aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+            illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+            mana_cost: vec![],
+        }]),
     };
 
     // Io: instant turn rate (999.0)

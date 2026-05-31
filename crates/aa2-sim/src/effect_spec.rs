@@ -22,6 +22,8 @@ pub const MAX_EFFECT_CHAIN_DEPTH: usize = 2;
 pub enum PayloadOutcome {
     /// Damage was dealt (after armor/MR/magic-immunity gating). `amount` may be 0 if gated.
     Damage { amount: f32, damage_type: DamageType },
+    /// A heal was applied (clamped to max_hp).
+    Heal { amount: f32 },
     /// A buff/debuff was applied. `duration_secs` is the actual (status-resistance-adjusted) duration.
     BuffApplied { name: String, duration_secs: f32 },
     /// A dispel was performed.
@@ -119,6 +121,17 @@ pub fn apply_payload_to_unit(
                 units[target_idx].hp -= actual;
             }
             PayloadOutcome::Damage { amount: actual, damage_type: kind.clone() }
+        }
+        Payload::Heal { base } => {
+            if base.is_empty() {
+                return PayloadOutcome::Skipped;
+            }
+            let idx = (level.saturating_sub(1) as usize).min(base.len().saturating_sub(1));
+            let raw = base[idx];
+            let before = units[target_idx].hp;
+            units[target_idx].hp = (units[target_idx].hp + raw).min(units[target_idx].max_hp);
+            let healed = units[target_idx].hp - before;
+            PayloadOutcome::Heal { amount: healed }
         }
         Payload::ApplyBuff(def) => {
             let is_debuff = def.is_debuff;
@@ -627,6 +640,13 @@ pub fn apply_payloads(
                 });
             }
             PayloadOutcome::Dispel | PayloadOutcome::Skipped => {}
+            PayloadOutcome::Heal { amount } => {
+                events.push(CombatEvent::Heal {
+                    tick,
+                    target_id: units[target_idx].id,
+                    amount,
+                });
+            }
         }
     }
 }

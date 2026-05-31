@@ -15,7 +15,6 @@ AbilityDef(
     mana_cost: [65.0],
     cast_point: 0.0,  // Instant cast - no animation
     targeting: NoTarget,
-    effects: [],
     effect_specs: Some([
         EffectSpec(
             trigger: OnCast,

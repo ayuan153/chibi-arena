@@ -15,7 +15,6 @@ AbilityDef(
     mana_cost: [100.0, 110.0, 130.0, 130.0, 130.0, 130.0, 130.0, 130.0, 130.0],
     cast_point: 0.0,
     targeting: SingleEnemy,
-    effects: [],
     effect_specs: Some([
         EffectSpec(
             trigger: OnCast,

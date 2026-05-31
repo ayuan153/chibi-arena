@@ -12,7 +12,6 @@ AbilityDef(
     mana_cost: [0.0],
     cast_point: 0.0,
     targeting: Passive,
-    effects: [],
     description: "Each attack steals attributes from the target, gaining agility.",
     aoe_shape: None,
     cast_range: 0.0,

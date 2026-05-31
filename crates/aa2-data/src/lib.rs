@@ -303,6 +303,11 @@ pub enum Payload {
         /// Base damage per ability level.
         base: Vec<f32>,
     },
+    /// Heal the target (clamped to max_hp).
+    Heal {
+        /// Base heal per ability level.
+        base: Vec<f32>,
+    },
     /// Apply a buff/debuff.
     ApplyBuff(Box<BuffDef>),
     /// Dispel debuffs up to the given strength.
@@ -496,13 +501,7 @@ pub enum AoeShape {
     Line { width: f32, length: f32 },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum Effect {
-    Damage { kind: DamageType, base: Vec<f32> },
-    ApplyBuff { name: String, duration: f32 },
-    Heal { base: Vec<f32> },
-    Summon { unit: String, count: u32 },
-}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HeroDef {
@@ -537,7 +536,6 @@ pub struct AbilityDef {
     pub mana_cost: Vec<f32>,
     pub cast_point: f32,
     pub targeting: TargetType,
-    pub effects: Vec<Effect>,
     pub description: String,
     #[serde(default)]
     pub is_ultimate: bool,
@@ -553,8 +551,7 @@ pub struct AbilityDef {
     /// If set, ability uses a charge system instead of normal cooldown.
     #[serde(default)]
     pub max_charges: Option<u32>,
-    /// If Some, this ability uses the composable resolver and the legacy
-    /// `effects` Vec is ignored during execution.
+    /// Composable effect specs — the ONLY ability dispatch path.
     #[serde(default)]
     pub effect_specs: Option<Vec<EffectSpec>>,
 }
@@ -588,7 +585,7 @@ pub struct StatBonuses {
 pub struct ItemDef {
     pub name: String,
     pub tier: u8,
-    pub effects: Vec<Effect>,
+    pub effect_specs: Option<Vec<EffectSpec>>,
     pub stat_bonuses: StatBonuses,
 }
 
@@ -727,9 +724,4 @@ pub fn resolve_loadout(loadout: &Loadout, data_dir: &std::path::Path) -> Result<
     Ok(config)
 }
 
-impl Effect {
-    /// Whether this effect works on illusions.
-    pub fn illusion_interaction(&self) -> IllusionInteraction {
-        IllusionInteraction::Disabled
-    }
-}
+

@@ -329,10 +329,6 @@ impl Unit {
         illusion.hp = illusion.max_hp;
         // Keep only passive abilities that work on illusions (crits, lifesteal)
         illusion.abilities.retain(|a| {
-            // Legacy path: check effects
-            if a.def.effects.iter().any(|e| e.illusion_interaction() == aa2_data::IllusionInteraction::Full) {
-                return true;
-            }
             // Composable path: check effect_specs
             if let Some(specs) = &a.def.effect_specs {
                 return specs.iter().any(|s| s.illusion_interaction == aa2_data::IllusionInteraction::Full);

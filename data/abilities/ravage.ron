@@ -12,7 +12,6 @@ AbilityDef(
     mana_cost: [125.0, 225.0, 325.0, 325.0, 325.0, 325.0, 325.0, 325.0, 325.0],
     cast_point: 0.3,
     targeting: NoTarget,
-    effects: [],
     description: "Slams the ground, sending a wave that stuns and damages all enemies.",
     is_ultimate: true,
     aoe_shape: None,

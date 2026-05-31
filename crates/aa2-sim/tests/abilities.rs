@@ -1,7 +1,7 @@
 //! Ability casting, execution, interactions, and scaling tests.
 //! Covers Dark Pact, Heavenly Grace, Ravage, and their interactions.
 
-use aa2_data::{AbilityDef, Attribute, BuffDef, DamageType, Delivery, Effect, EffectSpec, HeroDef, IllusionInteraction, Payload, TargetType, TargetingSpec, Trigger, UnitConfig};
+use aa2_data::{AbilityDef, Attribute, BuffDef, DamageType, Delivery, EffectSpec, HeroDef, IllusionInteraction, Payload, TargetType, TargetingSpec, Trigger, UnitConfig};
 use aa2_sim::buff::{Buff, DispelType, StackBehavior, StatusFlags};
 use aa2_sim::cast::AbilityState;
 use aa2_sim::unit::Unit;
@@ -44,7 +44,6 @@ fn dark_pact_ability() -> AbilityDef {
         mana_cost: vec![50.0],
         cast_point: 0.0,
         targeting: TargetType::NoTarget,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
@@ -74,7 +73,6 @@ fn heavenly_grace_ability() -> AbilityDef {
         mana_cost: vec![50.0],
         cast_point: 0.0,
         targeting: TargetType::SingleAlly,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
@@ -115,7 +113,6 @@ fn ravage_ability() -> AbilityDef {
         mana_cost: vec![150.0],
         cast_point: 0.0,
         targeting: TargetType::NoTarget,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
@@ -625,7 +622,6 @@ fn test_hg_dispels_on_cast() {
         mana_cost: vec![50.0],
         cast_point: 0.0,
         targeting: TargetType::SingleAlly,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
@@ -688,10 +684,9 @@ fn test_hg_targets_highest_y_ally() {
             mana_cost: vec![50.0],
             cast_point: 0.0,
             targeting: TargetType::SingleAllyHG,
-            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
         },
         cooldown_remaining: 0.0,
         level: 1,
@@ -727,10 +722,9 @@ fn test_hg_self_cast_when_no_allies() {
             mana_cost: vec![50.0],
             cast_point: 0.0,
             targeting: TargetType::SingleAllyHG,
-            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
         },
         cooldown_remaining: 0.0,
         level: 1,
@@ -764,10 +758,9 @@ fn test_hg_targets_furthest_on_subsequent_cast() {
             mana_cost: vec![50.0],
             cast_point: 0.0,
             targeting: TargetType::SingleAllyHG,
-            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
-            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+            cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
         },
         cooldown_remaining: 0.0,
         level: 1,
@@ -1739,7 +1732,6 @@ fn test_glaives_bounce_applies_modifiers() {
             mana_cost: vec![0.0],
             cast_point: 0.0,
             targeting: TargetType::Passive,
-            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
             cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
@@ -1771,7 +1763,6 @@ fn test_glaives_bounce_applies_modifiers() {
             mana_cost: vec![0.0],
             cast_point: 0.0,
             targeting: TargetType::Passive,
-            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
             cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
@@ -1855,7 +1846,6 @@ fn test_glaives_bounce_50_percent_physical() {
             mana_cost: vec![0.0],
             cast_point: 0.0,
             targeting: TargetType::Passive,
-            effects: vec![],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
             cast_range: 0.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
@@ -2009,12 +1999,12 @@ fn test_lazy_targeting_no_walk() {
         mana_cost: vec![50.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+        
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 300.0,
         cast_behavior: aa2_data::CastBehavior::Lazy,
-        max_charges: None, effect_specs: None,
+        max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
     };
 
     let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2051,7 +2041,6 @@ fn test_burrowstrike_line_stun() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
@@ -2116,7 +2105,6 @@ fn test_burrowstrike_teleport() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
@@ -2153,13 +2141,13 @@ fn test_charges_system() {
         mana_cost: vec![50.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+        
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 600.0,
         cast_behavior: aa2_data::CastBehavior::default(),
         max_charges: Some(2),
-        effect_specs: None,
+        effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
     };
 
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
@@ -2200,7 +2188,6 @@ fn test_burrowstrike_wave_hits_closer_first() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
@@ -2254,7 +2241,6 @@ fn test_burrowstrike_invulnerable_during_travel() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
@@ -2298,7 +2284,6 @@ fn test_caustic_finale_explosion_on_death() {
         mana_cost: vec![100.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 550.0,
@@ -2352,7 +2337,6 @@ fn test_glaives_blocked_by_magic_immunity() {
         mana_cost: vec![0.0],
         cast_point: 0.0,
         targeting: TargetType::Passive,
-        effects: vec![],
         description: String::new(), is_ultimate: false,
         aoe_shape: None,
         cast_range: 0.0,
@@ -2819,13 +2803,13 @@ fn test_lazy_does_not_drive_movement_for_cast() {
         mana_cost: vec![10.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+        
         description: String::new(),
         is_ultimate: false,
         aoe_shape: None,
         cast_range: 300.0,
         cast_behavior: aa2_data::CastBehavior::Lazy,
-        max_charges: None, effect_specs: None,
+        max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
     };
     let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 1);
     let mut u0 = Unit::from_config(&config_a, 0, 0, Vec2::new(0.0, 0.0));
@@ -2863,13 +2847,13 @@ fn test_seek_walks_past_spell_immune() {
         mana_cost: vec![10.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+        
         description: String::new(),
         is_ultimate: false,
         aoe_shape: None,
         cast_range: 600.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
-        max_charges: None, effect_specs: None,
+        max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
     };
     let config_a = UnitConfig::new(hero.clone()).with_ability(ability, 1);
     let mut u0 = Unit::from_config(&config_a, 0, 0, Vec2::new(0.0, 0.0));
@@ -2938,13 +2922,13 @@ fn test_slot_priority_order() {
         mana_cost: vec![10.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![50.0] }],
+        
         description: String::new(),
         is_ultimate: false,
         aoe_shape: None,
         cast_range: 600.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
-        max_charges: None, effect_specs: None,
+        max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
     };
     let ability_b = AbilityDef {
         name: "SlotB".to_string(),
@@ -2952,13 +2936,13 @@ fn test_slot_priority_order() {
         mana_cost: vec![10.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![50.0] }],
+        
         description: String::new(),
         is_ultimate: false,
         aoe_shape: None,
         cast_range: 300.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
-        max_charges: None, effect_specs: None,
+        max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
     };
     let config = UnitConfig::new(hero.clone())
         .with_ability(ability_a, 1)
@@ -2997,13 +2981,13 @@ fn test_auto_attack_when_abilities_on_cooldown() {
         mana_cost: vec![10.0],
         cast_point: 0.0,
         targeting: TargetType::SingleEnemy,
-        effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![50.0] }],
+        
         description: String::new(),
         is_ultimate: false,
         aoe_shape: None,
         cast_range: 600.0,
         cast_behavior: aa2_data::CastBehavior::Seek,
-        max_charges: None, effect_specs: None,
+        max_charges: None, effect_specs: Some(vec![aa2_data::EffectSpec { trigger: Trigger::OnCast, targeting: TargetingSpec::EnemiesInDelivery, delivery: Delivery::Instant, payload: vec![Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }], illusion_interaction: IllusionInteraction::Disabled, mana_cost: vec![] }]),
     };
     let config = UnitConfig::new(hero.clone()).with_ability(ability, 1);
     let mut u0 = Unit::from_config(&config, 0, 0, Vec2::new(0.0, 0.0));

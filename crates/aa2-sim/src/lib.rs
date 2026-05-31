@@ -2046,7 +2046,7 @@ mod tests {
 
     #[test]
     fn test_unit_casts_ability() {
-        use aa2_data::{AbilityDef, DamageType, Effect, TargetType};
+        use aa2_data::{AbilityDef, DamageType, TargetType};
         use crate::cast::AbilityState;
 
         let def = make_sven();
@@ -2060,10 +2060,17 @@ mod tests {
                 mana_cost: vec![50.0],
                 cast_point: 0.3,
                 targeting: TargetType::SingleEnemy,
-                effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![aa2_data::EffectSpec {
+                    trigger: aa2_data::Trigger::OnCast,
+                    targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
+                    delivery: aa2_data::Delivery::Instant,
+                    payload: vec![aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    mana_cost: vec![],
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 0,
@@ -2081,7 +2088,7 @@ mod tests {
 
     #[test]
     fn test_unit_prefers_ability_over_attack() {
-        use aa2_data::{AbilityDef, DamageType, Effect, TargetType};
+        use aa2_data::{AbilityDef, DamageType, TargetType};
         use crate::cast::AbilityState;
 
         let def = make_sven();
@@ -2095,10 +2102,17 @@ mod tests {
                 mana_cost: vec![50.0],
                 cast_point: 0.3,
                 targeting: TargetType::SingleEnemy,
-                effects: vec![Effect::Damage { kind: DamageType::Physical, base: vec![200.0] }],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![aa2_data::EffectSpec {
+                    trigger: aa2_data::Trigger::OnCast,
+                    targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
+                    delivery: aa2_data::Delivery::Instant,
+                    payload: vec![aa2_data::Payload::Damage { kind: DamageType::Physical, base: vec![200.0] }],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    mana_cost: vec![],
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 0,
@@ -2119,7 +2133,7 @@ mod tests {
 
     #[test]
     fn test_unit_attacks_when_ability_on_cooldown() {
-        use aa2_data::{AbilityDef, DamageType, Effect, TargetType};
+        use aa2_data::{AbilityDef, DamageType, TargetType};
         use crate::cast::AbilityState;
 
         let def = make_sven();
@@ -2133,10 +2147,17 @@ mod tests {
                 mana_cost: vec![50.0],
                 cast_point: 0.3,
                 targeting: TargetType::SingleEnemy,
-                effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![aa2_data::EffectSpec {
+                    trigger: aa2_data::Trigger::OnCast,
+                    targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
+                    delivery: aa2_data::Delivery::Instant,
+                    payload: vec![aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    mana_cost: vec![],
+                }]),
             },
             cooldown_remaining: 5.0, // on cooldown
             level: 0,
@@ -2157,7 +2178,7 @@ mod tests {
 
     #[test]
     fn test_unit_cannot_cast_when_silenced() {
-        use aa2_data::{AbilityDef, DamageType, Effect, TargetType};
+        use aa2_data::{AbilityDef, DamageType, TargetType};
         use crate::cast::AbilityState;
         use crate::buff::{Buff, StackBehavior, DispelType, StatusFlags};
 
@@ -2172,10 +2193,17 @@ mod tests {
                 mana_cost: vec![50.0],
                 cast_point: 0.3,
                 targeting: TargetType::SingleEnemy,
-                effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0] }],
                 description: String::new(), is_ultimate: false,
                 aoe_shape: None,
-                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None, effect_specs: None,
+                cast_range: 600.0, cast_behavior: aa2_data::CastBehavior::default(), max_charges: None,
+                effect_specs: Some(vec![aa2_data::EffectSpec {
+                    trigger: aa2_data::Trigger::OnCast,
+                    targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
+                    delivery: aa2_data::Delivery::Instant,
+                    payload: vec![aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![100.0] }],
+                    illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                    mana_cost: vec![],
+                }]),
             },
             cooldown_remaining: 0.0,
             level: 0,
@@ -2210,7 +2238,7 @@ mod tests {
 
     #[test]
     fn test_unit_from_config() {
-        use aa2_data::{AbilityDef, DamageType, Effect, TargetType, UnitConfig};
+        use aa2_data::{AbilityDef, DamageType, TargetType, UnitConfig};
 
         let hero = make_sven();
         let ability1 = AbilityDef {
@@ -2219,13 +2247,19 @@ mod tests {
             mana_cost: vec![100.0],
             cast_point: 0.3,
             targeting: TargetType::SingleEnemy,
-            effects: vec![Effect::Damage { kind: DamageType::Magical, base: vec![100.0, 150.0, 200.0] }],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
             cast_range: 600.0,
             cast_behavior: aa2_data::CastBehavior::default(),
             max_charges: None,
-            effect_specs: None,
+            effect_specs: Some(vec![aa2_data::EffectSpec {
+                trigger: aa2_data::Trigger::OnCast,
+                targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
+                delivery: aa2_data::Delivery::Instant,
+                payload: vec![aa2_data::Payload::Damage { kind: DamageType::Magical, base: vec![100.0, 150.0, 200.0] }],
+                illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                mana_cost: vec![],
+            }]),
         };
         let ability2 = AbilityDef {
             name: "War Cry".to_string(),
@@ -2233,13 +2267,31 @@ mod tests {
             mana_cost: vec![50.0],
             cast_point: 0.2,
             targeting: TargetType::NoTarget,
-            effects: vec![Effect::ApplyBuff { name: "War Cry".to_string(), duration: 6.0 }],
             description: String::new(), is_ultimate: false,
             aoe_shape: None,
             cast_range: 600.0,
             cast_behavior: aa2_data::CastBehavior::default(),
             max_charges: None,
-            effect_specs: None,
+            effect_specs: Some(vec![aa2_data::EffectSpec {
+                trigger: aa2_data::Trigger::OnCast,
+                targeting: aa2_data::TargetingSpec::Caster,
+                delivery: aa2_data::Delivery::Instant,
+                payload: vec![aa2_data::Payload::ApplyBuff(Box::new(aa2_data::BuffDef {
+                    name: "War Cry".to_string(),
+                    duration: vec![6.0],
+                    status: aa2_data::StatusFlags::default(),
+                    stat_modifier: None,
+                    tick_effect: None,
+                    stacking: aa2_data::StackBehavior::RefreshDuration,
+                    dispel_type: aa2_data::DispelType::BasicDispel,
+                    is_debuff: false,
+                    pierces_magic_immunity: false,
+                    damage_reflection_pct: 0.0,
+                    on_death: None,
+                }))],
+                illusion_interaction: aa2_data::IllusionInteraction::Disabled,
+                mana_cost: vec![],
+            }]),
         };
 
         let config = UnitConfig::new(hero)

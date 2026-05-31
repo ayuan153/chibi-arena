@@ -11,7 +11,6 @@ AbilityDef(
     mana_cost: [80.0],
     cast_point: 0.0,
     targeting: NoTarget,
-    effects: [],
     description: "Lifestealer goes into a rage, becoming magic immune and purging debuffs.",
     aoe_shape: None,
     cast_range: 0.0,
