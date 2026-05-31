@@ -80,8 +80,9 @@ The core combat simulation. ECS-based (custom lightweight ECS, not bevy) running
 - Attribute system (STR/AGI/INT derived stats)
 - Attack loop with BAT, attack speed, animation timing
 - Ability casting (cast points, targeting)
+- Composable effect resolver (`effect_spec.rs`): one generic resolver per axis (Trigger, Targeting, Delivery, Payload) — abilities are `EffectSpec` compositions authored in RON, not bespoke code
 - Projectile system (homing, travel time)
-- Buff/debuff framework (stacking rules, tick-based durations)
+- Buff/debuff framework (stacking rules, tick-based durations); runtime `Buff` constructed via `Buff::from_def` from aa2-data's `BuffDef`
 - Direct movement with collision push-apart (grid-based A* pathfinding is planned, not yet implemented)
 - Targeting AI (aggro, priority, range checks)
 - Turn rate and movement
@@ -94,6 +95,8 @@ Shared data definitions and loading.
 
 **Responsibilities:**
 - Type definitions: `Hero`, `Ability`, `God`, `Buff`, `Projectile`
+- Composable ability-effect schema: `EffectSpec`, `Payload`, `Delivery`, `TargetingSpec`, `Trigger`
+- Buff data schema: `BuffDef`, `StatModifierSpec`, `StatusFlags`, `StatModifier`, `StackBehavior`, `DispelType`, `TickEffectDef`
 - `serde::Serialize` + `serde::Deserialize` on all types
 - RON file loader (dev) — loaded at startup; live hot-reload is planned, not yet implemented
 - Validation (stat ranges, ability references, tier constraints)
@@ -244,7 +247,7 @@ mult = 1 - (0.06 * armor) / (1 + 0.06 * |armor|)
 
 - **Attack loop:** Acquire target → turn → wind-up (attack point) → launch projectile/apply damage → backswing
 - **Projectiles:** Homing with configurable speed. Travel time = distance / speed. On-hit effects applied on arrival.
-- **Abilities:** Cast point → effect → cooldown. Targeting modes: unit, point, no-target, passive.
+- **Abilities:** Cast point → effect → cooldown. Targeting modes: unit, point, no-target, passive. Effects are composable `EffectSpec` compositions (Trigger × Targeting × Delivery × Payload[]) resolved by a generic engine — no per-ability Rust code.
 - **Buffs/Debuffs:** Stack rules (refresh, independent, max stacks). Tick-based duration. Modifier priority system. DamageReflection buff.
 - **Movement:** Direct movement toward target with collision push-apart resolution. (Grid-based A* pathfinding is planned, not yet implemented.)
 - **Turn rate:** Units must face target before attacking/casting. Configurable degrees/second.

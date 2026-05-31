@@ -1,8 +1,8 @@
 # Composable Ability Effects — Design Note (for sign-off)
 
-> Status: **APPROVED (2026-05-30) — in-progress; proof = Rage + Ravage.** Defines a data-driven,
-> composable replacement for today's bespoke per-ability `Effect` enum so new abilities can be
-> authored in RON alone. Key decisions are resolved in §7.
+> Status: **IMPLEMENTED (2026-05-30).** The composable effect system is live — all 11 abilities
+> ported, the bespoke `Effect` enum deleted, gate green (271 Rust + 47 GDScript tests). New
+> abilities are authored in RON alone. See §11 for the final shipped primitives.
 
 ## 1. Problem
 
@@ -154,6 +154,32 @@ finale) becomes a **Delivery/Payload primitive reused across abilities**, not a 
 
 ---
 
-*Sign-off:* once approved, implement per §8 — composable types in aa2-data, generic resolvers in
-aa2-sim, port abilities incrementally (tests green at each step), then remove the bespoke enum.
-Composable effects are the gating item for adding game content by data alone.
+## 11. Implemented (final state)
+
+Implementation complete 2026-05-30 on branch `feat/composable-effects`. All 11 abilities ported;
+the bespoke `Effect` enum and its per-ability match arms are deleted. Behavior is byte-identical
+(271 Rust + 47 GDScript tests green, wasm32 compiles). A new ability now requires only a RON file.
+
+### Final primitive sets shipped
+
+| Axis | Primitives |
+|------|-----------|
+| **Trigger** | `OnCast`, `OnAttack`, `OnKill` |
+| **TargetingSpec** | `Caster`, `EnemiesInDelivery`, `TargetAndCaster`, `AttackTarget` |
+| **Delivery** | `Instant`, `ExpandingWave`, `DelayedPulse`, `CasterTravel`, `Aoe`, `Projectile{homing\|linear}` |
+| **Payload** (15) | `Damage`, `Heal`, `ApplyBuff(BuffDef)`, `Dispel`, `Chain` (bounded by `MAX_EFFECT_CHAIN_DEPTH=2`), `SelfDamage`, `DamageWithSourceMaxHp`, `StackingBonusDamage`, `Crit`, `Lifesteal`, `StatSteal`, `IntScaledDamage`, `AttackBounce`, `PermanentIntSteal`, `Spawn(illusion)` |
+
+### Where things live
+
+- **aa2-data:** `EffectSpec`, `Payload`, `Delivery`, `TargetingSpec`, `Trigger`, plus the buff data
+  schema (`BuffDef`, `StatModifierSpec`, `StatusFlags`, `StatModifier`, `StackBehavior`,
+  `DispelType`, `TickEffectDef`). Abilities authored via `effect_specs: [EffectSpec]` in RON.
+- **aa2-sim:** generic resolver in `crates/aa2-sim/src/effect_spec.rs`
+  (`run_cast_effect_specs`, `apply_payload_to_unit`, `resolve_on_death_spec`). Deliveries driven by
+  `PendingEffectKind::Composable*` variants in `lib.rs`. `OnAttack`/`OnKill` triggers hooked into
+  the attack pipeline (`attack_modifier.rs`) and `check_deaths`.
+- **Runtime buff:** `Buff::from_def` in aa2-sim constructs runtime `Buff` from aa2-data's `BuffDef`.
+
+---
+
+*Sign-off:* implemented per §8. Composable effects are live — new abilities are RON-only.
