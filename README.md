@@ -24,7 +24,7 @@ Local game loop + networking complete — playable end-to-end locally and over W
 - 21 heroes, 11 abilities, 2 gods (data-driven); no items or art yet (placeholder shapes)
 - 271 Rust tests, 47 GDScript integration tests (all deterministic, fixed seed)
 
-Next: composable ability effects (design note first), then content + playtesting.
+Composable ability effects complete — abilities are now fully data-driven (RON-only, no Rust needed). Next: content + playtesting (hot-reload for fast iteration).
 
 ## Quick Start
 
@@ -101,6 +101,7 @@ Matches support 8 players with rounds of increasing intensity.
 |----------|-------------|
 | [docs/design/architecture.md](docs/design/architecture.md) | Technical architecture & system design |
 | [docs/design/networking.md](docs/design/networking.md) | Networking design (dumb-client state-sync) |
+| [docs/design/ability-authoring.md](docs/design/ability-authoring.md) | Ability authoring reference (RON-only, no Rust) |
 | [docs/project-plan.md](docs/project-plan.md) | Phased development plan |
 | [docs/specs/mechanics-reference.md](docs/specs/mechanics-reference.md) | Engine formulas & combat mechanics |
 | [docs/runbooks/networked-smoke.md](docs/runbooks/networked-smoke.md) | Networked smoke test + manual playtest |

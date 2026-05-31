@@ -183,3 +183,8 @@ the bespoke `Effect` enum and its per-ability match arms are deleted. Behavior i
 ---
 
 *Sign-off:* implemented per §8. Composable effects are live — new abilities are RON-only.
+
+---
+
+*See also:* [docs/design/ability-authoring.md](ability-authoring.md) — practical reference for
+authoring a new ability in RON with no Rust.

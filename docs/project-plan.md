@@ -200,8 +200,11 @@ persistence/PostgreSQL, spectating other boards, 8-human scale, client-side pred
 **Milestone:** Two+ human clients play a full game to elimination over WebSocket with server
 authoritative and AI filling remaining seats. ✓ MET
 
-**Next track:** Composable ability effects — needs its own design note first (in the style of
-`docs/design/networking.md`) before implementation.
+**Next track:** Composable ability effects — ✅ **COMPLETE** (2026-05-30, merged to main). All 11
+abilities are now data-driven `EffectSpec` compositions in RON; the bespoke `Effect` enum is
+deleted. New abilities require only a RON file. Phase 5 (Content + Launch) is now unblocked —
+recommended first content-velocity step: hot-reload of RON data + an ability load/validation
+harness.
 
 ---
 
