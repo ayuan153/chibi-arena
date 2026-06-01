@@ -49,7 +49,7 @@ pub enum PendingEffectKind {
         ticks_until_next_pulse: u32,
     },
     /// Composable linear projectile: impales first hero, drags to wall, pass-through damage,
-    /// wall-pin stun, fire trail (DoT + slow), wall bounces. Data-driven via `Delivery::Projectile`.
+    /// wall-pin stun, fire trail (DoT + slow), wall bounces. Data-driven via `Delivery::Linear`.
     ComposableProjectile {
         /// Start position of the current travel segment.
         start_pos: Vec2,

@@ -69,16 +69,8 @@ fn spirit_lance_ability() -> AbilityDef {
         effect_specs: Some(vec![aa2_data::EffectSpec {
             trigger: aa2_data::Trigger::OnCast,
             targeting: aa2_data::TargetingSpec::EnemiesInDelivery,
-            delivery: aa2_data::Delivery::Projectile {
-                homing: true,
+            delivery: aa2_data::Delivery::Homing {
                 speed: 1000.0,
-                width: 0.0,
-                range: vec![9999.0],
-                wall_bounces: vec![],
-                fire_trail_dps: vec![],
-                fire_trail_slow: vec![],
-                fire_trail_duration: vec![],
-                stun_duration: vec![],
                 bounce_radius: vec![0.0, 0.0, 0.0, 0.0, 0.0, 750.0, 750.0, 750.0, 750.0],
                 bounce_count: vec![0, 0, 0, 0, 0, 1, 1, 1, 1],
             },

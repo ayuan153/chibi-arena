@@ -36,7 +36,7 @@ An ability becomes a list of **`EffectSpec`s**, each = (Trigger, Targeting, Deli
 |------|---------|------------------------------|
 | **Trigger** | When does it fire? | `OnCast`, `OnAttack`(+PRD chance / mana), `OnHit`, `OnKill`, `Periodic` |
 | **Targeting** | Who / where? | reuse `TargetType` (SingleEnemy/Ally/Point/None/Self) + `CastBehavior` |
-| **Delivery** | How does it reach units? | `Instant`, `Aoe(AoeShape)`, `Projectile{homing\|linear, speed, bounce}`, `CasterTravel{width,speed}`, `ExpandingWave{speed}`, `Delayed`/`Pulse{delay,count,interval}` |
+| **Delivery** | How does it reach units? | `Instant`, `Aoe(AoeShape)`, `Linear{speed, width, range, wall_bounces, fire_trail_*}`, `Homing{speed, bounce_radius, bounce_count}`, `CasterTravel{width,speed}`, `ExpandingWave{speed}`, `Delayed`/`Pulse{delay,count,interval}` |
 | **Payload[]** | What happens per affected unit? | `Damage{type,amount}`, `Heal{amount}`, `ApplyBuff(BuffSpec)`, `Dispel{type}`, `Spawn{illusion\|unit}`, `StatSteal`, `SelfDamage`, `Crit`/`Lifesteal` |
 
 The engine has **one generic resolver per primitive**: a Targeting resolver, a Delivery layer that
@@ -64,8 +64,8 @@ bespoke `PendingEffectKind`) and the **Trigger** axis (today split across `abili
 | Dark Pact | OnCast | Delayed+Pulse{delay,count,interval; Circle} | Damage(AoE), SelfDamage, Dispel(self) |
 | Ravage | OnCast | ExpandingWave{speed; Circle} | Damage, ApplyBuff{stun} |
 | Burrowstrike | OnCast | CasterTravel{width,speed} | Damage, ApplyBuff{stun}; **+OnKill→**Aoe Damage (caustic finale) |
-| Spirit Lance | OnCast | Projectile{homing, bounce} | Damage, ApplyBuff{slow}, Spawn{illusion} |
-| Spear of Mars | OnCast | Projectile{linear, wall-bounce} | Damage, ApplyBuff{stun}, Periodic Aoe (fire trail) |
+| Spirit Lance | OnCast | Homing{speed, bounce} | Damage, ApplyBuff{slow}, Spawn{illusion} |
+| Spear of Mars | OnCast | Linear{speed, width, wall-bounce} | Damage, ApplyBuff{stun}, Periodic Aoe (fire trail) |
 | Fury Swipes | OnAttack | Instant(target) | Damage(stacking), ApplyBuff{armor_reduction} |
 | Chaos Strike | OnAttack(PRD) | Instant(target) | Crit, Lifesteal |
 | Essence Shift | OnAttack | Instant(target) | StatSteal, ApplyBuff(self) |
@@ -90,7 +90,7 @@ finale) becomes a **Delivery/Payload primitive reused across abilities**, not a 
 
 1. **Reuse `Buff` as the payload primitive** — it is already composable; do not reinvent status effects.
 2. **Generalize, don't enumerate, Delivery** — a fixed small set of delivery primitives
-   (instant / aoe / projectile / caster-travel / expanding-wave / delayed-pulse), each implemented
+   (instant / aoe / linear / homing / caster-travel / expanding-wave / delayed-pulse), each implemented
    once and parameterized by data. Not a general geometry engine.
 3. **Unify triggers** — fold the attack-modifier pipeline and on-death hooks into a `Trigger` axis so
    on-attack / on-kill effects are just `EffectSpec`s.
@@ -166,7 +166,7 @@ the bespoke `Effect` enum and its per-ability match arms are deleted. Behavior i
 |------|-----------|
 | **Trigger** | `OnCast`, `OnAttack`, `OnKill` |
 | **TargetingSpec** | `Caster`, `EnemiesInDelivery`, `TargetAndCaster`, `AttackTarget` |
-| **Delivery** | `Instant`, `ExpandingWave`, `DelayedPulse`, `CasterTravel`, `Aoe`, `Projectile{homing\|linear}` |
+| **Delivery** | `Instant`, `ExpandingWave`, `DelayedPulse`, `CasterTravel`, `Aoe`, `Linear`, `Homing` |
 | **Payload** (15) | `Damage`, `Heal`, `ApplyBuff(BuffDef)`, `Dispel`, `Chain` (bounded by `MAX_EFFECT_CHAIN_DEPTH=2`), `SelfDamage`, `DamageWithSourceMaxHp`, `StackingBonusDamage`, `Crit`, `Lifesteal`, `StatSteal`, `IntScaledDamage`, `AttackBounce`, `PermanentIntSteal`, `Spawn(illusion)` |
 
 ### Where things live

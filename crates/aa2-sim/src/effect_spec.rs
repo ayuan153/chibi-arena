@@ -422,40 +422,40 @@ fn resolve_spec(
                 }
             }
         }
-        Delivery::Projectile { homing, speed, width, range, wall_bounces, fire_trail_dps, fire_trail_slow, fire_trail_duration, stun_duration, bounce_radius, bounce_count } => {
-            debug_assert!(!range.is_empty(), "Projectile range must not be empty");
+        Delivery::Homing { speed, bounce_radius, bounce_count } => {
+            // Homing projectile (Spirit Lance): track target, bounce on hit
+            let Some(tid) = target_id else { return };
+            let br = value_at_level(bounce_radius, level);
+            let bc = if bounce_count.is_empty() {
+                0
+            } else {
+                let idx = (level.saturating_sub(1) as usize).min(bounce_count.len().saturating_sub(1));
+                bounce_count[idx]
+            };
+            pending_effects.push(PendingEffect {
+                caster_id,
+                caster_team,
+                ability_name: ability_name.to_string(),
+                kind: PendingEffectKind::ComposableHomingProjectile {
+                    target_id: tid,
+                    caster_id,
+                    caster_team,
+                    position: caster_pos,
+                    speed: *speed,
+                    payload: spec.payload.clone(),
+                    level,
+                    bounce_radius: br,
+                    bounces_remaining: bc,
+                    already_hit: vec![tid],
+                },
+                delay_ticks_remaining: 0,
+            });
+        }
+        Delivery::Linear { speed, width, range, wall_bounces, fire_trail_dps, fire_trail_slow, fire_trail_duration, stun_duration } => {
+            debug_assert!(!range.is_empty(), "Linear range must not be empty");
             if range.is_empty() {
                 return;
             }
-            if *homing {
-                // Homing projectile (Spirit Lance): track target, bounce on hit
-                let Some(tid) = target_id else { return };
-                let br = value_at_level(bounce_radius, level);
-                let bc = if bounce_count.is_empty() {
-                    0
-                } else {
-                    let idx = (level.saturating_sub(1) as usize).min(bounce_count.len().saturating_sub(1));
-                    bounce_count[idx]
-                };
-                pending_effects.push(PendingEffect {
-                    caster_id,
-                    caster_team,
-                    ability_name: ability_name.to_string(),
-                    kind: PendingEffectKind::ComposableHomingProjectile {
-                        target_id: tid,
-                        caster_id,
-                        caster_team,
-                        position: caster_pos,
-                        speed: *speed,
-                        payload: spec.payload.clone(),
-                        level,
-                        bounce_radius: br,
-                        bounces_remaining: bc,
-                        already_hit: vec![tid],
-                    },
-                    delay_ticks_remaining: 0,
-                });
-            } else {
             let direction = if let Some(tpos) = target_pos {
                 let d = (tpos - caster_pos).normalize();
                 if d.length() < 1e-6 { Vec2::new(1.0, 0.0) } else { d }
@@ -495,7 +495,6 @@ fn resolve_spec(
                 },
                 delay_ticks_remaining: 0,
             });
-            }
         }
     }
 }

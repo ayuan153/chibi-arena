@@ -17,8 +17,7 @@ AbilityDef(
         EffectSpec(
             trigger: OnCast,
             targeting: EnemiesInDelivery,
-            delivery: Projectile(
-                homing: false,
+            delivery: Linear(
                 speed: 1400.0,
                 width: 125.0,
                 range: [900.0, 1000.0, 1200.0, 1200.0, 1200.0, 1200.0, 1200.0, 1200.0, 2800.0],

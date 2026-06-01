@@ -45,7 +45,8 @@ The engine has one generic resolver per axis. You compose primitives — you don
 | `DelayedPulse` | `delay: f32`, `pulse_count: u32`, `pulse_interval: f32`, `radius: Vec<f32>` | Fires `pulse_count` pulses after `delay` seconds, each `pulse_interval` apart, hitting enemies within `radius`. Also applies `SelfDamage` payloads to caster. |
 | `CasterTravel` | `width: f32`, `speed: f32`, `range: Vec<f32>` | Caster travels a line toward target; capsule hit detection (`width`). Caster is invulnerable during travel. |
 | `Aoe` | `radius: Vec<f32>` | Instant AoE around the delivery origin. Hits enemies within radius. |
-| `Projectile` | `homing: bool`, `speed: f32`, `width: f32`, `range: Vec<f32>`, `wall_bounces: Vec<u32>`, `fire_trail_dps: Vec<f32>`, `fire_trail_slow: Vec<f32>`, `fire_trail_duration: Vec<f32>`, `stun_duration: Vec<f32>`, `bounce_radius: Vec<f32>`, `bounce_count: Vec<u32>` | If `homing: true` → tracks target, bounces on hit (Spirit Lance). If `homing: false` → linear, impales first hero, wall-pin stun (Spear of Mars). |
+| `Linear` | `speed: f32`, `width: f32`, `range: Vec<f32>`, `wall_bounces: Vec<u32>`, `fire_trail_dps: Vec<f32>`, `fire_trail_slow: Vec<f32>`, `fire_trail_duration: Vec<f32>`, `stun_duration: Vec<f32>` | Linear projectile: impales first hero, wall-pin stun, fire trail (Spear of Mars). |
+| `Homing` | `speed: f32`, `bounce_radius: Vec<f32>`, `bounce_count: Vec<u32>` | Homing projectile: seeks target, chain-bounces between enemies (Spirit Lance). |
 
 All `Vec<f32>` / `Vec<u32>` fields are **per-level** (index 0 = level 1). If the ability level
 exceeds the vec length, the last element is used.
@@ -238,10 +239,7 @@ The generic resolver lives in `crates/aa2-sim/src/effect_spec.rs`:
 
 ## Known Follow-ups (affect authoring)
 
-- `Delivery::Projectile` currently uses a `homing: bool` to switch between linear (Spear of Mars)
-  and homing (Spirit Lance) behavior. A future split into `Linear`/`Homing` variants would make
-  the unused fields less confusing.
-- `fire_trail_*` params live on `Projectile` even for homing projectiles (where they're unused).
+- `fire_trail_*` params live on `Linear` even for abilities that don't use them (zeroed out).
 - `CasterTravel` hardcodes a `"burrowstrike_invuln"` buff during travel — a future `travel_buff`
   field on the delivery would make this data-driven.
 - `Chain` payload is scaffolded but currently no-ops in `apply_payloads` (Burrowstrike's chaining

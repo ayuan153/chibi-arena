@@ -122,7 +122,7 @@ failures.
 
 ### Tier 2 — Tracked composable follow-ups
 
-- Split `Delivery::Projectile` into `Linear` / `Homing` variants (unused fields are confusing).
+- ~~Split `Delivery::Projectile` into `Linear` / `Homing` variants (unused fields are confusing).~~ Done.
 - Consider a `DamageFormula` enum if payload variants exceed ~18 (currently 15).
 - Move `CasterTravel`'s hardcoded `"burrowstrike_invuln"` buff to a `travel_buff` field on the
   delivery.

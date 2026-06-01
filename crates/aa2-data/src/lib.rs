@@ -262,12 +262,9 @@ pub enum Delivery {
         /// AoE radius per ability level.
         radius: Vec<f32>,
     },
-    /// Linear projectile that travels in a direction, impaling the first hero hit,
-    /// dragging them to a wall, dealing pass-through damage, and optionally bouncing.
-    /// `homing` reserved for Spirit Lance (always false for Spear of Mars).
-    Projectile {
-        /// If true, projectile homes toward a target (Spirit Lance). If false, linear (Spear).
-        homing: bool,
+    /// Linear projectile: travels in a straight line toward the target position
+    /// (e.g. Spear of Mars). Can wall-bounce and leave a fire trail.
+    Linear {
         /// Travel speed in units/sec.
         speed: f32,
         /// Hit detection width (radius from projectile center).
@@ -275,19 +272,30 @@ pub enum Delivery {
         /// Travel range per ability level.
         range: Vec<f32>,
         /// Number of wall bounces per ability level (0 = no bounce).
+        #[serde(default)]
         wall_bounces: Vec<u32>,
         /// Fire trail DPS per ability level (0 = no trail).
+        #[serde(default)]
         fire_trail_dps: Vec<f32>,
-        /// Fire trail slow fraction per ability level (0.0–1.0).
+        /// Fire trail slow fraction per ability level (0.0-1.0).
+        #[serde(default)]
         fire_trail_slow: Vec<f32>,
-        /// Fire trail duration per ability level (seconds; currently unused, 2s hardcoded).
+        /// Fire trail duration per ability level (seconds).
+        #[serde(default)]
         fire_trail_duration: Vec<f32>,
         /// Stun duration on wall-pin per ability level (seconds).
+        #[serde(default)]
         stun_duration: Vec<f32>,
-        /// Homing bounce radius per ability level (0 = no bounce). Used by Spirit Lance.
+    },
+    /// Homing projectile: seeks a target unit and can chain-bounce between targets
+    /// (e.g. Spirit Lance). Travels until it reaches its target (effectively infinite range).
+    Homing {
+        /// Travel speed in units/sec.
+        speed: f32,
+        /// Chain-bounce search radius per ability level (0 = no bounce).
         #[serde(default)]
         bounce_radius: Vec<f32>,
-        /// Homing bounce count per ability level (0 = no bounce). Used by Spirit Lance.
+        /// Number of chain-bounces per ability level (0 = no bounce).
         #[serde(default)]
         bounce_count: Vec<u32>,
     },
@@ -809,13 +817,15 @@ fn check_spec_vecs(spec: &EffectSpec, ability_name: &str, si: usize, level_count
         Delivery::Aoe { radius } => {
             check_vec_len(radius, ability_name, &format!("effect_specs[{si}].delivery.radius"), level_count, errors);
         }
-        Delivery::Projectile { range, wall_bounces, fire_trail_dps, fire_trail_slow, fire_trail_duration, stun_duration, bounce_radius, bounce_count, .. } => {
+        Delivery::Linear { range, wall_bounces, fire_trail_dps, fire_trail_slow, fire_trail_duration, stun_duration, .. } => {
             check_vec_len(range, ability_name, &format!("effect_specs[{si}].delivery.range"), level_count, errors);
             check_vec_len_u32(wall_bounces, ability_name, &format!("effect_specs[{si}].delivery.wall_bounces"), level_count, errors);
             check_vec_len(fire_trail_dps, ability_name, &format!("effect_specs[{si}].delivery.fire_trail_dps"), level_count, errors);
             check_vec_len(fire_trail_slow, ability_name, &format!("effect_specs[{si}].delivery.fire_trail_slow"), level_count, errors);
             check_vec_len(fire_trail_duration, ability_name, &format!("effect_specs[{si}].delivery.fire_trail_duration"), level_count, errors);
             check_vec_len(stun_duration, ability_name, &format!("effect_specs[{si}].delivery.stun_duration"), level_count, errors);
+        }
+        Delivery::Homing { bounce_radius, bounce_count, .. } => {
             if !bounce_radius.is_empty() {
                 check_vec_len(bounce_radius, ability_name, &format!("effect_specs[{si}].delivery.bounce_radius"), level_count, errors);
             }

@@ -14,16 +14,8 @@ AbilityDef(
         EffectSpec(
             trigger: OnCast,
             targeting: EnemiesInDelivery,
-            delivery: Projectile(
-                homing: true,
+            delivery: Homing(
                 speed: 1000.0,
-                width: 0.0,
-                range: [9999.0],
-                wall_bounces: [],
-                fire_trail_dps: [],
-                fire_trail_slow: [],
-                fire_trail_duration: [],
-                stun_duration: [],
                 bounce_radius: [0.0, 0.0, 0.0, 0.0, 0.0, 750.0, 750.0, 750.0, 750.0],
                 bounce_count: [0, 0, 0, 0, 0, 1, 1, 1, 1],
             ),
